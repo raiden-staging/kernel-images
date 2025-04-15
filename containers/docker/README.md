@@ -74,3 +74,12 @@ http://localhost:8080
 
 ## 🤝 License & Contributing
 See [here](/README.md) for license and contributing details.
+
+## 🏅 Join our Team
+We're hiring exceptional senior and staff backend engineers to work on the future of AI infrastructure. Full-time or contract-to-hire. Join a small team that punches well above its weight, minimal meetings and no bureaucracy. By developers, for developers.
+
+$175k-200k + equity + great healthcare. Remote in the continental US.
+
+Things we're working on: serverless, containers/vms/unikernels, streaming, SDKs, CLIs.
+
+Message `catherine jue` on [Discord](https://discord.gg/FBrveQRcud) with what you've been building lately.
