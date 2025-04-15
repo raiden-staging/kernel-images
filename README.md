@@ -85,5 +85,3 @@ Message `catherine jue` on [Discord](https://discord.gg/FBrveQRcud) with what yo
 For issues, questions, or feedback, please [open an issue](https://github.com/onkernel/kernel-images/issues) on this repository.
 
 To learn more about our hosted services, [join our waitlist](https://onkernel.com) and our [Discord](https://discord.gg/FBrveQRcud).
-
-![Oprah everyone gets a browser](static/images/oprah-everyone-gets-a-browser.gif)
