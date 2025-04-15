@@ -25,23 +25,29 @@
 
 Kernel provides sandboxed, ready-to-use Chrome browser environments for agentic workflows that need to access the Internet. `containers/docker/Dockerfile` and `unikernels/unikraft-cu` are the core infra that powers our hosted services.
 
-🌟[__Sign-up for the waitlist__](https://onkernel.com)🌟
+<br/>
+
+
+★ [__Sign-up for the waitlist.__](https://onkernel.com) ★
+
+
+<br/>
 
 ![Chromium x Unikernel Demo](/static/images/unikernel-gh.gif)
 
-### *️⃣ Key Features
+## *️⃣ Key Features
 
 - Pre-configured Chrome browser that Chrome DevTools-based browser frameworks (Playwright, Puppeteer) can connect to
 - GUI access for visual monitoring and remote control
 - Anthropic's [Computer Use](https://github.com/anthropics/anthropic-quickstarts/tree/main/computer-use-demo) agent loop & chat interface baked in
 
-### 💡 What You Can Do With It
+## 💡 What You Can Do With It
 
 - Run automated browser-based workflows
 - Develop and test AI agents that use browsers
 - Build custom tools that require controlled browser environments
 
-### 🛜 Implementation
+## 🛜 Implementation
 
 `containers/docker` and `unikernels/unikraft-cu` functionally do the same thing:
 1. Pull from Anthropic's Computer Use reference implementation
@@ -71,7 +77,7 @@ We welcome contributions to improve this example or add new ones! Please read ou
 
 See the [LICENSE](./LICENSE) file for details.
 
-## 🏅 Join our Team
+## 🏅 Join Our Team
 We're hiring exceptional senior and staff backend engineers to work on the future of AI infrastructure. Full-time or contract-to-hire. Join a small team that punches well above its weight, minimal meetings and no bureaucracy. By developers, for developers.
 
 $175k-200k + equity + great healthcare. Remote in the continental US.
