@@ -1,8 +1,5 @@
 <p align="center">
   <img src="static/images/Kernel-Wordmark_Accent.svg" alt="Kernel Logo" width="55%">
-  <br/><br/>
-  Deployment-ready browsers. Run 'em anywhere
-  <br/><br/>
 </p>
 
 <p align="center">
@@ -78,13 +75,13 @@ We welcome contributions to improve this example or add new ones! Please read ou
 See the [LICENSE](./LICENSE) file for details.
 
 ## 🏅 Join Our Team
-We're hiring exceptional senior and staff backend engineers to work on the future of AI infrastructure. Full-time or contract-to-hire. Join a small team that punches well above its weight, minimal meetings and no bureaucracy. By developers, for developers.
+We're hiring exceptional senior and staff backend engineers to work on the future of AI infrastructure. Full-time or contract-to-hire. Join a small team that punches well above its weight with minimal meetings and no bureaucracy.
 
-$175k-200k + equity + great healthcare. Location: San Francisco, Cincinnati, or NYC.
+Locations: San Francisco, Cincinnati, or NYC.
 
 Things we're working on: serverless, containers/vms/unikernels, streaming, SDKs, CLIs.
 
-Message `catherine jue` on [Discord](https://discord.gg/FBrveQRcud) with what you've been building lately.
+See our [job posts](https://docs.onkernel.com/careers/intro) for more details.
 
 ## 🏄 Support
 
