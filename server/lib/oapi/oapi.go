@@ -15,9 +15,11 @@ import (
 	"net/url"
 	"path"
 	"strings"
+	"time"
 
 	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/go-chi/chi/v5"
+	"github.com/oapi-codegen/runtime"
 	strictnethttp "github.com/oapi-codegen/runtime/strictmiddleware/nethttp"
 )
 
@@ -26,10 +28,27 @@ type Error struct {
 	Message string `json:"message"`
 }
 
+// RecorderInfo defines model for RecorderInfo.
+type RecorderInfo struct {
+	// FinishedAt Timestamp when recording finished
+	FinishedAt  *time.Time `json:"finished_at"`
+	Id          string     `json:"id"`
+	IsRecording bool       `json:"isRecording"`
+
+	// StartedAt Timestamp when recording started
+	StartedAt *time.Time `json:"started_at"`
+}
+
 // StartRecordingRequest defines model for StartRecordingRequest.
 type StartRecordingRequest struct {
 	// Framerate Recording framerate in fps (overrides server default)
 	Framerate *int `json:"framerate,omitempty"`
+
+	// Id Optional identifier for the recording session. Alphanumeric or hyphen.
+	Id *string `json:"id,omitempty"`
+
+	// MaxDurationInSeconds Maximum recording duration in seconds (overrides server default)
+	MaxDurationInSeconds *int `json:"maxDurationInSeconds,omitempty"`
 
 	// MaxFileSizeInMB Maximum file size in MB (overrides server default)
 	MaxFileSizeInMB *int `json:"maxFileSizeInMB,omitempty"`
@@ -39,6 +58,9 @@ type StartRecordingRequest struct {
 type StopRecordingRequest struct {
 	// ForceStop Immediately stop without graceful shutdown. This may result in a corrupted video file.
 	ForceStop *bool `json:"forceStop,omitempty"`
+
+	// Id Identifier of the recorder to stop. Alphanumeric or hyphen.
+	Id *string `json:"id,omitempty"`
 }
 
 // BadRequestError defines model for BadRequestError.
@@ -52,6 +74,12 @@ type InternalError = Error
 
 // NotFoundError defines model for NotFoundError.
 type NotFoundError = Error
+
+// DownloadRecordingParams defines parameters for DownloadRecording.
+type DownloadRecordingParams struct {
+	// Id Optional recorder identifier. When omitted, the server uses the default recorder.
+	Id *string `form:"id,omitempty" json:"id,omitempty"`
+}
 
 // StartRecordingJSONRequestBody defines body for StartRecording for application/json ContentType.
 type StartRecordingJSONRequestBody = StartRecordingRequest
@@ -133,7 +161,10 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 	// DownloadRecording request
-	DownloadRecording(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DownloadRecording(ctx context.Context, params *DownloadRecordingParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRecorders request
+	ListRecorders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// StartRecordingWithBody request with any body
 	StartRecordingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -146,8 +177,20 @@ type ClientInterface interface {
 	StopRecording(ctx context.Context, body StopRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-func (c *Client) DownloadRecording(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDownloadRecordingRequest(c.Server)
+func (c *Client) DownloadRecording(ctx context.Context, params *DownloadRecordingParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDownloadRecordingRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListRecorders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListRecordersRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -207,7 +250,7 @@ func (c *Client) StopRecording(ctx context.Context, body StopRecordingJSONReques
 }
 
 // NewDownloadRecordingRequest generates requests for DownloadRecording
-func NewDownloadRecordingRequest(server string) (*http.Request, error) {
+func NewDownloadRecordingRequest(server string, params *DownloadRecordingParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -216,6 +259,55 @@ func NewDownloadRecordingRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/recording/download")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Id != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "id", runtime.ParamLocationQuery, *params.Id); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListRecordersRequest generates requests for ListRecorders
+func NewListRecordersRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/recording/list")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -357,7 +449,10 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 	// DownloadRecordingWithResponse request
-	DownloadRecordingWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DownloadRecordingResponse, error)
+	DownloadRecordingWithResponse(ctx context.Context, params *DownloadRecordingParams, reqEditors ...RequestEditorFn) (*DownloadRecordingResponse, error)
+
+	// ListRecordersWithResponse request
+	ListRecordersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRecordersResponse, error)
 
 	// StartRecordingWithBodyWithResponse request with any body
 	StartRecordingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartRecordingResponse, error)
@@ -394,9 +489,33 @@ func (r DownloadRecordingResponse) StatusCode() int {
 	return 0
 }
 
+type ListRecordersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *[]RecorderInfo
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListRecordersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListRecordersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type StartRecordingResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	JSON400      *BadRequestError
 	JSON409      *ConflictError
 	JSON500      *InternalError
 }
@@ -441,12 +560,21 @@ func (r StopRecordingResponse) StatusCode() int {
 }
 
 // DownloadRecordingWithResponse request returning *DownloadRecordingResponse
-func (c *ClientWithResponses) DownloadRecordingWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DownloadRecordingResponse, error) {
-	rsp, err := c.DownloadRecording(ctx, reqEditors...)
+func (c *ClientWithResponses) DownloadRecordingWithResponse(ctx context.Context, params *DownloadRecordingParams, reqEditors ...RequestEditorFn) (*DownloadRecordingResponse, error) {
+	rsp, err := c.DownloadRecording(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
 	return ParseDownloadRecordingResponse(rsp)
+}
+
+// ListRecordersWithResponse request returning *ListRecordersResponse
+func (c *ClientWithResponses) ListRecordersWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListRecordersResponse, error) {
+	rsp, err := c.ListRecorders(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListRecordersResponse(rsp)
 }
 
 // StartRecordingWithBodyWithResponse request with arbitrary body returning *StartRecordingResponse
@@ -523,6 +651,39 @@ func ParseDownloadRecordingResponse(rsp *http.Response) (*DownloadRecordingRespo
 	return response, nil
 }
 
+// ParseListRecordersResponse parses an HTTP response from a ListRecordersWithResponse call
+func ParseListRecordersResponse(rsp *http.Response) (*ListRecordersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListRecordersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []RecorderInfo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseStartRecordingResponse parses an HTTP response from a StartRecordingWithResponse call
 func ParseStartRecordingResponse(rsp *http.Response) (*StartRecordingResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -537,6 +698,13 @@ func ParseStartRecordingResponse(rsp *http.Response) (*StartRecordingResponse, e
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest ConflictError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -593,11 +761,14 @@ func ParseStopRecordingResponse(rsp *http.Response) (*StopRecordingResponse, err
 type ServerInterface interface {
 	// Download the most recently recorded video file
 	// (GET /recording/download)
-	DownloadRecording(w http.ResponseWriter, r *http.Request)
-	// Start a screen recording. Only one recording can be active at a time.
+	DownloadRecording(w http.ResponseWriter, r *http.Request, params DownloadRecordingParams)
+	// List all recorders
+	// (GET /recording/list)
+	ListRecorders(w http.ResponseWriter, r *http.Request)
+	// Start a screen recording. Only one recording per ID can be registered at a time.
 	// (POST /recording/start)
 	StartRecording(w http.ResponseWriter, r *http.Request)
-	// Stop the current recording
+	// Stop the recording
 	// (POST /recording/stop)
 	StopRecording(w http.ResponseWriter, r *http.Request)
 }
@@ -608,17 +779,23 @@ type Unimplemented struct{}
 
 // Download the most recently recorded video file
 // (GET /recording/download)
-func (_ Unimplemented) DownloadRecording(w http.ResponseWriter, r *http.Request) {
+func (_ Unimplemented) DownloadRecording(w http.ResponseWriter, r *http.Request, params DownloadRecordingParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Start a screen recording. Only one recording can be active at a time.
+// List all recorders
+// (GET /recording/list)
+func (_ Unimplemented) ListRecorders(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Start a screen recording. Only one recording per ID can be registered at a time.
 // (POST /recording/start)
 func (_ Unimplemented) StartRecording(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
-// Stop the current recording
+// Stop the recording
 // (POST /recording/stop)
 func (_ Unimplemented) StopRecording(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
@@ -636,8 +813,35 @@ type MiddlewareFunc func(http.Handler) http.Handler
 // DownloadRecording operation middleware
 func (siw *ServerInterfaceWrapper) DownloadRecording(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DownloadRecordingParams
+
+	// ------------- Optional query parameter "id" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "id", r.URL.Query(), &params.Id)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DownloadRecording(w, r)
+		siw.Handler.DownloadRecording(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListRecorders operation middleware
+func (siw *ServerInterfaceWrapper) ListRecorders(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListRecorders(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -792,6 +996,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/recording/download", wrapper.DownloadRecording)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/recording/list", wrapper.ListRecorders)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/recording/start", wrapper.StartRecording)
 	})
 	r.Group(func(r chi.Router) {
@@ -810,14 +1017,21 @@ type InternalErrorJSONResponse Error
 type NotFoundErrorJSONResponse Error
 
 type DownloadRecordingRequestObject struct {
+	Params DownloadRecordingParams
 }
 
 type DownloadRecordingResponseObject interface {
 	VisitDownloadRecordingResponse(w http.ResponseWriter) error
 }
 
+type DownloadRecording200ResponseHeaders struct {
+	XRecordingFinishedAt string
+	XRecordingStartedAt  string
+}
+
 type DownloadRecording200Videomp4Response struct {
 	Body          io.Reader
+	Headers       DownloadRecording200ResponseHeaders
 	ContentLength int64
 }
 
@@ -826,6 +1040,8 @@ func (response DownloadRecording200Videomp4Response) VisitDownloadRecordingRespo
 	if response.ContentLength != 0 {
 		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
 	}
+	w.Header().Set("X-Recording-Finished-At", fmt.Sprint(response.Headers.XRecordingFinishedAt))
+	w.Header().Set("X-Recording-Started-At", fmt.Sprint(response.Headers.XRecordingStartedAt))
 	w.WriteHeader(200)
 
 	if closer, ok := response.Body.(io.ReadCloser); ok {
@@ -876,6 +1092,31 @@ func (response DownloadRecording500JSONResponse) VisitDownloadRecordingResponse(
 	return json.NewEncoder(w).Encode(response)
 }
 
+type ListRecordersRequestObject struct {
+}
+
+type ListRecordersResponseObject interface {
+	VisitListRecordersResponse(w http.ResponseWriter) error
+}
+
+type ListRecorders200JSONResponse []RecorderInfo
+
+func (response ListRecorders200JSONResponse) VisitListRecordersResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListRecorders500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListRecorders500JSONResponse) VisitListRecordersResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type StartRecordingRequestObject struct {
 	Body *StartRecordingJSONRequestBody
 }
@@ -890,6 +1131,15 @@ type StartRecording201Response struct {
 func (response StartRecording201Response) VisitStartRecordingResponse(w http.ResponseWriter) error {
 	w.WriteHeader(201)
 	return nil
+}
+
+type StartRecording400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response StartRecording400JSONResponse) VisitStartRecordingResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
 }
 
 type StartRecording409JSONResponse struct{ ConflictErrorJSONResponse }
@@ -949,10 +1199,13 @@ type StrictServerInterface interface {
 	// Download the most recently recorded video file
 	// (GET /recording/download)
 	DownloadRecording(ctx context.Context, request DownloadRecordingRequestObject) (DownloadRecordingResponseObject, error)
-	// Start a screen recording. Only one recording can be active at a time.
+	// List all recorders
+	// (GET /recording/list)
+	ListRecorders(ctx context.Context, request ListRecordersRequestObject) (ListRecordersResponseObject, error)
+	// Start a screen recording. Only one recording per ID can be registered at a time.
 	// (POST /recording/start)
 	StartRecording(ctx context.Context, request StartRecordingRequestObject) (StartRecordingResponseObject, error)
-	// Stop the current recording
+	// Stop the recording
 	// (POST /recording/stop)
 	StopRecording(ctx context.Context, request StopRecordingRequestObject) (StopRecordingResponseObject, error)
 }
@@ -987,8 +1240,10 @@ type strictHandler struct {
 }
 
 // DownloadRecording operation middleware
-func (sh *strictHandler) DownloadRecording(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) DownloadRecording(w http.ResponseWriter, r *http.Request, params DownloadRecordingParams) {
 	var request DownloadRecordingRequestObject
+
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.DownloadRecording(ctx, request.(DownloadRecordingRequestObject))
@@ -1003,6 +1258,30 @@ func (sh *strictHandler) DownloadRecording(w http.ResponseWriter, r *http.Reques
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DownloadRecordingResponseObject); ok {
 		if err := validResponse.VisitDownloadRecordingResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListRecorders operation middleware
+func (sh *strictHandler) ListRecorders(w http.ResponseWriter, r *http.Request) {
+	var request ListRecordersRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListRecorders(ctx, request.(ListRecordersRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListRecorders")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListRecordersResponseObject); ok {
+		if err := validResponse.VisitListRecordersResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -1075,20 +1354,27 @@ func (sh *strictHandler) StopRecording(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"D8PxkwP5NwAA///q759s/hAAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
