@@ -69,7 +69,9 @@
         background: $background-tertiary;
         height: $menu-height;
         flex-shrink: 0;
-        display: flex;
+        // KERNEL: hide it
+        // display: flex;
+        display: none;
       }
 
       .video-container {
@@ -85,7 +87,9 @@
         max-width: 100%;
         flex-shrink: 0;
         flex-direction: column;
-        display: flex;
+        // KERNEL: hide it
+        // display: flex;
+        display: none;
 
         .room-menu {
           max-width: 100%;
@@ -186,9 +190,9 @@
     components: {
       'neko-connect': Connect,
       'neko-video': Video,
-      'neko-menu': Menu,
+      // 'neko-menu': Menu,
       //'neko-side': Side,
-      'neko-controls': Controls,
+      // 'neko-controls': Controls,
       //'neko-members': Members,
       //'neko-emotes': Emotes,
       //'neko-about': About,
@@ -250,6 +254,59 @@
         })
       }
     }
+
+    // KERNEL: begin custom resolution, frame rate, and readOnly control via query params
+
+    // Add a watcher so that when we are connected we can set the resolution from query params
+    @Watch('connected', { immediate: true })
+    onConnected(value: boolean) {
+      if (value) {
+        this.applyQueryResolution()
+      }
+    }
+
+    // Read ?width=, ?height=, and optional ?rate= (or their short aliases w/h/r) from the URL
+    // and set the resolution accordingly. If the current user is an admin we also request the
+    // server to switch to that resolution.
+    private applyQueryResolution() {
+      const params = new URL(location.href).searchParams
+
+      // Helper to parse integer query parameters and return `undefined` when the value is not a valid number.
+      const parseIntSafe = (keys: string[], fallback?: number): number | undefined => {
+        for (const key of keys) {
+          const value = params.get(key)
+          if (value !== null) {
+            const num = parseInt(value, 10)
+            if (!isNaN(num)) return num
+          }
+        }
+        return fallback
+      }
+
+      const width = parseIntSafe(['width', 'w'])
+      const height = parseIntSafe(['height', 'h'])
+      const rate = parseIntSafe(['rate', 'r'], 30) as number
+
+      if (width !== undefined && height !== undefined) {
+        const resolution = { width, height, rate }
+        this.$accessor.video.setResolution(resolution)
+        if (this.$accessor.user && this.$accessor.user.admin) {
+          this.$accessor.video.screenSet(resolution)
+        }
+      }
+
+      // Handle readOnly query param (e.g., ?readOnly=true or ?readonly=1)
+      const readOnlyParam = params.get('readOnly') || params.get('readonly') || params.get('ro')
+      const readOnly = typeof readOnlyParam === 'string' && ['1', 'true', 'yes'].includes(readOnlyParam.toLowerCase())
+      if (readOnly) {
+        // Disable implicit hosting so the user doesn't automatically gain control
+        this.$accessor.remote.setImplicitHosting(false)
+        // Lock the session locally to block any input even if hosting is later requested
+        this.$accessor.remote.setLocked(true)
+      }
+    }
+
+    // KERNEL: end custom resolution, frame rate, and readOnly control via query params
 
     controlAttempt() {
       if (this.shakeKbd || this.$accessor.remote.hosted) return

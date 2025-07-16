@@ -12,6 +12,23 @@ NAME="${NAME:-kernel-cu-test}"
 HOST_RECORDINGS_DIR="$SCRIPT_DIR/recordings"
 mkdir -p "$HOST_RECORDINGS_DIR"
 
+# RUN_AS_ROOT defaults to false in docker
+RUN_AS_ROOT="${RUN_AS_ROOT:-false}"
+
+# Build Chromium flags file and mount
+CHROMIUM_FLAGS_DEFAULT="--user-data-dir=/home/kernel/user-data --disable-dev-shm-usage --disable-gpu --start-maximized --disable-software-rasterizer --remote-allow-origins=*"
+if [[ "$RUN_AS_ROOT" == "true" ]]; then
+  CHROMIUM_FLAGS_DEFAULT="$CHROMIUM_FLAGS_DEFAULT --no-sandbox --no-zygote"
+fi
+CHROMIUM_FLAGS="${CHROMIUM_FLAGS:-$CHROMIUM_FLAGS_DEFAULT}"
+rm -rf .tmp/chromium
+mkdir -p .tmp/chromium
+FLAGS_FILE=".tmp/chromium/flags"
+echo "$CHROMIUM_FLAGS" > "$FLAGS_FILE"
+
+echo "flags file: $FLAGS_FILE"
+cat "$FLAGS_FILE"
+
 # Build docker run argument list
 RUN_ARGS=(
   --name "$NAME"
@@ -23,7 +40,8 @@ RUN_ARGS=(
   -e DISPLAY_NUM=1 \
   -e HEIGHT=768 \
   -e WIDTH=1024 \
-  -e CHROMIUM_FLAGS="--no-sandbox --disable-dev-shm-usage --disable-gpu --start-maximized --disable-software-rasterizer --remote-allow-origins=* --no-zygote"
+  -e RUN_AS_ROOT="$RUN_AS_ROOT" \
+  --mount type=bind,src="$FLAGS_FILE",dst=/chromium/flags,ro
 )
 
 if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
@@ -34,7 +52,7 @@ fi
 # noVNC vs WebRTC port mapping
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   echo "Running container with WebRTC"
-  RUN_ARGS+=( -p 443:8080 )
+  RUN_ARGS+=( -p 8080:8080 )
   RUN_ARGS+=( -e ENABLE_WEBRTC=true )
   if [[ -n "${NEKO_ICESERVERS:-}" ]]; then
     RUN_ARGS+=( -e NEKO_ICESERVERS="$NEKO_ICESERVERS" )
@@ -45,8 +63,8 @@ if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   fi
 else
   echo "Running container with noVNC"
-  RUN_ARGS+=( -p 443:6080 )
+  RUN_ARGS+=( -p 8080:6080 )
 fi
 
 docker rm -f "$NAME" 2>/dev/null || true
-docker run -d "${RUN_ARGS[@]}" "$IMAGE"
+docker run -it "${RUN_ARGS[@]}" "$IMAGE"

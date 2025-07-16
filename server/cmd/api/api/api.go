@@ -18,6 +18,8 @@ type ApiService struct {
 	factory       recorder.FFmpegRecorderFactory
 }
 
+var _ oapi.StrictServerInterface = (*ApiService)(nil)
+
 func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory) (*ApiService, error) {
 	switch {
 	case recordManager == nil:

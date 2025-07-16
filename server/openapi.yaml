@@ -101,6 +101,40 @@ paths:
                   $ref: "#/components/schemas/RecorderInfo"
         "500":
           $ref: "#/components/responses/InternalError"
+  /computer/click_mouse:
+    post:
+      summary: Simulate a mouse click action on the host computer
+      operationId: clickMouse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClickMouseRequest"
+      responses:
+        "200":
+          description: Mouse action performed
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /computer/move_mouse:
+    post:
+      summary: Move the mouse cursor to the specified coordinates on the host computer
+      operationId: moveMouse
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MoveMouseRequest"
+      responses:
+        "200":
+          description: Mouse cursor moved
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   schemas:
     StartRecordingRequest:
@@ -161,6 +195,54 @@ components:
           format: date-time
           nullable: true
           description: Timestamp when recording finished
+    ClickMouseRequest:
+      type: object
+      required:
+        - x
+        - y
+      properties:
+        button:
+          type: string
+          description: Mouse button to interact with
+          enum: [left, right, middle, back, forward]
+        click_type:
+          type: string
+          description: Type of click action
+          enum: [down, up, click]
+        x:
+          type: integer
+          description: X coordinate of the click position
+        y:
+          type: integer
+          description: Y coordinate of the click position
+        hold_keys:
+          type: array
+          description: Modifier keys to hold during the click
+          items:
+            type: string
+        num_clicks:
+          type: integer
+          description: Number of times to repeat the click
+          default: 1
+      additionalProperties: false
+    MoveMouseRequest:
+      type: object
+      required:
+        - x
+        - y
+      properties:
+        x:
+          type: integer
+          description: X coordinate to move the cursor to
+        y:
+          type: integer
+          description: Y coordinate to move the cursor to
+        hold_keys:
+          type: array
+          description: Modifier keys to hold during the move
+          items:
+            type: string
+      additionalProperties: false
   responses:
     BadRequestError:
       description: Bad Request
@@ -185,4 +267,4 @@ components:
       content:
         application/json:
           schema:
-            $ref: "#/components/schemas/Error" 
+            $ref: "#/components/schemas/Error"
