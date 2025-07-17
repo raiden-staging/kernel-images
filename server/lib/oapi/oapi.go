@@ -1366,6 +1366,18 @@ func (siw *ServerInterfaceWrapper) StopRecording(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
+// PasteClipboard operation middleware
+func (siw *ServerInterfaceWrapper) PasteClipboard(w http.ResponseWriter, r *http.Request) {
+    handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        siw.Handler.PasteClipboard(w, r)
+    }))
+    for _, mw := range siw.HandlerMiddlewares {
+        handler = mw(handler)
+    }
+    handler.ServeHTTP(w, r)
+}
+
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -1778,6 +1790,10 @@ type StrictServerInterface interface {
 	// Stop the recording
 	// (POST /recording/stop)
 	StopRecording(ctx context.Context, request StopRecordingRequestObject) (StopRecordingResponseObject, error)
+
+	// Paste text via system clipboard and simulate paste
+	// (POST /computer/paste)
+	PasteClipboard(ctx context.Context, request PasteClipboardRequestObject) (PasteClipboardResponseObject, error)
 }
 
 type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
@@ -1982,6 +1998,36 @@ func (sh *strictHandler) StopRecording(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
 	}
 }
+
+// PasteClipboard operation middleware
+func (sh *strictHandler) PasteClipboard(w http.ResponseWriter, r *http.Request) {
+    var request PasteClipboardRequestObject
+    var body PasteClipboardJSONRequestBody
+    if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+        sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+        return
+    }
+    request.Body = &body
+
+    handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, req interface{}) (interface{}, error) {
+        return sh.ssi.PasteClipboard(ctx, req.(PasteClipboardRequestObject))
+    }
+    for _, mw := range sh.middlewares {
+        handler = mw(handler, "PasteClipboard")
+    }
+
+    resp, err := handler(r.Context(), w, r, request)
+    if err != nil {
+        sh.options.ResponseErrorHandlerFunc(w, r, err)
+    } else if okResp, ok := resp.(PasteClipboardResponseObject); ok {
+        if err := okResp.VisitPasteClipboardResponse(w); err != nil {
+            sh.options.ResponseErrorHandlerFunc(w, r, err)
+        }
+    } else if resp != nil {
+        sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", resp))
+    }
+}
+
 
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
