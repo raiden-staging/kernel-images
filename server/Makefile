@@ -24,10 +24,10 @@ oapi-generate: $(OAPI_CODEGEN)
 	$(OAPI_CODEGEN) -config ./oapi-codegen.yaml ./openapi-3.0.yaml
 	go mod tidy
 
-build: | $(BIN_DIR)
+build: oapi-generate | $(BIN_DIR)
 	go build -o $(BIN_DIR)/api ./cmd/api
 
-dev: build $(RECORDING_DIR)
+dev: oapi-generate build $(RECORDING_DIR)
 	OUTPUT_DIR=$(RECORDING_DIR) DISPLAY_NUM=$(DISPLAY_NUM) ./bin/api
 
 test:
