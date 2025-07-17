@@ -1366,17 +1366,6 @@ func (siw *ServerInterfaceWrapper) StopRecording(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
-// PasteClipboard operation middleware
-func (siw *ServerInterfaceWrapper) PasteClipboard(w http.ResponseWriter, r *http.Request) {
-    handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        siw.Handler.PasteClipboard(w, r)
-    }))
-    for _, mw := range siw.HandlerMiddlewares {
-        handler = mw(handler)
-    }
-    handler.ServeHTTP(w, r)
-}
-
 
 type UnescapedCookieParamError struct {
 	ParamName string
