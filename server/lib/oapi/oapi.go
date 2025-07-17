@@ -1759,6 +1759,42 @@ func (response StopRecording500JSONResponse) VisitStopRecordingResponse(w http.R
 	return json.NewEncoder(w).Encode(response)
 }
 
+// PasteClipboardRequestObject defines the request for POST /computer/paste
+type PasteClipboardRequestObject struct {
+    Body *PasteClipboardJSONRequestBody
+}
+
+// PasteClipboardResponseObject is the interface for responses from POST /computer/paste
+type PasteClipboardResponseObject interface {
+    VisitPasteClipboardResponse(w http.ResponseWriter) error
+}
+
+// PasteClipboard200Response indicates a successful paste
+type PasteClipboard200Response struct{}
+
+func (response PasteClipboard200Response) VisitPasteClipboardResponse(w http.ResponseWriter) error {
+    w.WriteHeader(200)
+    return nil
+}
+
+// PasteClipboard400JSONResponse indicates a bad request
+type PasteClipboard400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response PasteClipboard400JSONResponse) VisitPasteClipboardResponse(w http.ResponseWriter) error {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(400)
+    return json.NewEncoder(w).Encode(response)
+}
+
+// PasteClipboard500JSONResponse indicates an internal server error
+type PasteClipboard500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response PasteClipboard500JSONResponse) VisitPasteClipboardResponse(w http.ResponseWriter) error {
+    w.Header().Set("Content-Type", "application/json")
+    w.WriteHeader(500)
+    return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// Simulate a mouse click action on the host computer
