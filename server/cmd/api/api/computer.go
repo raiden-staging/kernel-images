@@ -110,20 +110,20 @@ func (s *ApiService) ClickMouse(ctx context.Context, request oapi.ClickMouseRequ
 }
 
 func (s *ApiService) PasteClipboard(ctx context.Context, request oapi.PasteClipboardRequestObject) (oapi.PasteClipboardResponseObject, error) {
-	log := logger.FromContext(ctx)
-	if request.Body == nil || request.Body.Text == nil || *request.Body.Text == "" {
-		return oapi.PasteClipboard400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "text is required"}}, nil
-	}
-	text := *request.Body.Text
-	clip := exec.Command("bash", "-c", fmt.Sprintf("printf %%s %q | xclip -selection clipboard", text))
-	clip.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", defaultXdoTool.display))
-	if out, err := clip.CombinedOutput(); err != nil {
-		log.Error("failed to set clipboard", "err", err, "output", string(out))
-		return oapi.PasteClipboard500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to set clipboard"}}, nil
-	}
-	if _, err := defaultXdoTool.Run(ctx, "key", "ctrl+v"); err != nil {
-		log.Error("failed to paste text", "err", err)
-		return oapi.PasteClipboard500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to paste text"}}, nil
-	}
-	return oapi.PasteClipboard200Response{}, nil
+    log := logger.FromContext(ctx)
+    if request.Body == nil || request.Body.Text == "" {
+        return oapi.PasteClipboard400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "text is required"}}, nil
+    }
+    text := request.Body.Text
+    clip := exec.Command("bash", "-c", fmt.Sprintf("printf %%s %q | xclip -selection clipboard", text))
+    clip.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", defaultXdoTool.display))
+    if out, err := clip.CombinedOutput(); err != nil {
+        log.Error("failed to set clipboard", "err", err, "output", string(out))
+        return oapi.PasteClipboard500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to set clipboard"}}, nil
+    }
+    if _, err := defaultXdoTool.Run(ctx, "key", "ctrl+v"); err != nil {
+        log.Error("failed to paste text", "err", err)
+        return oapi.PasteClipboard500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to paste text"}}, nil
+    }
+    return oapi.PasteClipboard200Response{}, nil
 }
