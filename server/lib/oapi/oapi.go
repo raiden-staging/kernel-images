@@ -1286,6 +1286,17 @@ func (siw *ServerInterfaceWrapper) MoveMouse(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// PasteClipboard operation middleware
+func (siw *ServerInterfaceWrapper) PasteClipboard(w http.ResponseWriter, r *http.Request) {
+    handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+        siw.Handler.PasteClipboard(w, r)
+    }))
+    for _, middleware := range siw.HandlerMiddlewares {
+        handler = middleware(handler)
+    }
+    handler.ServeHTTP(w, r)
+}
+
 // DownloadRecording operation middleware
 func (siw *ServerInterfaceWrapper) DownloadRecording(w http.ResponseWriter, r *http.Request) {
 
