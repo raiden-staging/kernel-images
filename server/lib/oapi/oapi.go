@@ -41,12 +41,23 @@ const (
 
 // ClickMouseRequest defines model for ClickMouseRequest.
 type ClickMouseRequest struct {
-	Button    *ClickMouseRequestButton    `json:"button,omitempty"`
+	// Button Mouse button to interact with
+	Button *ClickMouseRequestButton `json:"button,omitempty"`
+
+	// ClickType Type of click action
 	ClickType *ClickMouseRequestClickType `json:"click_type,omitempty"`
-	HoldKeys  *[]string                   `json:"hold_keys,omitempty"`
-	NumClicks *int                        `json:"num_clicks,omitempty"`
-	X         int                         `json:"x"`
-	Y         int                         `json:"y"`
+
+	// HoldKeys Modifier keys to hold during the click
+	HoldKeys *[]string `json:"hold_keys,omitempty"`
+
+	// NumClicks Number of times to repeat the click
+	NumClicks *int `json:"num_clicks,omitempty"`
+
+	// X X coordinate of the click position
+	X int `json:"x"`
+
+	// Y Y coordinate of the click position
+	Y int `json:"y"`
 }
 
 // ClickMouseRequestButton Mouse button to interact with
@@ -55,43 +66,62 @@ type ClickMouseRequestButton string
 // ClickMouseRequestClickType Type of click action
 type ClickMouseRequestClickType string
 
+// Error defines model for Error.
+type Error struct {
+	Message string `json:"message"`
+}
+
 // MoveMouseRequest defines model for MoveMouseRequest.
 type MoveMouseRequest struct {
+	// HoldKeys Modifier keys to hold during the move
 	HoldKeys *[]string `json:"hold_keys,omitempty"`
-	X        int       `json:"x"`
-	Y        int       `json:"y"`
+
+	// X X coordinate to move the cursor to
+	X int `json:"x"`
+
+	// Y Y coordinate to move the cursor to
+	Y int `json:"y"`
 }
 
 // PasteClipboardRequest defines model for PasteClipboardRequest.
 type PasteClipboardRequest struct {
-	Text string `json:"text"`
+    // Text text to paste
+    Text string `json:"text"`
 }
 
 // RecorderInfo defines model for RecorderInfo.
 type RecorderInfo struct {
+	// FinishedAt Timestamp when recording finished
 	FinishedAt  *time.Time `json:"finished_at"`
 	Id          string     `json:"id"`
 	IsRecording bool       `json:"isRecording"`
-	StartedAt   *time.Time `json:"started_at"`
+
+	// StartedAt Timestamp when recording started
+	StartedAt *time.Time `json:"started_at"`
 }
 
 // StartRecordingRequest defines model for StartRecordingRequest.
 type StartRecordingRequest struct {
-	Framerate            *int   `json:"framerate,omitempty"`
-	Id                   *string `json:"id,omitempty"`
-	MaxDurationInSeconds *int   `json:"maxDurationInSeconds,omitempty"`
-	MaxFileSizeInMB      *int   `json:"maxFileSizeInMB,omitempty"`
+	// Framerate Recording framerate in fps (overrides server default)
+	Framerate *int `json:"framerate,omitempty"`
+
+	// Id Optional identifier for the recording session. Alphanumeric or hyphen.
+	Id *string `json:"id,omitempty"`
+
+	// MaxDurationInSeconds Maximum recording duration in seconds (overrides server default)
+	MaxDurationInSeconds *int `json:"maxDurationInSeconds,omitempty"`
+
+	// MaxFileSizeInMB Maximum file size in MB (overrides server default)
+	MaxFileSizeInMB *int `json:"maxFileSizeInMB,omitempty"`
 }
 
 // StopRecordingRequest defines model for StopRecordingRequest.
 type StopRecordingRequest struct {
-	ForceStop *bool   `json:"forceStop,omitempty"`
-	Id        *string `json:"id,omitempty"`
-}
+	// ForceStop Immediately stop without graceful shutdown. This may result in a corrupted video file.
+	ForceStop *bool `json:"forceStop,omitempty"`
 
-// Error defines model for Error.
-type Error struct {
-	Message string `json:"message"`
+	// Id Identifier of the recorder to stop. Alphanumeric or hyphen.
+	Id *string `json:"id,omitempty"`
 }
 
 // BadRequestError defines model for BadRequestError.
@@ -108,60 +138,80 @@ type NotFoundError = Error
 
 // DownloadRecordingParams defines parameters for DownloadRecording.
 type DownloadRecordingParams struct {
+	// Id Optional recorder identifier. When omitted, the server uses the default recorder.
 	Id *string `form:"id,omitempty" json:"id,omitempty"`
 }
 
-// ClickMouseJSONRequestBody defines body for ClickMouse.
+// ClickMouseJSONRequestBody defines body for ClickMouse for application/json ContentType.
 type ClickMouseJSONRequestBody = ClickMouseRequest
 
-// MoveMouseJSONRequestBody defines body for MoveMouse.
+// MoveMouseJSONRequestBody defines body for MoveMouse for application/json ContentType.
 type MoveMouseJSONRequestBody = MoveMouseRequest
 
-// PasteClipboardJSONRequestBody defines body for PasteClipboard.
+// PasteClipboardJSONRequestBody defines body for PasteClipboard for application/json ContentType.
 type PasteClipboardJSONRequestBody = PasteClipboardRequest
 
-// StartRecordingJSONRequestBody defines body for StartRecording.
+// StartRecordingJSONRequestBody defines body for StartRecording for application/json ContentType.
 type StartRecordingJSONRequestBody = StartRecordingRequest
 
-// StopRecordingJSONRequestBody defines body for StopRecording.
+// StopRecordingJSONRequestBody defines body for StopRecording for application/json ContentType.
 type StopRecordingJSONRequestBody = StopRecordingRequest
 
-// RequestEditorFn callback signature for mutating requests.
+// RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
-// HttpRequestDoer performs HTTP requests.
+// Doer performs HTTP requests.
+//
+// The standard http.Client implements this interface.
 type HttpRequestDoer interface {
 	Do(req *http.Request) (*http.Response, error)
 }
 
-// Client conforms to the OpenAPI3 specification for this service.
+// Client which conforms to the OpenAPI3 specification for this service.
 type Client struct {
-	Server         string
-	Client         HttpRequestDoer
+	// The endpoint of the server conforming to this interface, with scheme,
+	// https://api.deepmap.com for example. This can contain a path relative
+	// to the server, such as https://api.deepmap.com/dev-test, and all the
+	// paths in the swagger spec will be appended to the server.
+	Server string
+
+	// Doer for performing requests, typically a *http.Client with any
+	// customized settings, such as certificate chains.
+	Client HttpRequestDoer
+
+	// A list of callbacks for modifying requests which are generated before sending over
+	// the network.
 	RequestEditors []RequestEditorFn
 }
 
-// ClientOption allows setting custom parameters during construction.
+// ClientOption allows setting custom parameters during construction
 type ClientOption func(*Client) error
 
-// NewClient creates a new Client with reasonable defaults.
+// Creates a new Client, with reasonable defaults
 func NewClient(server string, opts ...ClientOption) (*Client, error) {
-	c := Client{Server: server}
+	// create a client with sane default values
+	client := Client{
+		Server: server,
+	}
+	// mutate client and add all optional params
 	for _, o := range opts {
-		if err := o(&c); err != nil {
+		if err := o(&client); err != nil {
 			return nil, err
 		}
 	}
-	if !strings.HasSuffix(c.Server, "/") {
-		c.Server += "/"
+	// ensure the server URL always has a trailing slash
+	if !strings.HasSuffix(client.Server, "/") {
+		client.Server += "/"
 	}
-	if c.Client == nil {
-		c.Client = &http.Client{}
+	// create httpClient, if not already present
+	if client.Client == nil {
+		client.Client = &http.Client{}
 	}
-	return &c, nil
+	return &client, nil
 }
 
-// WithHTTPClient overrides the default HTTP client.
+// WithHTTPClient allows overriding the default Doer, which is
+// automatically created using http.Client. This is useful for tests.
 func WithHTTPClient(doer HttpRequestDoer) ClientOption {
 	return func(c *Client) error {
 		c.Client = doer
@@ -169,7 +219,8 @@ func WithHTTPClient(doer HttpRequestDoer) ClientOption {
 	}
 }
 
-// WithRequestEditorFn adds a request editor callback.
+// WithRequestEditorFn allows setting up a callback function, which will be
+// called right before sending the request. This can be used to mutate the request.
 func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 	return func(c *Client) error {
 		c.RequestEditors = append(c.RequestEditors, fn)
@@ -177,43 +228,40 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 	}
 }
 
-// ClientInterface is the interface for the generated client.
+// The interface specification for the client above.
 type ClientInterface interface {
-	ClickMouse(ctx context.Context, body ClickMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// ClickMouseWithBody request with any body
 	ClickMouseWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	MoveMouse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ClickMouse(ctx context.Context, body ClickMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MoveMouseWithBody request with any body
 	MoveMouseWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	PasteClipboard(ctx context.Context, body PasteClipboardJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-	PasteClipboardWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	MoveMouse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DownloadRecording request
 	DownloadRecording(ctx context.Context, params *DownloadRecordingParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListRecorders request
 	ListRecorders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	StartRecording(ctx context.Context, body StartRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// StartRecordingWithBody request with any body
 	StartRecordingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	StopRecording(ctx context.Context, body StopRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	StartRecording(ctx context.Context, body StartRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopRecordingWithBody request with any body
 	StopRecordingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	StopRecording(ctx context.Context, body StopRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PasteClipboardWithBody request with any body
+	PasteClipboardWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	// PasteClipboard request
+	PasteClipboard(ctx context.Context, body PasteClipboardJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-// applyEditors runs all request editor callbacks.
-func (c *Client) applyEditors(ctx context.Context, req *http.Request, editors []RequestEditorFn) error {
-	for _, e := range c.RequestEditors {
-		if err := e(ctx, req); err != nil {
-			return err
-		}
-	}
-	for _, e := range editors {
-		if err := e(ctx, req); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// ClickMouseWithBody executes a ClickMouse request with arbitrary body.
 func (c *Client) ClickMouseWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewClickMouseRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -226,7 +274,6 @@ func (c *Client) ClickMouseWithBody(ctx context.Context, contentType string, bod
 	return c.Client.Do(req)
 }
 
-// ClickMouse executes a ClickMouse request with JSON body.
 func (c *Client) ClickMouse(ctx context.Context, body ClickMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewClickMouseRequest(c.Server, body)
 	if err != nil {
@@ -239,7 +286,6 @@ func (c *Client) ClickMouse(ctx context.Context, body ClickMouseJSONRequestBody,
 	return c.Client.Do(req)
 }
 
-// MoveMouseWithBody executes a MoveMouse request with arbitrary body.
 func (c *Client) MoveMouseWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMoveMouseRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -252,7 +298,6 @@ func (c *Client) MoveMouseWithBody(ctx context.Context, contentType string, body
 	return c.Client.Do(req)
 }
 
-// MoveMouse executes a MoveMouse request with JSON body.
 func (c *Client) MoveMouse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMoveMouseRequest(c.Server, body)
 	if err != nil {
@@ -265,33 +310,6 @@ func (c *Client) MoveMouse(ctx context.Context, body MoveMouseJSONRequestBody, r
 	return c.Client.Do(req)
 }
 
-// PasteClipboardWithBody executes a PasteClipboard request with arbitrary body.
-func (c *Client) PasteClipboardWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPasteClipboardRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PasteClipboard executes a PasteClipboard request with JSON body.
-func (c *Client) PasteClipboard(ctx context.Context, body PasteClipboardJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPasteClipboardRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// DownloadRecording executes a DownloadRecording request.
 func (c *Client) DownloadRecording(ctx context.Context, params *DownloadRecordingParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDownloadRecordingRequest(c.Server, params)
 	if err != nil {
@@ -304,7 +322,6 @@ func (c *Client) DownloadRecording(ctx context.Context, params *DownloadRecordin
 	return c.Client.Do(req)
 }
 
-// ListRecorders executes a ListRecorders request.
 func (c *Client) ListRecorders(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListRecordersRequest(c.Server)
 	if err != nil {
@@ -317,7 +334,6 @@ func (c *Client) ListRecorders(ctx context.Context, reqEditors ...RequestEditorF
 	return c.Client.Do(req)
 }
 
-// StartRecordingWithBody executes a StartRecording request with arbitrary body.
 func (c *Client) StartRecordingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStartRecordingRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -330,7 +346,6 @@ func (c *Client) StartRecordingWithBody(ctx context.Context, contentType string,
 	return c.Client.Do(req)
 }
 
-// StartRecording executes a StartRecording request with JSON body.
 func (c *Client) StartRecording(ctx context.Context, body StartRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStartRecordingRequest(c.Server, body)
 	if err != nil {
@@ -343,7 +358,6 @@ func (c *Client) StartRecording(ctx context.Context, body StartRecordingJSONRequ
 	return c.Client.Do(req)
 }
 
-// StopRecordingWithBody executes a StopRecording request with arbitrary body.
 func (c *Client) StopRecordingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStopRecordingRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -356,7 +370,6 @@ func (c *Client) StopRecordingWithBody(ctx context.Context, contentType string, 
 	return c.Client.Do(req)
 }
 
-// StopRecording executes a StopRecording request with JSON body.
 func (c *Client) StopRecording(ctx context.Context, body StopRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStopRecordingRequest(c.Server, body)
 	if err != nil {
@@ -369,212 +382,300 @@ func (c *Client) StopRecording(ctx context.Context, body StopRecordingJSONReques
 	return c.Client.Do(req)
 }
 
-// NewClickMouseRequest creates a ClickMouse request with JSON body.
+// PasteClipboardWithBody sends a PasteClipboard request with arbitrary body.
+func (c *Client) PasteClipboardWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+    req, err := NewPasteClipboardRequestWithBody(c.Server, contentType, body)
+    if err != nil {
+        return nil, err
+    }
+    req = req.WithContext(ctx)
+    if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+        return nil, err
+    }
+    return c.Client.Do(req)
+}
+
+// PasteClipboard sends a PasteClipboard request with application/json.
+func (c *Client) PasteClipboard(ctx context.Context, body PasteClipboardJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+    req, err := NewPasteClipboardRequest(c.Server, body)
+    if err != nil {
+        return nil, err
+    }
+    req = req.WithContext(ctx)
+    if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+        return nil, err
+    }
+    return c.Client.Do(req)
+}
+
+// NewClickMouseRequest calls the generic ClickMouse builder with application/json body
 func NewClickMouseRequest(server string, body ClickMouseJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	return NewClickMouseRequestWithBody(server, "application/json", bytes.NewReader(buf))
+	bodyReader = bytes.NewReader(buf)
+	return NewClickMouseRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewClickMouseRequestWithBody generates a ClickMouse request with arbitrary body.
-func NewClickMouseRequestWithBody(server, contentType string, body io.Reader) (*http.Request, error) {
+// NewClickMouseRequestWithBody generates requests for ClickMouse with any type of body
+func NewClickMouseRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
-	path := "/computer/click_mouse"
-	if path[0] == '/' {
-		path = "." + path
+
+	operationPath := fmt.Sprintf("/computer/click_mouse")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
 	}
-	u, err := serverURL.Parse(path)
+
+	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", u.String(), body)
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Add("Content-Type", contentType)
+
 	return req, nil
 }
 
-// NewMoveMouseRequest creates a MoveMouse request with JSON body.
+// NewMoveMouseRequest calls the generic MoveMouse builder with application/json body
 func NewMoveMouseRequest(server string, body MoveMouseJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	return NewMoveMouseRequestWithBody(server, "application/json", bytes.NewReader(buf))
+	bodyReader = bytes.NewReader(buf)
+	return NewMoveMouseRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewMoveMouseRequestWithBody generates a MoveMouse request with arbitrary body.
-func NewMoveMouseRequestWithBody(server, contentType string, body io.Reader) (*http.Request, error) {
+// NewMoveMouseRequestWithBody generates requests for MoveMouse with any type of body
+func NewMoveMouseRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
-	path := "/computer/move_mouse"
-	if path[0] == '/' {
-		path = "." + path
+
+	operationPath := fmt.Sprintf("/computer/move_mouse")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
 	}
-	u, err := serverURL.Parse(path)
+
+	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", u.String(), body)
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Add("Content-Type", contentType)
+
 	return req, nil
 }
 
-// NewPasteClipboardRequest creates a PasteClipboard request with JSON body.
-func NewPasteClipboardRequest(server string, body PasteClipboardJSONRequestBody) (*http.Request, error) {
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	return NewPasteClipboardRequestWithBody(server, "application/json", bytes.NewReader(buf))
-}
-
-// NewPasteClipboardRequestWithBody generates a PasteClipboard request with arbitrary body.
-func NewPasteClipboardRequestWithBody(server, contentType string, body io.Reader) (*http.Request, error) {
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-	path := "/computer/paste"
-	if path[0] == '/' {
-		path = "." + path
-	}
-	u, err := serverURL.Parse(path)
-	if err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequest("POST", u.String(), body)
-	if err != nil {
-		return nil, err
-	}
-	req.Header.Add("Content-Type", contentType)
-	return req, nil
-}
-
-// NewDownloadRecordingRequest generates a DownloadRecording request.
+// NewDownloadRecordingRequest generates requests for DownloadRecording
 func NewDownloadRecordingRequest(server string, params *DownloadRecordingParams) (*http.Request, error) {
+	var err error
+
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
-	path := "/recording/download"
-	if path[0] == '/' {
-		path = "." + path
+
+	operationPath := fmt.Sprintf("/recording/download")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
 	}
-	u, err := serverURL.Parse(path)
+
+	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
 	}
-	if params != nil && params.Id != nil {
-		q := u.Query()
-		frag, err := runtime.StyleParamWithLocation("form", true, "id", runtime.ParamLocationQuery, *params.Id)
-		if err != nil {
-			return nil, err
-		}
-		parsed, err := url.ParseQuery(frag)
-		if err != nil {
-			return nil, err
-		}
-		for k, vv := range parsed {
-			for _, v := range vv {
-				q.Add(k, v)
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if params.Id != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "id", runtime.ParamLocationQuery, *params.Id); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
 			}
+
 		}
-		u.RawQuery = q.Encode()
+
+		queryURL.RawQuery = queryValues.Encode()
 	}
-	return http.NewRequest("GET", u.String(), nil)
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
-// NewListRecordersRequest generates a ListRecorders request.
+// NewListRecordersRequest generates requests for ListRecorders
 func NewListRecordersRequest(server string) (*http.Request, error) {
+	var err error
+
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
-	path := "/recording/list"
-	if path[0] == '/' {
-		path = "." + path
+
+	operationPath := fmt.Sprintf("/recording/list")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
 	}
-	u, err := serverURL.Parse(path)
+
+	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
 	}
-	return http.NewRequest("GET", u.String(), nil)
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
 }
 
-// NewStartRecordingRequest creates a StartRecording request with JSON body.
+// NewStartRecordingRequest calls the generic StartRecording builder with application/json body
 func NewStartRecordingRequest(server string, body StartRecordingJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	return NewStartRecordingRequestWithBody(server, "application/json", bytes.NewReader(buf))
+	bodyReader = bytes.NewReader(buf)
+	return NewStartRecordingRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewStartRecordingRequestWithBody generates a StartRecording request with arbitrary body.
-func NewStartRecordingRequestWithBody(server, contentType string, body io.Reader) (*http.Request, error) {
+// NewStartRecordingRequestWithBody generates requests for StartRecording with any type of body
+func NewStartRecordingRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
-	path := "/recording/start"
-	if path[0] == '/' {
-		path = "." + path
+
+	operationPath := fmt.Sprintf("/recording/start")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
 	}
-	u, err := serverURL.Parse(path)
+
+	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", u.String(), body)
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Add("Content-Type", contentType)
+
 	return req, nil
 }
 
-// NewStopRecordingRequest creates a StopRecording request with JSON body.
+// NewStopRecordingRequest calls the generic StopRecording builder with application/json body
 func NewStopRecordingRequest(server string, body StopRecordingJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
 		return nil, err
 	}
-	return NewStopRecordingRequestWithBody(server, "application/json", bytes.NewReader(buf))
+	bodyReader = bytes.NewReader(buf)
+	return NewStopRecordingRequestWithBody(server, "application/json", bodyReader)
 }
 
-// NewStopRecordingRequestWithBody generates a StopRecording request with arbitrary body.
-func NewStopRecordingRequestWithBody(server, contentType string, body io.Reader) (*http.Request, error) {
+// NewStopRecordingRequestWithBody generates requests for StopRecording with any type of body
+func NewStopRecordingRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
 	serverURL, err := url.Parse(server)
 	if err != nil {
 		return nil, err
 	}
-	path := "/recording/stop"
-	if path[0] == '/' {
-		path = "." + path
+
+	operationPath := fmt.Sprintf("/recording/stop")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
 	}
-	u, err := serverURL.Parse(path)
+
+	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequest("POST", u.String(), body)
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
+
 	req.Header.Add("Content-Type", contentType)
+
 	return req, nil
 }
 
+// NewPasteClipboardRequest calls the generic PasteClipboard builder with application/json body.
+func NewPasteClipboardRequest(server string, body PasteClipboardJSONRequestBody) (*http.Request, error) {
+    var bodyReader io.Reader
+    buf, err := json.Marshal(body)
+    if err != nil {
+        return nil, err
+    }
+    bodyReader = bytes.NewReader(buf)
+    return NewPasteClipboardRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewPasteClipboardRequestWithBody generates requests for PasteClipboard with any type of body.
+func NewPasteClipboardRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+    serverURL, err := url.Parse(server)
+    if err != nil {
+        return nil, err
+    }
+    operationPath := fmt.Sprintf("/computer/paste")
+    if operationPath[0] == '/' {
+        operationPath = "." + operationPath
+    }
+    queryURL, err := serverURL.Parse(operationPath)
+    if err != nil {
+        return nil, err
+    }
+    req, err := http.NewRequest("POST", queryURL.String(), body)
+    if err != nil {
+        return nil, err
+    }
+    req.Header.Add("Content-Type", contentType)
+    return req, nil
+}
 
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
@@ -1104,6 +1205,8 @@ type ServerInterface interface {
 	// Stop the recording
 	// (POST /recording/stop)
 	StopRecording(w http.ResponseWriter, r *http.Request)
+	// PasteClipboard(w http.ResponseWriter, r *http.Request)
+	PasteClipboard(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -1370,6 +1473,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/computer/move_mouse", wrapper.MoveMouse)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/computer/paste", wrapper.PasteClipboard)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/recording/download", wrapper.DownloadRecording)
