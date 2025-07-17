@@ -8,8 +8,10 @@ const GlobalPaste: PluginObject<undefined> = {
       async (e: KeyboardEvent) => {
         if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v') {
           e.preventDefault()
+          console.log(`[vue:globalPaste]:call`)
           try {
             const text = await navigator.clipboard.readText()
+            console.log(`[vue:globalPaste]:payload:` , text)
             await fetch('http://localhost:10001/computer/paste', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
