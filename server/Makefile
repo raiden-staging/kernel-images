@@ -1,9 +1,12 @@
 SHELL := /bin/bash
 .PHONY: oapi-generate build dev test clean
 
-BIN_DIR ?= $(CURDIR)/bin
-OAPI_CODEGEN ?= $(BIN_DIR)/oapi-codegen
-RECORDING_DIR ?= $(CURDIR)/recordings
+BIN_DIR        ?= $(CURDIR)/bin
+OAPI_CODEGEN   ?= $(BIN_DIR)/oapi-codegen
+RECORDING_DIR  ?= $(CURDIR)/recordings
+OAPI_SPEC      ?= $(CURDIR)/openapi.yaml
+OAPI_SPEC_30   ?= $(CURDIR)/openapi-3.0.yaml
+OAPI_OUTPUT    ?= $(CURDIR)/server/lib/oapi.go
 
 $(BIN_DIR):
 	mkdir -p $(BIN_DIR)
@@ -14,17 +17,17 @@ $(RECORDING_DIR):
 $(OAPI_CODEGEN): | $(BIN_DIR)
 	GOBIN=$(BIN_DIR) go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
 
-# Generate Go code from the OpenAPI spec
-# 1. Convert 3.1 → 3.0 since oapi-codegen doesn't support 3.1 yet (https://github.com/oapi-codegen/oapi-codegen/issues/373)
-# 2. Run oapi-codegen with our config
-# 3. go mod tidy to pull deps
-oapi-generate: $(OAPI_CODEGEN)
+$(OAPI_SPEC_30): $(OAPI_SPEC)
 	pnpm i -g @apiture/openapi-down-convert
-	openapi-down-convert --input openapi.yaml --output openapi-3.0.yaml
-	$(OAPI_CODEGEN) -config ./oapi-codegen.yaml ./openapi-3.0.yaml
+	openapi-down-convert --input $(OAPI_SPEC) --output $(OAPI_SPEC_30)
+
+$(OAPI_OUTPUT): $(OAPI_SPEC_30) $(OAPI_CODEGEN)
+	$(OAPI_CODEGEN) -config ./oapi-codegen.yaml $(OAPI_SPEC_30)
 	go mod tidy
 
-build: | $(BIN_DIR)
+oapi-generate: $(OAPI_OUTPUT)
+
+build: oapi-generate | $(BIN_DIR)
 	go build -o $(BIN_DIR)/api ./cmd/api
 
 dev: build $(RECORDING_DIR)
