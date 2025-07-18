@@ -55,10 +55,6 @@ paths:
         "200":
           description: Recording file
           headers:
-            # Note: using a `format: date-time` here doesn't work as intended as the generated code
-            # calls a `fmt.Sprint` on the value when setting the header. time.String is a
-            # non-standard format that most parses will barf on, making everyone's life harder, so
-            # we're skipping the `format` in favor of an explicit description.
             X-Recording-Started-At:
               description: Timestamp of when the recording started. Guaranteed to be RFC3339.
               schema:
@@ -135,6 +131,23 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /computer/paste:
+    post:
+      summary: Paste text via system clipboard and simulate paste
+      operationId: pasteClipboard
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PasteClipboardRequest"
+      responses:
+        "200":
+          description: Text pasted
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   schemas:
     StartRecordingRequest:
@@ -171,30 +184,21 @@ components:
           description: Identifier of the recorder to stop. Alphanumeric or hyphen.
           pattern: "^[a-zA-Z0-9-]+$"
       additionalProperties: false
-    Error:
-      type: object
-      required: [message]
-      properties:
-        message:
-          type: string
     RecorderInfo:
       type: object
-      required: [id, isRecording]
       properties:
         id:
           type: string
-        isRecording:
-          type: boolean
-        started_at:
+        status:
+          type: string
+        startedAt:
           type: string
           format: date-time
-          nullable: true
-          description: Timestamp when recording started
-        finished_at:
-          type: string
-          format: date-time
-          nullable: true
-          description: Timestamp when recording finished
+      required:
+        - id
+        - status
+        - startedAt
+      additionalProperties: false
     ClickMouseRequest:
       type: object
       required:
@@ -203,26 +207,20 @@ components:
       properties:
         button:
           type: string
-          description: Mouse button to interact with
           enum: [left, right, middle, back, forward]
         click_type:
           type: string
-          description: Type of click action
           enum: [down, up, click]
         x:
           type: integer
-          description: X coordinate of the click position
         y:
           type: integer
-          description: Y coordinate of the click position
         hold_keys:
           type: array
-          description: Modifier keys to hold during the click
           items:
             type: string
         num_clicks:
           type: integer
-          description: Number of times to repeat the click
           default: 1
       additionalProperties: false
     MoveMouseRequest:
@@ -233,19 +231,30 @@ components:
       properties:
         x:
           type: integer
-          description: X coordinate to move the cursor to
         y:
           type: integer
-          description: Y coordinate to move the cursor to
         hold_keys:
           type: array
-          description: Modifier keys to hold during the move
           items:
             type: string
+      additionalProperties: false
+    PasteClipboardRequest:
+      type: object
+      properties:
+        text:
+          type: string
+      required:
+        - text
       additionalProperties: false
   responses:
     BadRequestError:
       description: Bad Request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: Internal Server Error
       content:
         application/json:
           schema:
@@ -262,9 +271,10 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
-    InternalError:
-      description: Internal Server Error
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
+    Error:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
