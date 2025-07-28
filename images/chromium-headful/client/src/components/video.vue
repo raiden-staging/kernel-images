@@ -463,15 +463,10 @@
       if (this.clipboard_write_available) {
         try {
           await navigator.clipboard.writeText(clipboard)
-          console.log('[clipboard] system clipboard write successful:', clipboard)
           this.$accessor.remote.setClipboard(clipboard)
         } catch (err: any) {
-          console.error('[clipboard] system clipboard write failed:', err)
-          this.$accessor.remote.setClipboard(clipboard)
+          this.$log.error(err)
         }
-      } else {
-        console.log('[clipboard] navigator.clipboard.writeText unavailable, forcing fallback')
-        this.$accessor.remote.setClipboard(clipboard)
       }
     }
 
