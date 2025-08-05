@@ -25,6 +25,7 @@ export type WebSocketMessages =
   | ScreenResolutionMessage
   | ScreenConfigurationsMessage
   | ChatMessage
+  | SystemPongMessage
 
 export type WebSocketPayloads =
   | SignalProvidePayload
@@ -45,6 +46,7 @@ export type WebSocketPayloads =
   | AdminLockPayload
   | BroadcastStatusPayload
   | BroadcastCreatePayload
+  | SystemPongPayload
 
 export interface WebSocketMessage {
   event: WebSocketEvents | string
