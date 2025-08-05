@@ -239,5 +239,13 @@ if [[ -z "${WITHDOCKER:-}" ]]; then
   enable_scale_to_zero
 fi
 
+echo "=== PulseAudio Debug Status ===" && \
+echo "[1] pactl info:" && pactl info || echo "pactl info failed" && \
+echo && echo "[2] pulseaudio --check:" && (pulseaudio --check && echo "PulseAudio is running" || echo "PulseAudio is NOT running") && \
+echo && echo "[3] ps aux | grep pulseaudio:" && ps aux | grep pulseaudio | grep -v grep || echo "No pulseaudio process found" && \
+echo && echo "[4] pactl list short sinks:" && pactl list short sinks || echo "pactl list sinks failed" && \
+echo && echo "[5] pactl list short sources:" && pactl list short sources || echo "pactl list sources failed" && \
+echo "=== End of PulseAudio Debug ==="
+
 # Keep the container running
 tail -f /dev/null
