@@ -33,7 +33,7 @@ RUN set -eux; \
     make install;
 
 # FROM ghcr.io/onkernel/neko/base:3.0.6-v1.0 AS neko
-FROM ghcr.io/raiden-staging/neko/base:3.0.6-v1.0c AS neko
+FROM ghcr.io/raiden-staging/neko/base:3.0.6-v1.0d AS neko
 # ^---- event.SYSTEM_PONG
 FROM docker.io/ubuntu:22.04
 
