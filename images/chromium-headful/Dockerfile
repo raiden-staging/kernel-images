@@ -32,7 +32,9 @@ RUN set -eux; \
     make -j$(nproc); \
     make install;
 
-FROM ghcr.io/onkernel/neko/base:3.0.6-v1.0 AS neko
+# FROM ghcr.io/onkernel/neko/base:3.0.6-v1.0 AS neko
+FROM ghcr.io/raiden-staging/neko/base:3.0.6-v1.0b AS neko
+# ^---- event.SYSTEM_PONG
 FROM docker.io/ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive

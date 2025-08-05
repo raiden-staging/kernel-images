@@ -74,6 +74,14 @@ export interface SystemMessagePayload {
   message: string
 }
 
+// system/pong
+export interface SystemPongMessage extends WebSocketMessage, SystemPongPayload {
+  event: typeof EVENT.SYSTEM.PONG
+}
+export interface SystemPongPayload {
+  timestamp: string
+}
+
 /*
   SIGNAL MESSAGES/PAYLOADS
 */
