@@ -63,6 +63,8 @@ if [[ "${ENABLE_HOST_AUDIO:-}" == "true" ]]; then
     -v "${HOME}/.config/pulse/cookie:/home/kernel/.config/pulse/cookie:ro"
     # Match the container user to the host user for permissions
     --user "$(id -u):$(id -g)"
+    # mount snd device
+    --device /dev/snd:/dev/snd 
   )
 fi
 
@@ -89,4 +91,6 @@ else
 fi
 
 docker rm -f "$NAME" 2>/dev/null || true
-docker run -it "${RUN_ARGS[@]}" "$IMAGE"
+docker run -dit --name "$NAME" "${RUN_ARGS[@]}" "$IMAGE"
+docker logs -f "$NAME" &
+docker exec -it "$NAME" /bin/bash
