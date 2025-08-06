@@ -122,12 +122,13 @@ RUN set -eux; \
     apt-get install --no-install-recommends ./libxcvt0_0.1.2-1_${ARCH}.deb; \
     rm ./libxcvt0_0.1.2-1_${ARCH}.deb; \
     #
-    # create a non-root user
+    # create a non-root user and add to all relevant audio groups
     groupadd --gid $KERNEL_GID $KERNEL_USER; \
     useradd --uid $KERNEL_UID --gid $KERNEL_GID --shell /bin/bash --create-home $KERNEL_USER; \
     adduser $KERNEL_USER audio; \
     adduser $KERNEL_USER video; \
     adduser $KERNEL_USER pulse; \
+    adduser $KERNEL_USER pulse-access; \
     #
     # workaround for an X11 problem: http://blog.tigerteufel.de/?p=476
     mkdir /tmp/.X11-unix; \
