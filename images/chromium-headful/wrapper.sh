@@ -28,11 +28,6 @@ if [ -z "${PULSE_SERVER:-}" ]; then
   runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
     pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
   pulse_pid=$!
-
-  echo "Waiting for PulseAudio socket..."
-  for i in $(seq 1 20); do [ -S "$PULSE_SERVER" ] && break || sleep 0.5; done
-  if ! kill -0 $pulse_pid 2>/dev/null || [ ! -S "$PULSE_SERVER" ]; then echo "PulseAudio failed to start!" >&2; exit 1; fi
-  echo "PulseAudio socket is available."
 else
   echo "Host PULSE_SERVER detected at '${PULSE_SERVER}'. Skipping internal audio setup."
 fi
