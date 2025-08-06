@@ -77,32 +77,28 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
-# -vv for verbose logging during debug
-# Use `env` to guarantee XDG_RUNTIME_DIR is set for the process
 runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
-  pulseaudio -vv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+  pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
-# # Wait for pulseaudio socket to be available, with a timeout
-# echo "Waiting for PulseAudio socket..."
-# for i in $(seq 1 20); do
-#   if [ -S "$PULSE_SERVER" ]; then
-#     break
-#   fi
-#   # check if pulseaudio process is still alive
-#   if ! kill -0 $pulse_pid 2>/dev/null; then
-#     echo "PulseAudio process died. Aborting." >&2
-#     # The process died, so let's see what it printed to stderr/stdout
-#     # In a real script you might 'cat /path/to/pulseaudio.log' here
-#     exit 1
-#   fi
-#   if [ $i -eq 20 ]; then
-#     echo "PulseAudio socket not found after 10 seconds. Aborting." >&2
-#     exit 1
-#   fi
-#   sleep 0.5
-# done
-# echo "PulseAudio socket is available."
 
+# Wait for pulseaudio socket to be available, with a timeout
+echo "Waiting for PulseAudio socket..."
+for i in $(seq 1 20); do
+  if [ -S "$PULSE_SERVER" ]; then
+    break
+  fi
+  # check if pulseaudio process is still alive
+  if ! kill -0 $pulse_pid 2>/dev/null; then
+    echo "PulseAudio process died. Aborting." >&2
+    exit 1
+  fi
+  if [ $i -eq 20 ]; then
+    echo "PulseAudio socket not found after 10 seconds. Aborting." >&2
+    exit 1
+  fi
+  sleep 0.5
+done
+echo "PulseAudio socket is available."
 
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
@@ -110,31 +106,22 @@ fi
 
 # -----------------------------------------------------------------------------
 # House-keeping for the unprivileged "kernel" user --------------------------------
-# Some Chromium subsystems want to create files under $HOME (NSS cert DB, dconf
-# cache).  If those directories are missing or owned by root Chromium emits
-# noisy error messages such as:
-#   [ERROR:crypto/nss_util.cc:48] Failed to create /home/kernel/.pki/nssdb ...
-#   dconf-CRITICAL **: unable to create directory '/home/kernel/.cache/dconf'
+# Some Chromium subsystems want to create files under $HOME or $XDG_RUNTIME_DIR
 # Pre-create them and hand ownership to the user so the messages disappear.
 
 dirs=(
   /home/kernel/.config/chromium
   /home/kernel/.pki/nssdb
   /home/kernel/.cache/dconf
+  /tmp/runtime-kernel/dconf
 )
 
 for dir in "${dirs[@]}"; do
-  # Skip if the path does not start with /home/kernel
-  if [[ "$dir" != /home/kernel* ]]; then
-    continue
-  fi
-  if [ ! -d "$dir" ]; then
-    mkdir -p "$dir"
-  fi
+  mkdir -p "$dir"
 done
 
 # Ensure correct ownership (ignore errors if already correct)
-chown -R kernel:kernel /home/kernel/.config /home/kernel/.pki /home/kernel/.cache 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/.config /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel 2>/dev/null || true
 
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
 # Use ncat to listen on 0.0.0.0:9222 since chromium does not let you listen on 0.0.0.0 anymore: https://github.com/pyppeteer/pyppeteer/pull/379#issuecomment-217029626
