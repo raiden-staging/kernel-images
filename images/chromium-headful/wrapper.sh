@@ -3,7 +3,7 @@
 set -o pipefail -o errexit -o nounset
 
 # This must match the PULSE_SERVER env var in the Dockerfile
-export PULSE_SERVER=/tmp/runtime-kernel/pulse/native
+export PULSE_SERVER=/tmp/pulseaudio.socket
 
 # If the WITHDOCKER environment variable is not set, it means we are not running inside a Docker container.
 # Docker manages /dev/shm itself, and attempting to mount or modify it can cause permission or device errors.

@@ -56,9 +56,9 @@ if [[ "${ENABLE_HOST_AUDIO:-}" == "true" ]]; then
   fi
   RUN_ARGS+=(
     # Mount the host's PulseAudio socket
-    -v "${HOST_PULSE_SOCKET}:/tmp/pulse-socket"
+    -v "${HOST_PULSE_SOCKET}:/tmp/pulseaudio.socket"
     # Tell applications inside the container to use this socket
-    -e "PULSE_SERVER=unix:/tmp/pulse-socket"
+    -e "PULSE_SERVER=unix:/tmp/pulseaudio.socket"
     # Mount the host's PulseAudio cookie for authentication
     -v "${HOME}/.config/pulse/cookie:/home/kernel/.config/pulse/cookie:ro"
     # Match the container user to the host user for permissions
