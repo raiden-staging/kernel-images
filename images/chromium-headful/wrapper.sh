@@ -42,40 +42,24 @@ export DISPLAY=:1
 ./mutter_startup.sh
 
 # -----------------------------------------------------------------------------
-# System-bus setup --------------------------------------------------------------
+# D-Bus and PulseAudio User Session Setup -------------------------------------
 # -----------------------------------------------------------------------------
-# Start a lightweight system D-Bus daemon if one is not already running.
-# This must be done BEFORE pulseaudio, which depends on it.
-if [ ! -S /run/dbus/system_bus_socket ]; then
-  echo "Starting system D-Bus daemon"
-  mkdir -p /run/dbus
-  # Ensure a machine-id exists (required by dbus-daemon)
-  dbus-uuidgen --ensure
-  # Launch dbus-daemon in the background and remember its PID for cleanup
-  dbus-daemon --system \
-    --address=unix:path=/run/dbus/system_bus_socket \
-    --nopidfile --nosyslog --nofork >/dev/null 2>&1 &
-  dbus_pid=$!
-
-  # Wait for the D-Bus socket to become available
-  echo "Waiting for D-Bus socket..."
-  for i in $(seq 1 20); do
-    if [ -S /run/dbus/system_bus_socket ]; then
-      break
-    fi
-    if [ $i -eq 20 ]; then
-      echo "D-Bus socket not found after 10 seconds. Aborting." >&2
-      exit 1
-    fi
-    sleep 0.5
-  done
-  echo "D-Bus socket is available."
+# Launch a session-specific D-Bus instance for the 'kernel' user.
+# This is the correct way to provide a bus for user-level applications
+# like PulseAudio and Chromium, avoiding system bus permission issues.
+echo "Launching D-Bus session for user 'kernel'..."
+# The 'eval' command sets DBUS_SESSION_BUS_ADDRESS and DBUS_SESSION_BUS_PID
+eval $(runuser -u kernel -- dbus-launch --sh-syntax)
+if [ -z "${DBUS_SESSION_BUS_PID:-}" ]; then
+    echo "Failed to launch D-Bus session." >&2
+    exit 1
 fi
+echo "D-Bus session started with PID: $DBUS_SESSION_BUS_PID"
 
-# We will point DBUS_SESSION_BUS_ADDRESS at the system bus socket to suppress
-# autolaunch attempts that failed and spammed logs.
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
+# Export the address for all subsequent child processes run by this script.
+export DBUS_SESSION_BUS_ADDRESS
 
+# Now start PulseAudio as the 'kernel' user. It will connect to its own D-Bus session.
 echo "Starting PulseAudio daemon..."
 runuser -u kernel -- pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
@@ -85,6 +69,11 @@ echo "Waiting for PulseAudio socket..."
 for i in $(seq 1 20); do
   if [ -S "$PULSE_SERVER" ]; then
     break
+  fi
+  # check if pulseaudio process is still alive
+  if ! kill -0 $pulse_pid 2>/dev/null; then
+    echo "PulseAudio process died. Aborting." >&2
+    exit 1
   fi
   if [ $i -eq 20 ]; then
     echo "PulseAudio socket not found after 10 seconds. Aborting." >&2
@@ -137,12 +126,12 @@ cleanup () {
   if [ -n "${pulse_pid:-}" ]; then
     kill -TERM $pulse_pid 2>/dev/null || true
   fi
+  if [ -n "${DBUS_SESSION_BUS_PID:-}" ]; then
+    kill -TERM $DBUS_SESSION_BUS_PID 2>/dev/null || true
+  fi
   # Kill the API server if it was started
   if [[ -n "${pid3:-}" ]]; then
     kill -TERM $pid3 || true
-  fi
-  if [ -n "${dbus_pid:-}" ]; then
-    kill -TERM $dbus_pid 2>/dev/null || true
   fi
 }
 trap cleanup TERM INT
@@ -162,13 +151,13 @@ echo "CHROMIUM_FLAGS: $CHROMIUM_FLAGS"
 
 RUN_AS_ROOT=${RUN_AS_ROOT:-false}
 if [[ "$RUN_AS_ROOT" == "true" ]]; then
-  DISPLAY=:1 DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" chromium \
+  DISPLAY=:1 chromium \
     --remote-debugging-port=$INTERNAL_PORT \
     ${CHROMIUM_FLAGS:-} >&2 & pid=$!
 else
+  # The required environment variables (DISPLAY, DBUS_SESSION_BUS_ADDRESS) are already exported
+  # in this script's environment, so runuser will pass them to the child process.
   runuser -u kernel -- env \
-    DISPLAY=:1 \
-    DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
     XDG_CONFIG_HOME=/home/kernel/.config \
     XDG_CACHE_HOME=/home/kernel/.cache \
     HOME=/home/kernel \
@@ -186,4 +175,94 @@ ncat \
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   # use webrtc
   echo "✨ Starting neko (webrtc server)."
-  /usr/bin/neko serve --server.static /var/w
+  /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
+
+  # Wait for neko to be ready.
+  echo "Waiting for neko port 0.0.0.0:8080..."
+  while ! nc -z 127.0.0.1 8080 2>/dev/null; do
+    sleep 0.5
+  done
+  echo "Port 8080 is open"
+else
+  # use novnc
+  ./novnc_startup.sh
+  echo "✨ noVNC demo is ready to use!"
+fi
+
+if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
+  echo "✨ Starting kernel-images API."
+
+  API_PORT="${KERNEL_IMAGES_API_PORT:-10001}"
+  API_FRAME_RATE="${KERNEL_IMAGES_API_FRAME_RATE:-10}"
+  API_DISPLAY_NUM="${KERNEL_IMAGES_API_DISPLAY_NUM:-${DISPLAY_NUM:-1}}"
+  API_MAX_SIZE_MB="${KERNEL_IMAGES_API_MAX_SIZE_MB:-500}"
+  API_OUTPUT_DIR="${KERNEL_IMAGES_API_OUTPUT_DIR:-/recordings}"
+
+  mkdir -p "$API_OUTPUT_DIR"
+
+  PORT="$API_PORT" \
+  FRAME_RATE="$API_FRAME_RATE" \
+  DISPLAY_NUM="$API_DISPLAY_NUM" \
+  MAX_SIZE_MB="$API_MAX_SIZE_MB" \
+  OUTPUT_DIR="$API_OUTPUT_DIR" \
+  /usr/local/bin/kernel-images-api & pid3=$!
+  # close the "--no-sandbox unsupported flag" warning when running as root
+  # in the unikernel runtime we haven't been able to get chromium to launch as non-root without cryptic crashpad errors
+  # and when running as root you must use the --no-sandbox flag, which generates a warning
+  if [[ "${RUN_AS_ROOT:-}" == "true" ]]; then
+    echo "Running as root, attempting to dismiss the --no-sandbox unsupported flag warning"
+    if read -r WIDTH HEIGHT <<< "$(xdotool getdisplaygeometry 2>/dev/null)"; then
+      # Work out an x-coordinate slightly inside the right-hand edge of the
+      OFFSET_X=$(( WIDTH - 30 ))
+      if (( OFFSET_X < 0 )); then
+        OFFSET_X=0
+      fi
+
+      # Wait for kernel-images API port 10001 to be ready.
+      echo "Waiting for kernel-images API port 127.0.0.1:10001..."
+      while ! nc -z 127.0.0.1 10001 2>/dev/null; do
+        sleep 0.5
+      done
+      echo "Port 10001 is open"
+
+      # Wait for Chromium window to open before dismissing the --no-sandbox warning.
+      target='New Tab - Chromium'
+      echo "Waiting for Chromium window \"${target}\" to appear and become active..."
+      while :; do
+        win_id=$(xwininfo -root -tree 2>/dev/null | awk -v t="$target" '$0 ~ t {print $1; exit}')
+        if [[ -n $win_id ]]; then
+          win_id=${win_id%:}
+          if xdotool windowactivate --sync "$win_id"; then
+            echo "Focused window $win_id ($target) on $DISPLAY"
+            break
+          fi
+        fi
+        sleep 0.5
+      done
+
+      # wait... not sure but this just increases the likelihood of success
+      # without the sleep you often open the live view and see the mouse hovering over the "X" to dismiss the warning, suggesting that it clicked before the warning or chromium appeared
+      sleep 5
+
+      # Attempt to click the warning's close button
+      echo "Clicking the warning's close button at x=$OFFSET_X y=115"
+      if curl -s -o /dev/null -X POST \
+        http://localhost:10001/computer/click_mouse \
+        -H "Content-Type: application/json" \
+        -d "{\"x\":${OFFSET_X},\"y\":115}"; then
+          echo "Successfully clicked the warning's close button"
+      else
+        echo "Failed to click the warning's close button" >&2
+      fi
+    else
+      echo "xdotool failed to obtain display geometry; skipping sandbox warning dismissal." >&2
+    fi
+  fi
+fi
+
+if [[ -z "${WITHDOCKER:-}" ]]; then
+  enable_scale_to_zero
+fi
+
+# Keep the container running
+tail -f /dev/null
