@@ -2,7 +2,8 @@
 
 set -o pipefail -o errexit -o nounset
 
-export PULSE_SERVER=unix:/tmp/pulseaudio.socket
+# This must match the PULSE_SERVER env var in the Dockerfile
+export PULSE_SERVER=/tmp/runtime-kernel/pulse/native
 
 # If the WITHDOCKER environment variable is not set, it means we are not running inside a Docker container.
 # Docker manages /dev/shm itself, and attempting to mount or modify it can cause permission or device errors.
@@ -78,8 +79,9 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
 runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
-  pulseaudio --log-level=4 --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+  pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
+
 
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
