@@ -2,6 +2,8 @@
 
 set -o pipefail -o errexit -o nounset
 
+export PULSE_SERVER=unix:/tmp/pulseaudio.socket
+
 # If the WITHDOCKER environment variable is not set, it means we are not running inside a Docker container.
 # Docker manages /dev/shm itself, and attempting to mount or modify it can cause permission or device errors.
 # However, in a unikernel container environment (non-Docker), we need to manually create and mount /dev/shm as a tmpfs
@@ -39,6 +41,24 @@ export DISPLAY=:1
 
 ./mutter_startup.sh
 
+echo "Starting PulseAudio daemon..."
+runuser -u kernel -- pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+pulse_pid=$!
+
+# Wait for pulseaudio socket to be available, with a timeout
+echo "Waiting for PulseAudio socket..."
+for i in $(seq 1 20); do
+  if [ -S "$PULSE_SERVER" ]; then
+    break
+  fi
+  if [ $i -eq 20 ]; then
+    echo "PulseAudio socket not found after 10 seconds. Aborting." >&2
+    exit 1
+  fi
+  sleep 0.5
+done
+echo "PulseAudio socket is available."
+
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
 fi
@@ -53,22 +73,23 @@ fi
 # Pre-create them and hand ownership to the user so the messages disappear.
 
 dirs=(
-  /home/kernel/user-data
   /home/kernel/.config/chromium
   /home/kernel/.pki/nssdb
   /home/kernel/.cache/dconf
-  /tmp
-  /var/log
 )
 
 for dir in "${dirs[@]}"; do
+  # Skip if the path does not start with /home/kernel
+  if [[ "$dir" != /home/kernel* ]]; then
+    continue
+  fi
   if [ ! -d "$dir" ]; then
     mkdir -p "$dir"
   fi
 done
 
 # Ensure correct ownership (ignore errors if already correct)
-chown -R kernel:kernel /home/kernel/user-data /home/kernel/.config /home/kernel/.pki /home/kernel/.cache 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/.config /home/kernel/.pki /home/kernel/.cache 2>/dev/null || true
 
 # -----------------------------------------------------------------------------
 # System-bus setup --------------------------------------------------------------
@@ -101,6 +122,9 @@ cleanup () {
   enable_scale_to_zero
   kill -TERM $pid
   kill -TERM $pid2
+  if [ -n "${pulse_pid:-}" ]; then
+    kill -TERM $pulse_pid 2>/dev/null || true
+  fi
   # Kill the API server if it was started
   if [[ -n "${pid3:-}" ]]; then
     kill -TERM $pid3 || true
@@ -151,6 +175,13 @@ if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   # use webrtc
   echo "✨ Starting neko (webrtc server)."
   /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
+
+  # Wait for neko to be ready.
+  echo "Waiting for neko port 0.0.0.0:8080..."
+  while ! nc -z 127.0.0.1 8080 2>/dev/null; do
+    sleep 0.5
+  done
+  echo "Port 8080 is open"
 else
   # use novnc
   ./novnc_startup.sh
@@ -213,6 +244,7 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
       sleep 5
 
       # Attempt to click the warning's close button
+      echo "Clicking the warning's close button at x=$OFFSET_X y=115"
       if curl -s -o /dev/null -X POST \
         http://localhost:10001/computer/click_mouse \
         -H "Content-Type: application/json" \
