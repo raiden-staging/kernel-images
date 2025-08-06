@@ -12,7 +12,7 @@ NAME="${NAME:-kernel-cu-test}"
 HOST_RECORDINGS_DIR="$SCRIPT_DIR/recordings"
 mkdir -p "$HOST_RECORDINGS_DIR"
 
-# RUN_AS_ROOT defaults to false in docker
+# RUN_AS_ROOT defaults to false in docker. This is required for audio to work.
 RUN_AS_ROOT="${RUN_AS_ROOT:-false}"
 
 # Build Chromium flags file and mount
@@ -36,37 +36,13 @@ RUN_ARGS=(
   --tmpfs /dev/shm:size=2g
   -v "$HOST_RECORDINGS_DIR:/recordings"
   --memory 8192m
-  -p 9222:9222
-  -e DISPLAY_NUM=1
-  -e HEIGHT=768
-  -e WIDTH=1024
-  -e RUN_AS_ROOT="$RUN_AS_ROOT"
+  -p 9222:9222 \
+  -e DISPLAY_NUM=1 \
+  -e HEIGHT=768 \
+  -e WIDTH=1024 \
+  -e RUN_AS_ROOT="$RUN_AS_ROOT" \
   --mount type=bind,src="$FLAGS_FILE",dst=/chromium/flags,ro
 )
-
-# --- Host Audio Passthrough Configuration ---
-# If ENABLE_HOST_AUDIO is true, mount the host's PulseAudio socket
-# and cookie file into the container.
-if [[ "${ENABLE_HOST_AUDIO:-}" == "true" ]]; then
-  echo "Host audio enabled. Configuring PulseAudio passthrough."
-  # Check that the host socket path is provided
-  if [ -z "${HOST_PULSE_SOCKET:-}" ]; then
-    echo "ERROR: ENABLE_HOST_AUDIO is true, but HOST_PULSE_SOCKET is not set." >&2
-    exit 1
-  fi
-  RUN_ARGS+=(
-    # Mount the host's PulseAudio socket
-    -v "${HOST_PULSE_SOCKET}:/tmp/pulseaudio.socket"
-    # Tell applications inside the container to use this socket
-    -e "PULSE_SERVER=unix:/tmp/pulseaudio.socket"
-    # Mount the host's PulseAudio cookie for authentication
-    -v "${HOME}/.config/pulse/cookie:/home/kernel/.config/pulse/cookie:ro"
-    # Match the container user to the host user for permissions
-    --user "$(id -u):$(id -g)"
-    # mount snd device
-    --device /dev/snd:/dev/snd 
-  )
-fi
 
 if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   RUN_ARGS+=( -p 10001:10001 )

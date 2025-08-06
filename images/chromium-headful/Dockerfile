@@ -182,7 +182,6 @@ ENV WITH_KERNEL_IMAGES_API=false
 
 ENV USER=kernel
 ENV XDG_RUNTIME_DIR=/tmp/runtime-kernel
-#ENV PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
-ENV PULSE_SERVER=/tmp/pulseaudio.socket
+ENV PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
 
 ENTRYPOINT [ "/wrapper.sh" ]
