@@ -81,25 +81,6 @@ runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
   pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
 
-# Wait for pulseaudio socket to be available, with a timeout
-echo "Waiting for PulseAudio socket..."
-for i in $(seq 1 20); do
-  if [ -S "$PULSE_SERVER" ]; then
-    break
-  fi
-  # check if pulseaudio process is still alive
-  if ! kill -0 $pulse_pid 2>/dev/null; then
-    echo "PulseAudio process died. Aborting." >&2
-    exit 1
-  fi
-  if [ $i -eq 20 ]; then
-    echo "PulseAudio socket not found after 10 seconds. Aborting." >&2
-    exit 1
-  fi
-  sleep 0.5
-done
-echo "PulseAudio socket is available."
-
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
 fi
