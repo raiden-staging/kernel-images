@@ -1,4 +1,4 @@
-!/usr/bin/pulseaudio -nF
+#!/usr/bin/pulseaudio -nF
 
 ### Create virtual output device sink
 load-module module-null-sink sink_name=audio_output sink_properties=device.description="Virtual_Audio_Output"
