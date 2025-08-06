@@ -42,24 +42,40 @@ export DISPLAY=:1
 ./mutter_startup.sh
 
 # -----------------------------------------------------------------------------
-# D-Bus and PulseAudio User Session Setup -------------------------------------
+# System-bus setup --------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# Launch a session-specific D-Bus instance for the 'kernel' user.
-# This is the correct way to provide a bus for user-level applications
-# like PulseAudio and Chromium, avoiding system bus permission issues.
-echo "Launching D-Bus session for user 'kernel'..."
-# The 'eval' command sets DBUS_SESSION_BUS_ADDRESS and DBUS_SESSION_BUS_PID
-eval $(runuser -u kernel -- dbus-launch --sh-syntax)
-if [ -z "${DBUS_SESSION_BUS_PID:-}" ]; then
-    echo "Failed to launch D-Bus session." >&2
+# Start a lightweight system D-Bus daemon. This must be done BEFORE pulseaudio.
+# With the custom policy file in /etc/dbus-1/system.d/, the 'kernel' user
+# will be allowed to register the pulseaudio service.
+echo "Starting system D-Bus daemon"
+mkdir -p /run/dbus
+# Ensure a machine-id exists (required by dbus-daemon)
+dbus-uuidgen --ensure
+# Launch dbus-daemon in the background and remember its PID for cleanup
+dbus-daemon --system \
+  --address=unix:path=/run/dbus/system_bus_socket \
+  --nopidfile --nosyslog --nofork >/dev/null 2>&1 &
+dbus_pid=$!
+
+# Wait for the D-Bus socket to become available
+echo "Waiting for D-Bus socket..."
+for i in $(seq 1 20); do
+  if [ -S /run/dbus/system_bus_socket ]; then
+    break
+  fi
+  if [ $i -eq 20 ]; then
+    echo "D-Bus socket not found after 10 seconds. Aborting." >&2
     exit 1
-fi
-echo "D-Bus session started with PID: $DBUS_SESSION_BUS_PID"
+  fi
+  sleep 0.5
+done
+echo "D-Bus socket is available."
 
-# Export the address for all subsequent child processes run by this script.
-export DBUS_SESSION_BUS_ADDRESS
+# We will point DBUS_SESSION_BUS_ADDRESS at the system bus socket to suppress
+# autolaunch attempts that failed and spammed logs.
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
-# Now start PulseAudio as the 'kernel' user. It will connect to its own D-Bus session.
+# Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
 runuser -u kernel -- pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
@@ -126,8 +142,8 @@ cleanup () {
   if [ -n "${pulse_pid:-}" ]; then
     kill -TERM $pulse_pid 2>/dev/null || true
   fi
-  if [ -n "${DBUS_SESSION_BUS_PID:-}" ]; then
-    kill -TERM $DBUS_SESSION_BUS_PID 2>/dev/null || true
+  if [ -n "${dbus_pid:-}" ]; then
+    kill -TERM $dbus_pid 2>/dev/null || true
   fi
   # Kill the API server if it was started
   if [[ -n "${pid3:-}" ]]; then
