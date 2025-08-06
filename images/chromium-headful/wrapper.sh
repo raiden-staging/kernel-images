@@ -54,7 +54,7 @@ dbus-uuidgen --ensure
 # Launch dbus-daemon in the background and remember its PID for cleanup
 dbus-daemon --system \
   --address=unix:path=/run/dbus/system_bus_socket \
-  --nopidfile --nosyslog --nofork >/dev/null 2>&1 &
+  --nopidfile --nosyslog --nofork &
 dbus_pid=$!
 
 # Wait for the D-Bus socket to become available
@@ -77,7 +77,10 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
-runuser -u kernel -- pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+# -vv for verbose logging during debug
+# Use `env` to guarantee XDG_RUNTIME_DIR is set for the process
+runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
+  pulseaudio -vv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
 
 # Wait for pulseaudio socket to be available, with a timeout
@@ -89,6 +92,8 @@ for i in $(seq 1 20); do
   # check if pulseaudio process is still alive
   if ! kill -0 $pulse_pid 2>/dev/null; then
     echo "PulseAudio process died. Aborting." >&2
+    # The process died, so let's see what it printed to stderr/stdout
+    # In a real script you might 'cat /path/to/pulseaudio.log' here
     exit 1
   fi
   if [ $i -eq 20 ]; then

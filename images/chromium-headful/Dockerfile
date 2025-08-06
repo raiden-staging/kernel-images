@@ -178,4 +178,7 @@ COPY ./wrapper.sh /wrapper.sh
 COPY bin/kernel-images-api /usr/local/bin/kernel-images-api
 ENV WITH_KERNEL_IMAGES_API=false
 
+ENV USER=kernel
+ENV XDG_RUNTIME_DIR=/tmp/runtime-kernel
+
 ENTRYPOINT [ "/wrapper.sh" ]
