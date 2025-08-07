@@ -41,7 +41,27 @@ fi
 
 export DISPLAY=:1
 
+echo "===== [debug] /etc/neko/xorg.conf ====="
+cat /etc/neko/xorg.conf
+echo "==============================="
+
 /usr/bin/Xorg :1 -config /etc/neko/xorg.conf -noreset -nolisten tcp &
+echo "============== BEGIN: Diagnostic input socket chmod =============="
+# --- BEGIN DIAGNOSTIC STEP ---
+# Force-change the permissions on the input socket after it's created.
+# This is to verify that the config file option is the problem, not something else.
+echo "Waiting for input socket to appear for diagnostic chmod..."
+for i in $(seq 1 10); do
+  if [ -S /tmp/xf86-input-neko.sock ]; then
+    echo "Socket found. Applying diagnostic chmod 666."
+    chmod 666 /tmp/xf86-input-neko.sock
+    break
+  fi
+  sleep 0.5
+done
+if ! [ -S /tmp/xf86-input-neko.sock ]; then echo "Warning: Input socket never appeared." >&2; fi
+# --- END DIAGNOSTIC STEP ---
+echo "============== END: Diagnostic input socket chmod =============="
 
 ./mutter_startup.sh
 
@@ -104,22 +124,11 @@ runuser -u kernel -- env \
   pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
 
-echo "=== [debug:pulse] : sleep 5"
-sleep 5
+# echo "=== [debug:pulse] : sleep 5"
+# sleep 5
 
 echo "=== [debug:pulse] : ls /etc/pulse"
 ls -l /etc/pulse
-
-# echo "==========================================================="
-# echo "=== [debug:pulse] : cat /etc/pulse/default.pa"
-# echo "==========================================================="
-# cat /etc/pulse/default.pa || echo "Could not read /etc/pulse/default.pa"
-# echo "==========================================================="
-# echo "=== [debug:pulse] : cat /etc/pulse/daemon.conf"
-# echo "==========================================================="
-# cat /etc/pulse/daemon.conf || echo "Could not read /etc/pulse/daemon.conf"
-# echo "==========================================================="
-
 
 if [ -d /home/kernel/.config ]; then
   echo "=== [debug:pulse] : ls /home/kernel/.config"
