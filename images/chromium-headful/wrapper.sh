@@ -81,26 +81,24 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
 echo "[pre:pulse] setting up permissions"
 
-# This is the critical fix for the audio.
-# The XDG_RUNTIME_DIR must exist and be exclusively owned by the user running PulseAudio.
-# In container/unikernel environments, /tmp is often a fresh tmpfs at boot, so we
-# must create and set permissions for this directory at runtime.
-# The XDG_RUNTIME_DIR is already set as an env var, we'll just reference it.
-mkdir -p "${XDG_RUNTIME_DIR}"
-chown -R kernel:kernel "${XDG_RUNTIME_DIR}"
-chmod 0700 "${XDG_RUNTIME_DIR}"
+# Ensure correct permissions and ownership for PulseAudio config
+# /etc/ and .config [ https://manpages.ubuntu.com/manpages/bionic/en/man5/pulse-daemon.conf.5.html ]
+# next try figure out daemon.conf if below fails
 
-# Ensure ownership of user's config and system-wide pulse config is correct.
-# The user needs to own its own home directory structure.
-chown -R kernel:kernel /home/kernel/.config /home/kernel/.pki /home/kernel/.cache 2>/dev/null || true
-# The pulse user group needs access to /etc/pulse, but chown'ing it to the user is also safe here.
-chown -R kernel:kernel /etc/pulse 2>/dev/null || true
+# chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /etc/pulse 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/ /home/kernel/.config /etc/pulse 2>/dev/null || true
+chmod 777 /home/kernel/.config
+chmod 777 /etc/pulse
+
+# At runtime, ensure the XDG_RUNTIME_DIR is owned by the 'kernel' user.
+# This is critical because the directory might be on a tmpfs that was mounted by root,
+# overriding the permissions set during the Docker build.
+chown -R kernel:kernel /tmp/runtime-kernel
 
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
-# The env vars (XDG_RUNTIME_DIR, DBUS_SESSION_BUS_ADDRESS) are already exported
-# and will be inherited by runuser.
-runuser -u kernel -- pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
+  pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
 
 echo "=== [debug:pulse] : sleep 5"
