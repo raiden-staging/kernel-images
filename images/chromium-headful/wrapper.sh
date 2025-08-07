@@ -82,9 +82,10 @@ echo "[pre:pulse] setting up permissions"
 
 # Ensure correct permissions and ownership for PulseAudio config
 mkdir -p /home/kernel/.config/pulse
-chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /etc/pulse 2>/dev/null || true
 chmod 777 /home/kernel/.config
 chmod 777 /home/kernel/.config/pulse
+chmod 777 /etc/pulse
 
 
 
@@ -129,6 +130,7 @@ cleanup () {
   # if [ -n "${pulse_pid:-}" ]; then
   #   kill -TERM $pulse_pid 2>/dev/null || true
   # fi
+  ##### <-- next attempt would be uncommenting dbus:kill , original wrapper had it -->
   # if [ -n "${dbus_pid:-}" ]; then
   #   kill -TERM $dbus_pid 2>/dev/null || true
   # fi

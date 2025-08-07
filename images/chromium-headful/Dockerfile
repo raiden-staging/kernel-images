@@ -164,6 +164,7 @@ ENV WITHDOCKER=true
 
 COPY xorg.conf /etc/neko/xorg.conf
 COPY default.pa /etc/pulse/default.pa
+COPY default.pa /home/kernel/.config/pulse/default.pa
 COPY dbus-pulseaudio.conf /etc/dbus-1/system.d/pulseaudio.conf
 COPY dbus-mpris.conf /etc/dbus-1/system.d/mpris.conf
 COPY neko.yaml /etc/neko/neko.yaml
