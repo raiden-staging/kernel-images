@@ -11,10 +11,10 @@ volume_name="${name}-flags"
 # Prepare Kraft Cloud volume containing Chromium flags
 # ------------------------------------------------------------------------------
 # Build a temporary directory with a single file "flags" that holds all
-# Chromium runtime flags. This directory will be imported into a Kraft Cloud
-# volume which we then mount into the image at /chromium.
-# RUN_AS_ROOT defaults to true in unikernel (for now, until we figure it out)
-RUN_AS_ROOT="${RUN_AS_ROOT:-true}"
+# Chromium runtime flags. This directory will be imported into a Kraft Cloud volume
+# which we then mount into the image at /chromium.
+# RUN_AS_ROOT defaults to false. The non-root 'kernel' user is required for PulseAudio.
+RUN_AS_ROOT="${RUN_AS_ROOT:-false}"
 
 chromium_flags_default="--user-data-dir=/home/kernel/user-data --disable-dev-shm-usage --disable-gpu --start-maximized --disable-software-rasterizer --remote-allow-origins=*"
 if [[ "$RUN_AS_ROOT" == "true" ]]; then
@@ -39,7 +39,6 @@ trap 'rm -rf "$FLAGS_DIR"' EXIT
 deploy_args=(
   -M 8192
   -p 9222:9222/tls
-  -p 8080:8080/tls
   -e DISPLAY_NUM=1
   -e HEIGHT=768
   -e WIDTH=1024

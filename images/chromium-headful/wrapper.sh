@@ -2,6 +2,9 @@
 
 set -o pipefail -o errexit -o nounset
 
+# This must match the PULSE_SERVER env var in the Dockerfile
+export PULSE_SERVER=/tmp/runtime-kernel/pulse/native
+
 # If the WITHDOCKER environment variable is not set, it means we are not running inside a Docker container.
 # Docker manages /dev/shm itself, and attempting to mount or modify it can cause permission or device errors.
 # However, in a unikernel container environment (non-Docker), we need to manually create and mount /dev/shm as a tmpfs
@@ -39,59 +42,87 @@ export DISPLAY=:1
 
 ./mutter_startup.sh
 
+# -----------------------------------------------------------------------------
+# System-bus setup --------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Start a lightweight system D-Bus daemon. This must be done BEFORE pulseaudio.
+# With the custom policy file in /etc/dbus-1/system.d/, the 'kernel' user
+# will be allowed to register the pulseaudio service.
+echo "Starting system D-Bus daemon"
+mkdir -p /run/dbus
+# Ensure a machine-id exists (required by dbus-daemon)
+dbus-uuidgen --ensure
+# Launch dbus-daemon in the background and remember its PID for cleanup
+dbus-daemon --system \
+  --address=unix:path=/run/dbus/system_bus_socket \
+  --nopidfile --nosyslog --nofork &
+dbus_pid=$!
+
+# Wait for the D-Bus socket to become available
+echo "Waiting for D-Bus socket..."
+for i in $(seq 1 20); do
+  if [ -S /run/dbus/system_bus_socket ]; then
+    break
+  fi
+  if [ $i -eq 20 ]; then
+    echo "D-Bus socket not found after 10 seconds. Aborting." >&2
+    exit 1
+  fi
+  sleep 0.5
+done
+echo "D-Bus socket is available."
+
+# We will point DBUS_SESSION_BUS_ADDRESS at the system bus socket to suppress
+# autolaunch attempts that failed and spammed logs.
+export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
+
+# Start PulseAudio as the 'kernel' user. It will connect to the system bus.
+echo "Starting PulseAudio daemon..."
+runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
+  pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+pulse_pid=$!
+
+# Wait for pulseaudio socket to be available, with a timeout
+echo "Waiting for PulseAudio socket..."
+for i in $(seq 1 20); do
+  if [ -S "$PULSE_SERVER" ]; then
+    break
+  fi
+  # check if pulseaudio process is still alive
+  if ! kill -0 $pulse_pid 2>/dev/null; then
+    echo "PulseAudio process died. Aborting." >&2
+    exit 1
+  fi
+  if [ $i -eq 20 ]; then
+    echo "PulseAudio socket not found after 10 seconds. Aborting." >&2
+    exit 1
+  fi
+  sleep 0.5
+done
+echo "PulseAudio socket is available."
+
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
 fi
 
 # -----------------------------------------------------------------------------
 # House-keeping for the unprivileged "kernel" user --------------------------------
-# Some Chromium subsystems want to create files under $HOME (NSS cert DB, dconf
-# cache).  If those directories are missing or owned by root Chromium emits
-# noisy error messages such as:
-#   [ERROR:crypto/nss_util.cc:48] Failed to create /home/kernel/.pki/nssdb ...
-#   dconf-CRITICAL **: unable to create directory '/home/kernel/.cache/dconf'
+# Some Chromium subsystems want to create files under $HOME or $XDG_RUNTIME_DIR
 # Pre-create them and hand ownership to the user so the messages disappear.
 
 dirs=(
-  /home/kernel/user-data
   /home/kernel/.config/chromium
   /home/kernel/.pki/nssdb
   /home/kernel/.cache/dconf
-  /tmp
-  /var/log
+  /tmp/runtime-kernel/dconf
 )
 
 for dir in "${dirs[@]}"; do
-  if [ ! -d "$dir" ]; then
-    mkdir -p "$dir"
-  fi
+  mkdir -p "$dir"
 done
 
 # Ensure correct ownership (ignore errors if already correct)
-chown -R kernel:kernel /home/kernel/user-data /home/kernel/.config /home/kernel/.pki /home/kernel/.cache 2>/dev/null || true
-
-# -----------------------------------------------------------------------------
-# System-bus setup --------------------------------------------------------------
-# -----------------------------------------------------------------------------
-# Start a lightweight system D-Bus daemon if one is not already running.  We
-# will later use this very same bus as the *session* bus as well, avoiding the
-# autolaunch fallback that produced many "Connection refused" errors.
-# Start a lightweight system D-Bus daemon if one is not already running (Chromium complains otherwise)
-if [ ! -S /run/dbus/system_bus_socket ]; then
-  echo "Starting system D-Bus daemon"
-  mkdir -p /run/dbus
-  # Ensure a machine-id exists (required by dbus-daemon)
-  dbus-uuidgen --ensure
-  # Launch dbus-daemon in the background and remember its PID for cleanup
-  dbus-daemon --system \
-    --address=unix:path=/run/dbus/system_bus_socket \
-    --nopidfile --nosyslog --nofork >/dev/null 2>&1 &
-  dbus_pid=$!
-fi
-
-# We will point DBUS_SESSION_BUS_ADDRESS at the system bus socket to suppress
-# autolaunch attempts that failed and spammed logs.
-export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
+chown -R kernel:kernel /home/kernel/.config /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel 2>/dev/null || true
 
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
 # Use ncat to listen on 0.0.0.0:9222 since chromium does not let you listen on 0.0.0.0 anymore: https://github.com/pyppeteer/pyppeteer/pull/379#issuecomment-217029626
@@ -101,12 +132,15 @@ cleanup () {
   enable_scale_to_zero
   kill -TERM $pid
   kill -TERM $pid2
-  # Kill the API server if it was started
-  if [[ -n "${pid3:-}" ]]; then
-    kill -TERM $pid3 || true
+  if [ -n "${pulse_pid:-}" ]; then
+    kill -TERM $pulse_pid 2>/dev/null || true
   fi
   if [ -n "${dbus_pid:-}" ]; then
     kill -TERM $dbus_pid 2>/dev/null || true
+  fi
+  # Kill the API server if it was started
+  if [[ -n "${pid3:-}" ]]; then
+    kill -TERM $pid3 || true
   fi
 }
 trap cleanup TERM INT
@@ -126,13 +160,13 @@ echo "CHROMIUM_FLAGS: $CHROMIUM_FLAGS"
 
 RUN_AS_ROOT=${RUN_AS_ROOT:-false}
 if [[ "$RUN_AS_ROOT" == "true" ]]; then
-  DISPLAY=:1 DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" chromium \
+  DISPLAY=:1 chromium \
     --remote-debugging-port=$INTERNAL_PORT \
     ${CHROMIUM_FLAGS:-} >&2 & pid=$!
 else
+  # The required environment variables (DISPLAY, DBUS_SESSION_BUS_ADDRESS) are already exported
+  # in this script's environment, so runuser will pass them to the child process.
   runuser -u kernel -- env \
-    DISPLAY=:1 \
-    DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
     XDG_CONFIG_HOME=/home/kernel/.config \
     XDG_CACHE_HOME=/home/kernel/.cache \
     HOME=/home/kernel \
@@ -151,6 +185,13 @@ if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   # use webrtc
   echo "✨ Starting neko (webrtc server)."
   /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
+
+  # Wait for neko to be ready.
+  echo "Waiting for neko port 0.0.0.0:8080..."
+  while ! nc -z 127.0.0.1 8080 2>/dev/null; do
+    sleep 0.5
+  done
+  echo "Port 8080 is open"
 else
   # use novnc
   ./novnc_startup.sh
@@ -213,6 +254,7 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
       sleep 5
 
       # Attempt to click the warning's close button
+      echo "Clicking the warning's close button at x=$OFFSET_X y=115"
       if curl -s -o /dev/null -X POST \
         http://localhost:10001/computer/click_mouse \
         -H "Content-Type: application/json" \

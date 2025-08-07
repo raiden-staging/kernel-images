@@ -32,7 +32,7 @@ RUN set -eux; \
     make -j$(nproc); \
     make install;
 
-FROM ghcr.io/m1k1o/neko/chromium:3.0.6 AS neko
+FROM ghcr.io/onkernel/neko/base:3.0.6-v1.0.1 AS neko
 FROM docker.io/ubuntu:22.04
 
 ENV DEBIAN_FRONTEND=noninteractive
@@ -50,8 +50,7 @@ RUN apt-get update && \
     sudo \
     mutter \
     x11vnc \
-    # Recording tools
-    ffmpeg \
+    upower \
     # Python/pyenv reqs
     build-essential \
     libssl-dev  \
@@ -92,17 +91,30 @@ RUN apt-get update && \
     unzip && \
     apt-get clean
 
-# runtime
-ENV USERNAME=root
+# install ffmpeg manually since the version available in apt is from the 4.x branch due to #drama.
+# as of writing these static builds will be the latest 7.0.x release.
+RUN set -eux; \
+    URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"; \
+    echo "Downloading FFmpeg static build from $URL"; \
+    curl -fsSL "$URL" -o /tmp/ffmpeg.tar.xz; \
+    tar -xJf /tmp/ffmpeg.tar.xz -C /tmp; \
+    install -m755 /tmp/ffmpeg-*/ffmpeg  /usr/local/bin/ffmpeg; \
+    install -m755 /tmp/ffmpeg-*/ffprobe /usr/local/bin/ffprobe; \
+    rm -rf /tmp/ffmpeg*
+
+ # runtime
+ARG KERNEL_USER=kernel
+ARG KERNEL_UID=1000
+ARG KERNEL_GID=$KERNEL_UID
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-    wget ca-certificates python2 supervisor xclip xdotool \
-    pulseaudio dbus-x11 xserver-xorg-video-dummy \
-    libcairo2 libxcb1 libxrandr2 libxv1 libopus0 libvpx7 \
-    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
-    gstreamer1.0-pulseaudio gstreamer1.0-omx; \
+        wget ca-certificates python2 supervisor xclip xdotool \
+        pulseaudio dbus-x11 xserver-xorg-video-dummy \
+        libcairo2 libxcb1 libxrandr2 libxv1 libopus0 libvpx7 \
+        gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+        gstreamer1.0-pulseaudio gstreamer1.0-omx; \
     #
     # install libxcvt0 (not available in debian:bullseye)
     ARCH=$(dpkg --print-architecture); \
@@ -110,19 +122,27 @@ RUN set -eux; \
     apt-get install --no-install-recommends ./libxcvt0_0.1.2-1_${ARCH}.deb; \
     rm ./libxcvt0_0.1.2-1_${ARCH}.deb; \
     #
+    # create a non-root user and add to all relevant audio groups
+    groupadd --gid $KERNEL_GID $KERNEL_USER; \
+    useradd --uid $KERNEL_UID --gid $KERNEL_GID --shell /bin/bash --create-home $KERNEL_USER; \
+    adduser $KERNEL_USER audio; \
+    adduser $KERNEL_USER video; \
+    adduser $KERNEL_USER pulse; \
+    adduser $KERNEL_USER pulse-access; \
+    #
     # workaround for an X11 problem: http://blog.tigerteufel.de/?p=476
     mkdir /tmp/.X11-unix; \
     chmod 1777 /tmp/.X11-unix; \
-    chown $USERNAME /tmp/.X11-unix/; \
+    chown $KERNEL_USER:$KERNEL_USER /tmp/.X11-unix/; \
     #
     # make directories for neko
     mkdir -p /etc/neko /var/www /var/log/neko \
-    /tmp/runtime-$USERNAME \
-    /home/$USERNAME/.config/pulse  \
-    /home/$USERNAME/.local/share/xorg; \
+        /tmp/runtime-$KERNEL_USER \
+        /home/$KERNEL_USER/.config/pulse  \
+        /home/$KERNEL_USER/.local/share/xorg; \
     chmod 1777 /var/log/neko; \
-    chown $USERNAME /var/log/neko/ /tmp/runtime-$USERNAME; \
-    chown -R $USERNAME:$USERNAME /home/$USERNAME; \
+    chown $KERNEL_USER:$KERNEL_USER /var/log/neko/ /tmp/runtime-$KERNEL_USER; \
+    chown -R $KERNEL_USER:$KERNEL_USER /home/$KERNEL_USER; \
     # clean up
     apt-get clean -y; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/
@@ -138,11 +158,14 @@ RUN git clone --branch v1.5.0 https://github.com/novnc/noVNC.git /opt/noVNC && \
 
 # setup desktop env & app
 ENV DISPLAY_NUM=1
-ENV HEIGHT=1080
-ENV WIDTH=1920
+ENV HEIGHT=768
+ENV WIDTH=1024
 ENV WITHDOCKER=true
 
 COPY xorg.conf /etc/neko/xorg.conf
+COPY default.pa /etc/pulse/default.pa
+COPY dbus-pulseaudio.conf /etc/dbus-1/system.d/pulseaudio.conf
+COPY dbus-mpris.conf /etc/dbus-1/system.d/mpris.conf
 COPY neko.yaml /etc/neko/neko.yaml
 COPY --from=neko /usr/bin/neko /usr/bin/neko
 COPY --from=client /src/dist/ /var/www
@@ -156,8 +179,8 @@ COPY ./wrapper.sh /wrapper.sh
 COPY bin/kernel-images-api /usr/local/bin/kernel-images-api
 ENV WITH_KERNEL_IMAGES_API=false
 
-RUN useradd -m -s /bin/bash kernel
-RUN cp -r ./user-data /home/kernel/user-data
+ENV USER=kernel
+ENV XDG_RUNTIME_DIR=/tmp/runtime-kernel
+ENV PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
 
 ENTRYPOINT [ "/wrapper.sh" ]
-

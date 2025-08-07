@@ -12,7 +12,7 @@ NAME="${NAME:-kernel-cu-test}"
 HOST_RECORDINGS_DIR="$SCRIPT_DIR/recordings"
 mkdir -p "$HOST_RECORDINGS_DIR"
 
-# RUN_AS_ROOT defaults to false in docker
+# RUN_AS_ROOT defaults to false in docker. This is required for audio to work.
 RUN_AS_ROOT="${RUN_AS_ROOT:-false}"
 
 # Build Chromium flags file and mount
@@ -67,4 +67,6 @@ else
 fi
 
 docker rm -f "$NAME" 2>/dev/null || true
-docker run -it "${RUN_ARGS[@]}" "$IMAGE"
+docker run -dit --name "$NAME" "${RUN_ARGS[@]}" "$IMAGE"
+docker logs -f "$NAME" &
+docker exec -it "$NAME" /bin/bash
