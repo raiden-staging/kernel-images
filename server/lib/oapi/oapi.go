@@ -39,6 +39,14 @@ const (
 	Up    ClickMouseRequestClickType = "up"
 )
 
+// Defines values for FileSystemEventType.
+const (
+	CREATE FileSystemEventType = "CREATE"
+	DELETE FileSystemEventType = "DELETE"
+	RENAME FileSystemEventType = "RENAME"
+	WRITE  FileSystemEventType = "WRITE"
+)
+
 // ClickMouseRequest defines model for ClickMouseRequest.
 type ClickMouseRequest struct {
 	// Button Mouse button to interact with
@@ -66,6 +74,21 @@ type ClickMouseRequestButton string
 // ClickMouseRequestClickType Type of click action
 type ClickMouseRequestClickType string
 
+// CreateDirectoryRequest defines model for CreateDirectoryRequest.
+type CreateDirectoryRequest struct {
+	// Mode Optional directory mode (octal string, e.g. 755). Defaults to 755.
+	Mode *string `json:"mode,omitempty"`
+
+	// Path Absolute directory path to create.
+	Path string `json:"path"`
+}
+
+// DeletePathRequest defines model for DeletePathRequest.
+type DeletePathRequest struct {
+	// Path Absolute path to delete.
+	Path string `json:"path"`
+}
+
 // DeleteRecordingRequest defines model for DeleteRecordingRequest.
 type DeleteRecordingRequest struct {
 	// Id Identifier of the recording to delete. Alphanumeric or hyphen.
@@ -76,6 +99,48 @@ type DeleteRecordingRequest struct {
 type Error struct {
 	Message string `json:"message"`
 }
+
+// FileInfo defines model for FileInfo.
+type FileInfo struct {
+	// IsDir Whether the path is a directory.
+	IsDir bool `json:"is_dir"`
+
+	// ModTime Last modification time.
+	ModTime time.Time `json:"mod_time"`
+
+	// Mode File mode bits (e.g., "drwxr-xr-x" or "-rw-r--r--").
+	Mode string `json:"mode"`
+
+	// Name Base name of the file or directory.
+	Name string `json:"name"`
+
+	// Path Absolute path.
+	Path string `json:"path"`
+
+	// SizeBytes Size in bytes. 0 for directories.
+	SizeBytes int `json:"size_bytes"`
+}
+
+// FileSystemEvent Filesystem change event.
+type FileSystemEvent struct {
+	// IsDir Whether the affected path is a directory.
+	IsDir *bool `json:"is_dir,omitempty"`
+
+	// Name Base name of the file or directory affected.
+	Name *string `json:"name,omitempty"`
+
+	// Path Absolute path of the file or directory.
+	Path string `json:"path"`
+
+	// Type Event type.
+	Type FileSystemEventType `json:"type"`
+}
+
+// FileSystemEventType Event type.
+type FileSystemEventType string
+
+// ListFiles Array of file or directory information entries.
+type ListFiles = []FileInfo
 
 // MoveMouseRequest defines model for MoveMouseRequest.
 type MoveMouseRequest struct {
@@ -89,6 +154,15 @@ type MoveMouseRequest struct {
 	Y int `json:"y"`
 }
 
+// MovePathRequest defines model for MovePathRequest.
+type MovePathRequest struct {
+	// DestPath Absolute destination path.
+	DestPath string `json:"dest_path"`
+
+	// SrcPath Absolute source path.
+	SrcPath string `json:"src_path"`
+}
+
 // RecorderInfo defines model for RecorderInfo.
 type RecorderInfo struct {
 	// FinishedAt Timestamp when recording finished
@@ -98,6 +172,30 @@ type RecorderInfo struct {
 
 	// StartedAt Timestamp when recording started
 	StartedAt *time.Time `json:"started_at"`
+}
+
+// SetFilePermissionsRequest defines model for SetFilePermissionsRequest.
+type SetFilePermissionsRequest struct {
+	// Group New group name or GID.
+	Group *string `json:"group,omitempty"`
+
+	// Mode File mode bits (octal string, e.g. 644).
+	Mode string `json:"mode"`
+
+	// Owner New owner username or UID.
+	Owner *string `json:"owner,omitempty"`
+
+	// Path Absolute path whose permissions are to be changed.
+	Path string `json:"path"`
+}
+
+// StartFsWatchRequest defines model for StartFsWatchRequest.
+type StartFsWatchRequest struct {
+	// Path Directory to watch.
+	Path string `json:"path"`
+
+	// Recursive Whether to watch recursively.
+	Recursive *bool `json:"recursive,omitempty"`
 }
 
 // StartRecordingRequest defines model for StartRecordingRequest.
@@ -136,6 +234,33 @@ type InternalError = Error
 // NotFoundError defines model for NotFoundError.
 type NotFoundError = Error
 
+// FileInfoParams defines parameters for FileInfo.
+type FileInfoParams struct {
+	// Path Absolute path of the file or directory.
+	Path string `form:"path" json:"path"`
+}
+
+// ListFilesParams defines parameters for ListFiles.
+type ListFilesParams struct {
+	// Path Absolute directory path.
+	Path string `form:"path" json:"path"`
+}
+
+// ReadFileParams defines parameters for ReadFile.
+type ReadFileParams struct {
+	// Path Absolute file path to read.
+	Path string `form:"path" json:"path"`
+}
+
+// WriteFileParams defines parameters for WriteFile.
+type WriteFileParams struct {
+	// Path Destination absolute file path.
+	Path string `form:"path" json:"path"`
+
+	// Mode Optional file mode (octal string, e.g. 644). Defaults to 644.
+	Mode *string `form:"mode,omitempty" json:"mode,omitempty"`
+}
+
 // DownloadRecordingParams defines parameters for DownloadRecording.
 type DownloadRecordingParams struct {
 	// Id Optional recorder identifier. When omitted, the server uses the default recorder.
@@ -147,6 +272,24 @@ type ClickMouseJSONRequestBody = ClickMouseRequest
 
 // MoveMouseJSONRequestBody defines body for MoveMouse for application/json ContentType.
 type MoveMouseJSONRequestBody = MoveMouseRequest
+
+// CreateDirectoryJSONRequestBody defines body for CreateDirectory for application/json ContentType.
+type CreateDirectoryJSONRequestBody = CreateDirectoryRequest
+
+// DeleteDirectoryJSONRequestBody defines body for DeleteDirectory for application/json ContentType.
+type DeleteDirectoryJSONRequestBody = DeletePathRequest
+
+// DeleteFileJSONRequestBody defines body for DeleteFile for application/json ContentType.
+type DeleteFileJSONRequestBody = DeletePathRequest
+
+// MovePathJSONRequestBody defines body for MovePath for application/json ContentType.
+type MovePathJSONRequestBody = MovePathRequest
+
+// SetFilePermissionsJSONRequestBody defines body for SetFilePermissions for application/json ContentType.
+type SetFilePermissionsJSONRequestBody = SetFilePermissionsRequest
+
+// StartFsWatchJSONRequestBody defines body for StartFsWatch for application/json ContentType.
+type StartFsWatchJSONRequestBody = StartFsWatchRequest
 
 // DeleteRecordingJSONRequestBody defines body for DeleteRecording for application/json ContentType.
 type DeleteRecordingJSONRequestBody = DeleteRecordingRequest
@@ -240,6 +383,54 @@ type ClientInterface interface {
 
 	MoveMouse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// CreateDirectoryWithBody request with any body
+	CreateDirectoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	CreateDirectory(ctx context.Context, body CreateDirectoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteDirectoryWithBody request with any body
+	DeleteDirectoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeleteDirectory(ctx context.Context, body DeleteDirectoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteFileWithBody request with any body
+	DeleteFileWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	DeleteFile(ctx context.Context, body DeleteFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// FileInfo request
+	FileInfo(ctx context.Context, params *FileInfoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListFiles request
+	ListFiles(ctx context.Context, params *ListFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// MovePathWithBody request with any body
+	MovePathWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	MovePath(ctx context.Context, body MovePathJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReadFile request
+	ReadFile(ctx context.Context, params *ReadFileParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetFilePermissionsWithBody request with any body
+	SetFilePermissionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	SetFilePermissions(ctx context.Context, body SetFilePermissionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StartFsWatchWithBody request with any body
+	StartFsWatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	StartFsWatch(ctx context.Context, body StartFsWatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopFsWatch request
+	StopFsWatch(ctx context.Context, watchId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StreamFsEvents request
+	StreamFsEvents(ctx context.Context, watchId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// WriteFileWithBody request with any body
+	WriteFileWithBody(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeleteRecordingWithBody request with any body
 	DeleteRecordingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -300,6 +491,222 @@ func (c *Client) MoveMouseWithBody(ctx context.Context, contentType string, body
 
 func (c *Client) MoveMouse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMoveMouseRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateDirectoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDirectoryRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) CreateDirectory(ctx context.Context, body CreateDirectoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateDirectoryRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteDirectoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteDirectoryRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteDirectory(ctx context.Context, body DeleteDirectoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteDirectoryRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteFileWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteFileRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) DeleteFile(ctx context.Context, body DeleteFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteFileRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) FileInfo(ctx context.Context, params *FileInfoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewFileInfoRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ListFiles(ctx context.Context, params *ListFilesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListFilesRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MovePathWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMovePathRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) MovePath(ctx context.Context, body MovePathJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewMovePathRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ReadFile(ctx context.Context, params *ReadFileParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReadFileRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetFilePermissionsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetFilePermissionsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) SetFilePermissions(ctx context.Context, body SetFilePermissionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetFilePermissionsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StartFsWatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartFsWatchRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StartFsWatch(ctx context.Context, body StartFsWatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStartFsWatchRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopFsWatch(ctx context.Context, watchId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopFsWatchRequest(c.Server, watchId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StreamFsEvents(ctx context.Context, watchId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamFsEventsRequest(c.Server, watchId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) WriteFileWithBody(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWriteFileRequestWithBody(c.Server, params, contentType, body)
 	if err != nil {
 		return nil, err
 	}
@@ -477,6 +884,512 @@ func NewMoveMouseRequestWithBody(server string, contentType string, body io.Read
 	}
 
 	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCreateDirectoryRequest calls the generic CreateDirectory builder with application/json body
+func NewCreateDirectoryRequest(server string, body CreateDirectoryJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateDirectoryRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateDirectoryRequestWithBody generates requests for CreateDirectory with any type of body
+func NewCreateDirectoryRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/create_directory")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteDirectoryRequest calls the generic DeleteDirectory builder with application/json body
+func NewDeleteDirectoryRequest(server string, body DeleteDirectoryJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteDirectoryRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewDeleteDirectoryRequestWithBody generates requests for DeleteDirectory with any type of body
+func NewDeleteDirectoryRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/delete_directory")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteFileRequest calls the generic DeleteFile builder with application/json body
+func NewDeleteFileRequest(server string, body DeleteFileJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDeleteFileRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewDeleteFileRequestWithBody generates requests for DeleteFile with any type of body
+func NewDeleteFileRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/delete_file")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewFileInfoRequest generates requests for FileInfo
+func NewFileInfoRequest(server string, params *FileInfoParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/file_info")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "path", runtime.ParamLocationQuery, params.Path); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListFilesRequest generates requests for ListFiles
+func NewListFilesRequest(server string, params *ListFilesParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/list_files")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "path", runtime.ParamLocationQuery, params.Path); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewMovePathRequest calls the generic MovePath builder with application/json body
+func NewMovePathRequest(server string, body MovePathJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewMovePathRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewMovePathRequestWithBody generates requests for MovePath with any type of body
+func NewMovePathRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/move")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewReadFileRequest generates requests for ReadFile
+func NewReadFileRequest(server string, params *ReadFileParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/read_file")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "path", runtime.ParamLocationQuery, params.Path); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetFilePermissionsRequest calls the generic SetFilePermissions builder with application/json body
+func NewSetFilePermissionsRequest(server string, body SetFilePermissionsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetFilePermissionsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewSetFilePermissionsRequestWithBody generates requests for SetFilePermissions with any type of body
+func NewSetFilePermissionsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/set_file_permissions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStartFsWatchRequest calls the generic StartFsWatch builder with application/json body
+func NewStartFsWatchRequest(server string, body StartFsWatchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewStartFsWatchRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewStartFsWatchRequestWithBody generates requests for StartFsWatch with any type of body
+func NewStartFsWatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/watch")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewStopFsWatchRequest generates requests for StopFsWatch
+func NewStopFsWatchRequest(server string, watchId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "watch_id", runtime.ParamLocationPath, watchId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/watch/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("DELETE", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewStreamFsEventsRequest generates requests for StreamFsEvents
+func NewStreamFsEventsRequest(server string, watchId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "watch_id", runtime.ParamLocationPath, watchId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/watch/%s/events", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewWriteFileRequestWithBody generates requests for WriteFile with any type of body
+func NewWriteFileRequestWithBody(server string, params *WriteFileParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/write_file")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "path", runtime.ParamLocationQuery, params.Path); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.Mode != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "mode", runtime.ParamLocationQuery, *params.Mode); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("PUT", queryURL.String(), body)
 	if err != nil {
 		return nil, err
 	}
@@ -735,6 +1648,54 @@ type ClientWithResponsesInterface interface {
 
 	MoveMouseWithResponse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*MoveMouseResponse, error)
 
+	// CreateDirectoryWithBodyWithResponse request with any body
+	CreateDirectoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDirectoryResponse, error)
+
+	CreateDirectoryWithResponse(ctx context.Context, body CreateDirectoryJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDirectoryResponse, error)
+
+	// DeleteDirectoryWithBodyWithResponse request with any body
+	DeleteDirectoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteDirectoryResponse, error)
+
+	DeleteDirectoryWithResponse(ctx context.Context, body DeleteDirectoryJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteDirectoryResponse, error)
+
+	// DeleteFileWithBodyWithResponse request with any body
+	DeleteFileWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteFileResponse, error)
+
+	DeleteFileWithResponse(ctx context.Context, body DeleteFileJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteFileResponse, error)
+
+	// FileInfoWithResponse request
+	FileInfoWithResponse(ctx context.Context, params *FileInfoParams, reqEditors ...RequestEditorFn) (*FileInfoResponse, error)
+
+	// ListFilesWithResponse request
+	ListFilesWithResponse(ctx context.Context, params *ListFilesParams, reqEditors ...RequestEditorFn) (*ListFilesResponse, error)
+
+	// MovePathWithBodyWithResponse request with any body
+	MovePathWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MovePathResponse, error)
+
+	MovePathWithResponse(ctx context.Context, body MovePathJSONRequestBody, reqEditors ...RequestEditorFn) (*MovePathResponse, error)
+
+	// ReadFileWithResponse request
+	ReadFileWithResponse(ctx context.Context, params *ReadFileParams, reqEditors ...RequestEditorFn) (*ReadFileResponse, error)
+
+	// SetFilePermissionsWithBodyWithResponse request with any body
+	SetFilePermissionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetFilePermissionsResponse, error)
+
+	SetFilePermissionsWithResponse(ctx context.Context, body SetFilePermissionsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetFilePermissionsResponse, error)
+
+	// StartFsWatchWithBodyWithResponse request with any body
+	StartFsWatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartFsWatchResponse, error)
+
+	StartFsWatchWithResponse(ctx context.Context, body StartFsWatchJSONRequestBody, reqEditors ...RequestEditorFn) (*StartFsWatchResponse, error)
+
+	// StopFsWatchWithResponse request
+	StopFsWatchWithResponse(ctx context.Context, watchId string, reqEditors ...RequestEditorFn) (*StopFsWatchResponse, error)
+
+	// StreamFsEventsWithResponse request
+	StreamFsEventsWithResponse(ctx context.Context, watchId string, reqEditors ...RequestEditorFn) (*StreamFsEventsResponse, error)
+
+	// WriteFileWithBodyWithResponse request with any body
+	WriteFileWithBodyWithResponse(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*WriteFileResponse, error)
+
 	// DeleteRecordingWithBodyWithResponse request with any body
 	DeleteRecordingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteRecordingResponse, error)
 
@@ -797,6 +1758,299 @@ func (r MoveMouseResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r MoveMouseResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type CreateDirectoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateDirectoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateDirectoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteDirectoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteDirectoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteDirectoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type DeleteFileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type FileInfoResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *FileInfo
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r FileInfoResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r FileInfoResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ListFilesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ListFiles
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ListFilesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListFilesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type MovePathResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r MovePathResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r MovePathResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ReadFileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ReadFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReadFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type SetFilePermissionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r SetFilePermissionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetFilePermissionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StartFsWatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON201      *struct {
+		// WatchId Unique identifier for the directory watch
+		WatchId *string `json:"watch_id,omitempty"`
+	}
+	JSON400 *BadRequestError
+	JSON404 *NotFoundError
+	JSON500 *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r StartFsWatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StartFsWatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopFsWatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r StopFsWatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopFsWatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StreamFsEventsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r StreamFsEventsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StreamFsEventsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type WriteFileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r WriteFileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WriteFileResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -955,6 +2209,162 @@ func (c *ClientWithResponses) MoveMouseWithResponse(ctx context.Context, body Mo
 	return ParseMoveMouseResponse(rsp)
 }
 
+// CreateDirectoryWithBodyWithResponse request with arbitrary body returning *CreateDirectoryResponse
+func (c *ClientWithResponses) CreateDirectoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateDirectoryResponse, error) {
+	rsp, err := c.CreateDirectoryWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDirectoryResponse(rsp)
+}
+
+func (c *ClientWithResponses) CreateDirectoryWithResponse(ctx context.Context, body CreateDirectoryJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateDirectoryResponse, error) {
+	rsp, err := c.CreateDirectory(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateDirectoryResponse(rsp)
+}
+
+// DeleteDirectoryWithBodyWithResponse request with arbitrary body returning *DeleteDirectoryResponse
+func (c *ClientWithResponses) DeleteDirectoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteDirectoryResponse, error) {
+	rsp, err := c.DeleteDirectoryWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteDirectoryResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeleteDirectoryWithResponse(ctx context.Context, body DeleteDirectoryJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteDirectoryResponse, error) {
+	rsp, err := c.DeleteDirectory(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteDirectoryResponse(rsp)
+}
+
+// DeleteFileWithBodyWithResponse request with arbitrary body returning *DeleteFileResponse
+func (c *ClientWithResponses) DeleteFileWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteFileResponse, error) {
+	rsp, err := c.DeleteFileWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteFileResponse(rsp)
+}
+
+func (c *ClientWithResponses) DeleteFileWithResponse(ctx context.Context, body DeleteFileJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteFileResponse, error) {
+	rsp, err := c.DeleteFile(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteFileResponse(rsp)
+}
+
+// FileInfoWithResponse request returning *FileInfoResponse
+func (c *ClientWithResponses) FileInfoWithResponse(ctx context.Context, params *FileInfoParams, reqEditors ...RequestEditorFn) (*FileInfoResponse, error) {
+	rsp, err := c.FileInfo(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseFileInfoResponse(rsp)
+}
+
+// ListFilesWithResponse request returning *ListFilesResponse
+func (c *ClientWithResponses) ListFilesWithResponse(ctx context.Context, params *ListFilesParams, reqEditors ...RequestEditorFn) (*ListFilesResponse, error) {
+	rsp, err := c.ListFiles(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListFilesResponse(rsp)
+}
+
+// MovePathWithBodyWithResponse request with arbitrary body returning *MovePathResponse
+func (c *ClientWithResponses) MovePathWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*MovePathResponse, error) {
+	rsp, err := c.MovePathWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMovePathResponse(rsp)
+}
+
+func (c *ClientWithResponses) MovePathWithResponse(ctx context.Context, body MovePathJSONRequestBody, reqEditors ...RequestEditorFn) (*MovePathResponse, error) {
+	rsp, err := c.MovePath(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseMovePathResponse(rsp)
+}
+
+// ReadFileWithResponse request returning *ReadFileResponse
+func (c *ClientWithResponses) ReadFileWithResponse(ctx context.Context, params *ReadFileParams, reqEditors ...RequestEditorFn) (*ReadFileResponse, error) {
+	rsp, err := c.ReadFile(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReadFileResponse(rsp)
+}
+
+// SetFilePermissionsWithBodyWithResponse request with arbitrary body returning *SetFilePermissionsResponse
+func (c *ClientWithResponses) SetFilePermissionsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetFilePermissionsResponse, error) {
+	rsp, err := c.SetFilePermissionsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetFilePermissionsResponse(rsp)
+}
+
+func (c *ClientWithResponses) SetFilePermissionsWithResponse(ctx context.Context, body SetFilePermissionsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetFilePermissionsResponse, error) {
+	rsp, err := c.SetFilePermissions(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetFilePermissionsResponse(rsp)
+}
+
+// StartFsWatchWithBodyWithResponse request with arbitrary body returning *StartFsWatchResponse
+func (c *ClientWithResponses) StartFsWatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartFsWatchResponse, error) {
+	rsp, err := c.StartFsWatchWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartFsWatchResponse(rsp)
+}
+
+func (c *ClientWithResponses) StartFsWatchWithResponse(ctx context.Context, body StartFsWatchJSONRequestBody, reqEditors ...RequestEditorFn) (*StartFsWatchResponse, error) {
+	rsp, err := c.StartFsWatch(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStartFsWatchResponse(rsp)
+}
+
+// StopFsWatchWithResponse request returning *StopFsWatchResponse
+func (c *ClientWithResponses) StopFsWatchWithResponse(ctx context.Context, watchId string, reqEditors ...RequestEditorFn) (*StopFsWatchResponse, error) {
+	rsp, err := c.StopFsWatch(ctx, watchId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopFsWatchResponse(rsp)
+}
+
+// StreamFsEventsWithResponse request returning *StreamFsEventsResponse
+func (c *ClientWithResponses) StreamFsEventsWithResponse(ctx context.Context, watchId string, reqEditors ...RequestEditorFn) (*StreamFsEventsResponse, error) {
+	rsp, err := c.StreamFsEvents(ctx, watchId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamFsEventsResponse(rsp)
+}
+
+// WriteFileWithBodyWithResponse request with arbitrary body returning *WriteFileResponse
+func (c *ClientWithResponses) WriteFileWithBodyWithResponse(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*WriteFileResponse, error) {
+	rsp, err := c.WriteFileWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWriteFileResponse(rsp)
+}
+
 // DeleteRecordingWithBodyWithResponse request with arbitrary body returning *DeleteRecordingResponse
 func (c *ClientWithResponses) DeleteRecordingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteRecordingResponse, error) {
 	rsp, err := c.DeleteRecordingWithBody(ctx, contentType, body, reqEditors...)
@@ -1077,6 +2487,503 @@ func ParseMoveMouseResponse(rsp *http.Response) (*MoveMouseResponse, error) {
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateDirectoryResponse parses an HTTP response from a CreateDirectoryWithResponse call
+func ParseCreateDirectoryResponse(rsp *http.Response) (*CreateDirectoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateDirectoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteDirectoryResponse parses an HTTP response from a DeleteDirectoryWithResponse call
+func ParseDeleteDirectoryResponse(rsp *http.Response) (*DeleteDirectoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteDirectoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteFileResponse parses an HTTP response from a DeleteFileWithResponse call
+func ParseDeleteFileResponse(rsp *http.Response) (*DeleteFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseFileInfoResponse parses an HTTP response from a FileInfoWithResponse call
+func ParseFileInfoResponse(rsp *http.Response) (*FileInfoResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &FileInfoResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest FileInfo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListFilesResponse parses an HTTP response from a ListFilesWithResponse call
+func ParseListFilesResponse(rsp *http.Response) (*ListFilesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListFilesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ListFiles
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseMovePathResponse parses an HTTP response from a MovePathWithResponse call
+func ParseMovePathResponse(rsp *http.Response) (*MovePathResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &MovePathResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReadFileResponse parses an HTTP response from a ReadFileWithResponse call
+func ParseReadFileResponse(rsp *http.Response) (*ReadFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReadFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetFilePermissionsResponse parses an HTTP response from a SetFilePermissionsWithResponse call
+func ParseSetFilePermissionsResponse(rsp *http.Response) (*SetFilePermissionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetFilePermissionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStartFsWatchResponse parses an HTTP response from a StartFsWatchWithResponse call
+func ParseStartFsWatchResponse(rsp *http.Response) (*StartFsWatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StartFsWatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest struct {
+			// WatchId Unique identifier for the directory watch
+			WatchId *string `json:"watch_id,omitempty"`
+		}
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopFsWatchResponse parses an HTTP response from a StopFsWatchWithResponse call
+func ParseStopFsWatchResponse(rsp *http.Response) (*StopFsWatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopFsWatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStreamFsEventsResponse parses an HTTP response from a StreamFsEventsWithResponse call
+func ParseStreamFsEventsResponse(rsp *http.Response) (*StreamFsEventsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StreamFsEventsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseWriteFileResponse parses an HTTP response from a WriteFileWithResponse call
+func ParseWriteFileResponse(rsp *http.Response) (*WriteFileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WriteFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalError
@@ -1284,6 +3191,42 @@ type ServerInterface interface {
 	// Move the mouse cursor to the specified coordinates on the host computer
 	// (POST /computer/move_mouse)
 	MoveMouse(w http.ResponseWriter, r *http.Request)
+	// Create a new directory
+	// (PUT /fs/create_directory)
+	CreateDirectory(w http.ResponseWriter, r *http.Request)
+	// Delete a directory
+	// (PUT /fs/delete_directory)
+	DeleteDirectory(w http.ResponseWriter, r *http.Request)
+	// Delete a file
+	// (PUT /fs/delete_file)
+	DeleteFile(w http.ResponseWriter, r *http.Request)
+	// Get information about a file or directory
+	// (GET /fs/file_info)
+	FileInfo(w http.ResponseWriter, r *http.Request, params FileInfoParams)
+	// List files in a directory
+	// (GET /fs/list_files)
+	ListFiles(w http.ResponseWriter, r *http.Request, params ListFilesParams)
+	// Move or rename a file or directory
+	// (PUT /fs/move)
+	MovePath(w http.ResponseWriter, r *http.Request)
+	// Read file contents
+	// (GET /fs/read_file)
+	ReadFile(w http.ResponseWriter, r *http.Request, params ReadFileParams)
+	// Set file or directory permissions/ownership
+	// (PUT /fs/set_file_permissions)
+	SetFilePermissions(w http.ResponseWriter, r *http.Request)
+	// Watch a directory for changes
+	// (POST /fs/watch)
+	StartFsWatch(w http.ResponseWriter, r *http.Request)
+	// Stop watching a directory
+	// (DELETE /fs/watch/{watch_id})
+	StopFsWatch(w http.ResponseWriter, r *http.Request, watchId string)
+	// Stream filesystem events for a watch
+	// (GET /fs/watch/{watch_id}/events)
+	StreamFsEvents(w http.ResponseWriter, r *http.Request, watchId string)
+	// Write or create a file
+	// (PUT /fs/write_file)
+	WriteFile(w http.ResponseWriter, r *http.Request, params WriteFileParams)
 	// Delete a previously recorded video file
 	// (POST /recording/delete)
 	DeleteRecording(w http.ResponseWriter, r *http.Request)
@@ -1314,6 +3257,78 @@ func (_ Unimplemented) ClickMouse(w http.ResponseWriter, r *http.Request) {
 // Move the mouse cursor to the specified coordinates on the host computer
 // (POST /computer/move_mouse)
 func (_ Unimplemented) MoveMouse(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Create a new directory
+// (PUT /fs/create_directory)
+func (_ Unimplemented) CreateDirectory(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a directory
+// (PUT /fs/delete_directory)
+func (_ Unimplemented) DeleteDirectory(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Delete a file
+// (PUT /fs/delete_file)
+func (_ Unimplemented) DeleteFile(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get information about a file or directory
+// (GET /fs/file_info)
+func (_ Unimplemented) FileInfo(w http.ResponseWriter, r *http.Request, params FileInfoParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// List files in a directory
+// (GET /fs/list_files)
+func (_ Unimplemented) ListFiles(w http.ResponseWriter, r *http.Request, params ListFilesParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Move or rename a file or directory
+// (PUT /fs/move)
+func (_ Unimplemented) MovePath(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Read file contents
+// (GET /fs/read_file)
+func (_ Unimplemented) ReadFile(w http.ResponseWriter, r *http.Request, params ReadFileParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Set file or directory permissions/ownership
+// (PUT /fs/set_file_permissions)
+func (_ Unimplemented) SetFilePermissions(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Watch a directory for changes
+// (POST /fs/watch)
+func (_ Unimplemented) StartFsWatch(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Stop watching a directory
+// (DELETE /fs/watch/{watch_id})
+func (_ Unimplemented) StopFsWatch(w http.ResponseWriter, r *http.Request, watchId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Stream filesystem events for a watch
+// (GET /fs/watch/{watch_id}/events)
+func (_ Unimplemented) StreamFsEvents(w http.ResponseWriter, r *http.Request, watchId string) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Write or create a file
+// (PUT /fs/write_file)
+func (_ Unimplemented) WriteFile(w http.ResponseWriter, r *http.Request, params WriteFileParams) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -1375,6 +3390,284 @@ func (siw *ServerInterfaceWrapper) MoveMouse(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.MoveMouse(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateDirectory operation middleware
+func (siw *ServerInterfaceWrapper) CreateDirectory(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateDirectory(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteDirectory operation middleware
+func (siw *ServerInterfaceWrapper) DeleteDirectory(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteDirectory(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteFile operation middleware
+func (siw *ServerInterfaceWrapper) DeleteFile(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteFile(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// FileInfo operation middleware
+func (siw *ServerInterfaceWrapper) FileInfo(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params FileInfoParams
+
+	// ------------- Required query parameter "path" -------------
+
+	if paramValue := r.URL.Query().Get("path"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "path", r.URL.Query(), &params.Path)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.FileInfo(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFiles operation middleware
+func (siw *ServerInterfaceWrapper) ListFiles(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListFilesParams
+
+	// ------------- Required query parameter "path" -------------
+
+	if paramValue := r.URL.Query().Get("path"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "path", r.URL.Query(), &params.Path)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFiles(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// MovePath operation middleware
+func (siw *ServerInterfaceWrapper) MovePath(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.MovePath(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReadFile operation middleware
+func (siw *ServerInterfaceWrapper) ReadFile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReadFileParams
+
+	// ------------- Required query parameter "path" -------------
+
+	if paramValue := r.URL.Query().Get("path"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "path", r.URL.Query(), &params.Path)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReadFile(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetFilePermissions operation middleware
+func (siw *ServerInterfaceWrapper) SetFilePermissions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetFilePermissions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartFsWatch operation middleware
+func (siw *ServerInterfaceWrapper) StartFsWatch(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartFsWatch(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StopFsWatch operation middleware
+func (siw *ServerInterfaceWrapper) StopFsWatch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "watch_id" -------------
+	var watchId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "watch_id", chi.URLParam(r, "watch_id"), &watchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "watch_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StopFsWatch(w, r, watchId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StreamFsEvents operation middleware
+func (siw *ServerInterfaceWrapper) StreamFsEvents(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "watch_id" -------------
+	var watchId string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "watch_id", chi.URLParam(r, "watch_id"), &watchId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "watch_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamFsEvents(w, r, watchId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// WriteFile operation middleware
+func (siw *ServerInterfaceWrapper) WriteFile(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params WriteFileParams
+
+	// ------------- Required query parameter "path" -------------
+
+	if paramValue := r.URL.Query().Get("path"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "path", r.URL.Query(), &params.Path)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "mode" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "mode", r.URL.Query(), &params.Mode)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mode", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.WriteFile(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1587,6 +3880,42 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/computer/move_mouse", wrapper.MoveMouse)
 	})
 	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/fs/create_directory", wrapper.CreateDirectory)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/fs/delete_directory", wrapper.DeleteDirectory)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/fs/delete_file", wrapper.DeleteFile)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/fs/file_info", wrapper.FileInfo)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/fs/list_files", wrapper.ListFiles)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/fs/move", wrapper.MovePath)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/fs/read_file", wrapper.ReadFile)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/fs/set_file_permissions", wrapper.SetFilePermissions)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/fs/watch", wrapper.StartFsWatch)
+	})
+	r.Group(func(r chi.Router) {
+		r.Delete(options.BaseURL+"/fs/watch/{watch_id}", wrapper.StopFsWatch)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/fs/watch/{watch_id}/events", wrapper.StreamFsEvents)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/fs/write_file", wrapper.WriteFile)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/recording/delete", wrapper.DeleteRecording)
 	})
 	r.Group(func(r chi.Router) {
@@ -1675,6 +4004,570 @@ func (response MoveMouse400JSONResponse) VisitMoveMouseResponse(w http.ResponseW
 type MoveMouse500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response MoveMouse500JSONResponse) VisitMoveMouseResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateDirectoryRequestObject struct {
+	Body *CreateDirectoryJSONRequestBody
+}
+
+type CreateDirectoryResponseObject interface {
+	VisitCreateDirectoryResponse(w http.ResponseWriter) error
+}
+
+type CreateDirectory201Response struct {
+}
+
+func (response CreateDirectory201Response) VisitCreateDirectoryResponse(w http.ResponseWriter) error {
+	w.WriteHeader(201)
+	return nil
+}
+
+type CreateDirectory400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response CreateDirectory400JSONResponse) VisitCreateDirectoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type CreateDirectory500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateDirectory500JSONResponse) VisitCreateDirectoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteDirectoryRequestObject struct {
+	Body *DeleteDirectoryJSONRequestBody
+}
+
+type DeleteDirectoryResponseObject interface {
+	VisitDeleteDirectoryResponse(w http.ResponseWriter) error
+}
+
+type DeleteDirectory200Response struct {
+}
+
+func (response DeleteDirectory200Response) VisitDeleteDirectoryResponse(w http.ResponseWriter) error {
+	w.WriteHeader(200)
+	return nil
+}
+
+type DeleteDirectory400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response DeleteDirectory400JSONResponse) VisitDeleteDirectoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteDirectory404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response DeleteDirectory404JSONResponse) VisitDeleteDirectoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteDirectory500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteDirectory500JSONResponse) VisitDeleteDirectoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteFileRequestObject struct {
+	Body *DeleteFileJSONRequestBody
+}
+
+type DeleteFileResponseObject interface {
+	VisitDeleteFileResponse(w http.ResponseWriter) error
+}
+
+type DeleteFile200Response struct {
+}
+
+func (response DeleteFile200Response) VisitDeleteFileResponse(w http.ResponseWriter) error {
+	w.WriteHeader(200)
+	return nil
+}
+
+type DeleteFile400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response DeleteFile400JSONResponse) VisitDeleteFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteFile404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response DeleteFile404JSONResponse) VisitDeleteFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DeleteFile500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteFile500JSONResponse) VisitDeleteFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FileInfoRequestObject struct {
+	Params FileInfoParams
+}
+
+type FileInfoResponseObject interface {
+	VisitFileInfoResponse(w http.ResponseWriter) error
+}
+
+type FileInfo200JSONResponse FileInfo
+
+func (response FileInfo200JSONResponse) VisitFileInfoResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FileInfo400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response FileInfo400JSONResponse) VisitFileInfoResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FileInfo404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response FileInfo404JSONResponse) VisitFileInfoResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type FileInfo500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response FileInfo500JSONResponse) VisitFileInfoResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListFilesRequestObject struct {
+	Params ListFilesParams
+}
+
+type ListFilesResponseObject interface {
+	VisitListFilesResponse(w http.ResponseWriter) error
+}
+
+type ListFiles200JSONResponse ListFiles
+
+func (response ListFiles200JSONResponse) VisitListFilesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListFiles400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ListFiles400JSONResponse) VisitListFilesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListFiles404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response ListFiles404JSONResponse) VisitListFilesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListFiles500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListFiles500JSONResponse) VisitListFilesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type MovePathRequestObject struct {
+	Body *MovePathJSONRequestBody
+}
+
+type MovePathResponseObject interface {
+	VisitMovePathResponse(w http.ResponseWriter) error
+}
+
+type MovePath200Response struct {
+}
+
+func (response MovePath200Response) VisitMovePathResponse(w http.ResponseWriter) error {
+	w.WriteHeader(200)
+	return nil
+}
+
+type MovePath400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response MovePath400JSONResponse) VisitMovePathResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type MovePath404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response MovePath404JSONResponse) VisitMovePathResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type MovePath500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response MovePath500JSONResponse) VisitMovePathResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReadFileRequestObject struct {
+	Params ReadFileParams
+}
+
+type ReadFileResponseObject interface {
+	VisitReadFileResponse(w http.ResponseWriter) error
+}
+
+type ReadFile200ApplicationoctetStreamResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response ReadFile200ApplicationoctetStreamResponse) VisitReadFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type ReadFile400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ReadFile400JSONResponse) VisitReadFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReadFile404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response ReadFile404JSONResponse) VisitReadFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ReadFile500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ReadFile500JSONResponse) VisitReadFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetFilePermissionsRequestObject struct {
+	Body *SetFilePermissionsJSONRequestBody
+}
+
+type SetFilePermissionsResponseObject interface {
+	VisitSetFilePermissionsResponse(w http.ResponseWriter) error
+}
+
+type SetFilePermissions200Response struct {
+}
+
+func (response SetFilePermissions200Response) VisitSetFilePermissionsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(200)
+	return nil
+}
+
+type SetFilePermissions400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response SetFilePermissions400JSONResponse) VisitSetFilePermissionsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetFilePermissions404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response SetFilePermissions404JSONResponse) VisitSetFilePermissionsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type SetFilePermissions500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response SetFilePermissions500JSONResponse) VisitSetFilePermissionsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartFsWatchRequestObject struct {
+	Body *StartFsWatchJSONRequestBody
+}
+
+type StartFsWatchResponseObject interface {
+	VisitStartFsWatchResponse(w http.ResponseWriter) error
+}
+
+type StartFsWatch201JSONResponse struct {
+	// WatchId Unique identifier for the directory watch
+	WatchId *string `json:"watch_id,omitempty"`
+}
+
+func (response StartFsWatch201JSONResponse) VisitStartFsWatchResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartFsWatch400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response StartFsWatch400JSONResponse) VisitStartFsWatchResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartFsWatch404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response StartFsWatch404JSONResponse) VisitStartFsWatchResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StartFsWatch500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response StartFsWatch500JSONResponse) VisitStartFsWatchResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StopFsWatchRequestObject struct {
+	WatchId string `json:"watch_id"`
+}
+
+type StopFsWatchResponseObject interface {
+	VisitStopFsWatchResponse(w http.ResponseWriter) error
+}
+
+type StopFsWatch204Response struct {
+}
+
+func (response StopFsWatch204Response) VisitStopFsWatchResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type StopFsWatch400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response StopFsWatch400JSONResponse) VisitStopFsWatchResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StopFsWatch404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response StopFsWatch404JSONResponse) VisitStopFsWatchResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StopFsWatch500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response StopFsWatch500JSONResponse) VisitStopFsWatchResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StreamFsEventsRequestObject struct {
+	WatchId string `json:"watch_id"`
+}
+
+type StreamFsEventsResponseObject interface {
+	VisitStreamFsEventsResponse(w http.ResponseWriter) error
+}
+
+type StreamFsEvents200ResponseHeaders struct {
+	XSSEContentType string
+}
+
+type StreamFsEvents200TexteventStreamResponse struct {
+	Body          io.Reader
+	Headers       StreamFsEvents200ResponseHeaders
+	ContentLength int64
+}
+
+func (response StreamFsEvents200TexteventStreamResponse) VisitStreamFsEventsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("X-SSE-Content-Type", fmt.Sprint(response.Headers.XSSEContentType))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, might as well use io.Copy
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+
+	// Use a buffer for efficient copying and flushing
+	buf := make([]byte, 4096) // text/event-stream are usually very small messages
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return werr
+			}
+			flusher.Flush() // Flush after each write
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil // End of file, no error
+			}
+			return err
+		}
+	}
+}
+
+type StreamFsEvents400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response StreamFsEvents400JSONResponse) VisitStreamFsEventsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StreamFsEvents404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response StreamFsEvents404JSONResponse) VisitStreamFsEventsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StreamFsEvents500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response StreamFsEvents500JSONResponse) VisitStreamFsEventsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type WriteFileRequestObject struct {
+	Params WriteFileParams
+	Body   io.Reader
+}
+
+type WriteFileResponseObject interface {
+	VisitWriteFileResponse(w http.ResponseWriter) error
+}
+
+type WriteFile201Response struct {
+}
+
+func (response WriteFile201Response) VisitWriteFileResponse(w http.ResponseWriter) error {
+	w.WriteHeader(201)
+	return nil
+}
+
+type WriteFile400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response WriteFile400JSONResponse) VisitWriteFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type WriteFile404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response WriteFile404JSONResponse) VisitWriteFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type WriteFile500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response WriteFile500JSONResponse) VisitWriteFileResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 
@@ -1910,6 +4803,42 @@ type StrictServerInterface interface {
 	// Move the mouse cursor to the specified coordinates on the host computer
 	// (POST /computer/move_mouse)
 	MoveMouse(ctx context.Context, request MoveMouseRequestObject) (MoveMouseResponseObject, error)
+	// Create a new directory
+	// (PUT /fs/create_directory)
+	CreateDirectory(ctx context.Context, request CreateDirectoryRequestObject) (CreateDirectoryResponseObject, error)
+	// Delete a directory
+	// (PUT /fs/delete_directory)
+	DeleteDirectory(ctx context.Context, request DeleteDirectoryRequestObject) (DeleteDirectoryResponseObject, error)
+	// Delete a file
+	// (PUT /fs/delete_file)
+	DeleteFile(ctx context.Context, request DeleteFileRequestObject) (DeleteFileResponseObject, error)
+	// Get information about a file or directory
+	// (GET /fs/file_info)
+	FileInfo(ctx context.Context, request FileInfoRequestObject) (FileInfoResponseObject, error)
+	// List files in a directory
+	// (GET /fs/list_files)
+	ListFiles(ctx context.Context, request ListFilesRequestObject) (ListFilesResponseObject, error)
+	// Move or rename a file or directory
+	// (PUT /fs/move)
+	MovePath(ctx context.Context, request MovePathRequestObject) (MovePathResponseObject, error)
+	// Read file contents
+	// (GET /fs/read_file)
+	ReadFile(ctx context.Context, request ReadFileRequestObject) (ReadFileResponseObject, error)
+	// Set file or directory permissions/ownership
+	// (PUT /fs/set_file_permissions)
+	SetFilePermissions(ctx context.Context, request SetFilePermissionsRequestObject) (SetFilePermissionsResponseObject, error)
+	// Watch a directory for changes
+	// (POST /fs/watch)
+	StartFsWatch(ctx context.Context, request StartFsWatchRequestObject) (StartFsWatchResponseObject, error)
+	// Stop watching a directory
+	// (DELETE /fs/watch/{watch_id})
+	StopFsWatch(ctx context.Context, request StopFsWatchRequestObject) (StopFsWatchResponseObject, error)
+	// Stream filesystem events for a watch
+	// (GET /fs/watch/{watch_id}/events)
+	StreamFsEvents(ctx context.Context, request StreamFsEventsRequestObject) (StreamFsEventsResponseObject, error)
+	// Write or create a file
+	// (PUT /fs/write_file)
+	WriteFile(ctx context.Context, request WriteFileRequestObject) (WriteFileResponseObject, error)
 	// Delete a previously recorded video file
 	// (POST /recording/delete)
 	DeleteRecording(ctx context.Context, request DeleteRecordingRequestObject) (DeleteRecordingResponseObject, error)
@@ -2011,6 +4940,350 @@ func (sh *strictHandler) MoveMouse(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(MoveMouseResponseObject); ok {
 		if err := validResponse.VisitMoveMouseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateDirectory operation middleware
+func (sh *strictHandler) CreateDirectory(w http.ResponseWriter, r *http.Request) {
+	var request CreateDirectoryRequestObject
+
+	var body CreateDirectoryJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateDirectory(ctx, request.(CreateDirectoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateDirectory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateDirectoryResponseObject); ok {
+		if err := validResponse.VisitCreateDirectoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteDirectory operation middleware
+func (sh *strictHandler) DeleteDirectory(w http.ResponseWriter, r *http.Request) {
+	var request DeleteDirectoryRequestObject
+
+	var body DeleteDirectoryJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteDirectory(ctx, request.(DeleteDirectoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteDirectory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteDirectoryResponseObject); ok {
+		if err := validResponse.VisitDeleteDirectoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteFile operation middleware
+func (sh *strictHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
+	var request DeleteFileRequestObject
+
+	var body DeleteFileJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteFile(ctx, request.(DeleteFileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteFile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteFileResponseObject); ok {
+		if err := validResponse.VisitDeleteFileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// FileInfo operation middleware
+func (sh *strictHandler) FileInfo(w http.ResponseWriter, r *http.Request, params FileInfoParams) {
+	var request FileInfoRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.FileInfo(ctx, request.(FileInfoRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "FileInfo")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(FileInfoResponseObject); ok {
+		if err := validResponse.VisitFileInfoResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFiles operation middleware
+func (sh *strictHandler) ListFiles(w http.ResponseWriter, r *http.Request, params ListFilesParams) {
+	var request ListFilesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFiles(ctx, request.(ListFilesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFiles")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFilesResponseObject); ok {
+		if err := validResponse.VisitListFilesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// MovePath operation middleware
+func (sh *strictHandler) MovePath(w http.ResponseWriter, r *http.Request) {
+	var request MovePathRequestObject
+
+	var body MovePathJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.MovePath(ctx, request.(MovePathRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "MovePath")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(MovePathResponseObject); ok {
+		if err := validResponse.VisitMovePathResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReadFile operation middleware
+func (sh *strictHandler) ReadFile(w http.ResponseWriter, r *http.Request, params ReadFileParams) {
+	var request ReadFileRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReadFile(ctx, request.(ReadFileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReadFile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReadFileResponseObject); ok {
+		if err := validResponse.VisitReadFileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetFilePermissions operation middleware
+func (sh *strictHandler) SetFilePermissions(w http.ResponseWriter, r *http.Request) {
+	var request SetFilePermissionsRequestObject
+
+	var body SetFilePermissionsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetFilePermissions(ctx, request.(SetFilePermissionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetFilePermissions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetFilePermissionsResponseObject); ok {
+		if err := validResponse.VisitSetFilePermissionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartFsWatch operation middleware
+func (sh *strictHandler) StartFsWatch(w http.ResponseWriter, r *http.Request) {
+	var request StartFsWatchRequestObject
+
+	var body StartFsWatchJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartFsWatch(ctx, request.(StartFsWatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartFsWatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartFsWatchResponseObject); ok {
+		if err := validResponse.VisitStartFsWatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StopFsWatch operation middleware
+func (sh *strictHandler) StopFsWatch(w http.ResponseWriter, r *http.Request, watchId string) {
+	var request StopFsWatchRequestObject
+
+	request.WatchId = watchId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StopFsWatch(ctx, request.(StopFsWatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StopFsWatch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StopFsWatchResponseObject); ok {
+		if err := validResponse.VisitStopFsWatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StreamFsEvents operation middleware
+func (sh *strictHandler) StreamFsEvents(w http.ResponseWriter, r *http.Request, watchId string) {
+	var request StreamFsEventsRequestObject
+
+	request.WatchId = watchId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamFsEvents(ctx, request.(StreamFsEventsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamFsEvents")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StreamFsEventsResponseObject); ok {
+		if err := validResponse.VisitStreamFsEventsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// WriteFile operation middleware
+func (sh *strictHandler) WriteFile(w http.ResponseWriter, r *http.Request, params WriteFileParams) {
+	var request WriteFileRequestObject
+
+	request.Params = params
+
+	request.Body = r.Body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.WriteFile(ctx, request.(WriteFileRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "WriteFile")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(WriteFileResponseObject); ok {
+		if err := validResponse.VisitWriteFileResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2164,34 +5437,54 @@ func (sh *strictHandler) StopRecording(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"AA==",
+	"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",
+	"//+ThhMPQj4AAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
