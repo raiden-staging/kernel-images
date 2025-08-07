@@ -41,15 +41,11 @@ fi
 
 export DISPLAY=:1
 
-echo "===== [debug] /etc/neko/xorg.conf ====="
-cat /etc/neko/xorg.conf
-echo "==============================="
-
 /usr/bin/Xorg :1 -config /etc/neko/xorg.conf -noreset -nolisten tcp &
-echo "============== BEGIN: Diagnostic input socket chmod =============="
-# --- BEGIN DIAGNOSTIC STEP ---
+
+# --- BEGIN DIAGNOSTIC WORKAROUND ---
 # Force-change the permissions on the input socket after it's created.
-# This is to verify that the config file option is the problem, not something else.
+# This remains as a robust workaround since the xorg.conf option was not being applied.
 echo "Waiting for input socket to appear for diagnostic chmod..."
 for i in $(seq 1 10); do
   if [ -S /tmp/xf86-input-neko.sock ]; then
@@ -60,91 +56,60 @@ for i in $(seq 1 10); do
   sleep 0.5
 done
 if ! [ -S /tmp/xf86-input-neko.sock ]; then echo "Warning: Input socket never appeared." >&2; fi
-# --- END DIAGNOSTIC STEP ---
-echo "============== END: Diagnostic input socket chmod =============="
+# --- END DIAGNOSTIC WORKAROUND ---
 
 ./mutter_startup.sh
 
 # -----------------------------------------------------------------------------
 # System-bus setup --------------------------------------------------------------
 # -----------------------------------------------------------------------------
-# Start a lightweight system D-Bus daemon. This must be done BEFORE pulseaudio.
-# With the custom policy file in /etc/dbus-1/system.d/, the 'kernel' user
-# will be allowed to register the pulseaudio service.
 echo "Starting system D-Bus daemon"
 mkdir -p /run/dbus
-# Ensure a machine-id exists (required by dbus-daemon)
 dbus-uuidgen --ensure
-# Launch dbus-daemon in the background and remember its PID for cleanup
-dbus-daemon --system \
-  --address=unix:path=/run/dbus/system_bus_socket \
-  --nopidfile --nosyslog --nofork &
+dbus-daemon --system --address=unix:path=/run/dbus/system_bus_socket --nopidfile --nosyslog --nofork &
 dbus_pid=$!
 
-# Wait for the D-Bus socket to become available
 echo "Waiting for D-Bus socket..."
 for i in $(seq 1 20); do
-  if [ -S /run/dbus/system_bus_socket ]; then
-    break
-  fi
-  if [ $i -eq 20 ]; then
-    echo "D-Bus socket not found after 10 seconds. Aborting." >&2
-    exit 1
-  fi
-  sleep 0.5
+  if [ -S /run/dbus/system_bus_socket ]; then break; fi; sleep 0.5
 done
 echo "D-Bus socket is available."
-
-# We will point DBUS_SESSION_BUS_ADDRESS at the system bus socket to suppress
-# autolaunch attempts that failed and spammed logs.
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
+
+# -----------------------------------------------------------------------------
+# PulseAudio Setup --------------------------------------------------------------
+# -----------------------------------------------------------------------------
 echo "[pre:pulse] setting up permissions"
-
-# Ensure correct permissions and ownership for PulseAudio config
-# /etc/ and .config [ https://manpages.ubuntu.com/manpages/bionic/en/man5/pulse-daemon.conf.5.html ]
-# next try figure out daemon.conf if below fails
-
-# chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /etc/pulse 2>/dev/null || true
-chown -R kernel:kernel /home/kernel/ /home/kernel/.config /etc/pulse 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/ /home/kernel/.config /etc/pulse
 chmod 777 /home/kernel/.config
 chmod 777 /etc/pulse
-
-# At runtime, ensure the XDG_RUNTIME_DIR is owned by the 'kernel' user.
-# This is critical because the directory might be on a tmpfs that was mounted by root,
-# overriding the permissions set during the Docker build.
 chown -R kernel:kernel /tmp/runtime-kernel
 
-
-# Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
-# Start pulseaudio and redirect its output to a log file for monitoring
 runuser -u kernel -- env \
   XDG_RUNTIME_DIR=/tmp/runtime-kernel \
   XDG_CONFIG_HOME=/home/kernel/.config \
   XDG_CACHE_HOME=/home/kernel/.cache \
   pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 \
-  > /tmp/pulseaudio.log 2>&1 &
+  --no-cpu-limit --no-realtime > /tmp/pulseaudio.log 2>&1 &
 pulse_pid=$!
 
-# Debug: Show the user(s) running pulseaudio processes
-echo "=== [debug:pulse] : pulseaudio process users"
-ps -eo user,comm | awk '$2=="pulseaudio"{print $1}' | sort | uniq | while read user; do
-  echo "pulseaudio is running as user: $user"
-done
-
-# Wait for PulseAudio to print "Daemon startup complete" in its log
-echo "============== BEGIN: Wait for PulseAudio server =============="
+# Wait for the PulseAudio server to be fully ready before starting clients.
 echo "Waiting for PulseAudio server to be ready..."
 for i in $(seq 1 20); do
-  if grep -q "Daemon startup complete" /tmp/pulseaudio.log; then
+  if runuser -u kernel -- pactl info >/dev/null 2>&1; then
+    echo "PulseAudio server is ready."
     break
   fi
-  echo "Waiting for PulseAudio daemon... (attempt $i)"
+  if [ $i -eq 20 ]; then
+    echo "PulseAudio failed to start. Dumping log:" >&2
+    cat /tmp/pulseaudio.log >&2
+    exit 1
+  fi
+  echo "Waiting for PulseAudio... (attempt $i)"
   sleep 0.5
 done
-echo "PulseAudio server is ready."
-echo "============== END: Wait for PulseAudio server =============="
 
 
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
@@ -215,35 +180,24 @@ else
   # The required environment variables (DISPLAY, DBUS_SESSION_BUS_ADDRESS) are already exported
   # in this script's environment, so runuser will pass them to the child process.
   runuser -u kernel -- env \
-    XDG_CONFIG_HOME=/tmp/.chromium \
-    XDG_CACHE_HOME=/tmp/.chromium \
-    HOME=/home/kernel \
-    chromium \
-    --remote-debugging-port=$INTERNAL_PORT \
-    ${CHROMIUM_FLAGS:-} >&2 & pid=$!
+    XDG_CONFIG_HOME=/tmp/.chromium XDG_CACHE_HOME=/tmp/.chromium HOME=/home/kernel \
+    chromium --remote-debugging-port=$INTERNAL_PORT ${CHROMIUM_FLAGS:-} > /tmp/chromium.log 2>&1 & pid=$!
 fi
 
-echo "Setting up ncat proxy on port $CHROME_PORT"
-ncat \
-  --sh-exec "ncat 0.0.0.0 $INTERNAL_PORT" \
-  -l "$CHROME_PORT" \
-  --keep-open & pid2=$!
+
+echo "Setting up ncat proxy..."
+ncat --sh-exec "ncat 0.0.0.0 $INTERNAL_PORT" -l "$CHROME_PORT" --keep-open & pid2=$!
 
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
-  # use webrtc
   echo "✨ Starting neko (webrtc server)."
-  # /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
   runuser -u kernel -- \
-    /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
+    /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 > /tmp/neko.log 2>&1 &
+  neko_pid=$!
 
-  # Wait for neko to be ready.
-  echo "Waiting for neko port 0.0.0.0:8080..."
-  while ! nc -z 127.0.0.1 8080 2>/dev/null; do
-    sleep 0.5
-  done
+  echo "Waiting for neko port 8080..."
+  while ! nc -z 127.0.0.1 8080 2>/dev/null; do sleep 0.5; done
   echo "Port 8080 is open"
 else
-  # use novnc
   ./novnc_startup.sh
   echo "✨ noVNC demo is ready to use!"
 fi
@@ -323,5 +277,6 @@ if [[ -z "${WITHDOCKER:-}" ]]; then
   enable_scale_to_zero
 fi
 
-# Keep the container running
-tail -f /dev/null
+# Keep the container running and stream all relevant logs to stdout
+echo "--- System ready. Tailing logs. ---"
+tail -f /tmp/pulseaudio.log /tmp/neko.log /tmp/chromium.log /dev/null
