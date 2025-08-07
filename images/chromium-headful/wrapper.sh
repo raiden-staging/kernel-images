@@ -124,31 +124,24 @@ runuser -u kernel -- env \
   pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
 
-# echo "=== [debug:pulse] : sleep 5"
-# sleep 5
-
-echo "=== [debug:pulse] : ls /etc/pulse"
-ls -l /etc/pulse
-
-if [ -d /home/kernel/.config ]; then
-  echo "=== [debug:pulse] : ls /home/kernel/.config"
-  ls -l /home/kernel/.config
-else
-  echo "=== [debug:pulse] : /home/kernel/.config does not exist"
-fi
-
-if [ -d /home/kernel/.config/pulse ]; then
-  echo "=== [debug:pulse] : ls /home/kernel/.config/pulse"
-  ls -l /home/kernel/.config/pulse
-else
-  echo "=== [debug:pulse] : /home/kernel/.config/pulse does not exist"
-fi
-
 # Debug: Show the user(s) running pulseaudio processes
 echo "=== [debug:pulse] : pulseaudio process users"
 ps -eo user,comm | awk '$2=="pulseaudio"{print $1}' | sort | uniq | while read user; do
   echo "pulseaudio is running as user: $user"
 done
+
+echo "============== BEGIN: Wait for PulseAudio server =============="
+echo "Waiting for PulseAudio server to be ready..."
+for i in $(seq 1 20); do
+  if runuser -u kernel -- pactl info >/dev/null 2>&1; then
+    break
+  fi
+  echo "Waiting for PulseAudio... (attempt $i)"
+  sleep 0.5
+done
+echo "PulseAudio server is ready."
+echo "============== END: Wait for PulseAudio server =============="
+
 
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
@@ -237,7 +230,7 @@ if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   echo "✨ Starting neko (webrtc server)."
   # /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
   runuser -u kernel -- \
-    /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
+    /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 &
 
   # Wait for neko to be ready.
   echo "Waiting for neko port 0.0.0.0:8080..."
