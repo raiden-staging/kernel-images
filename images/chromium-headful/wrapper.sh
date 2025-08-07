@@ -4,6 +4,8 @@ set -o pipefail -o errexit -o nounset
 
 # This must match the PULSE_SERVER env var in the Dockerfile
 export PULSE_SERVER=/tmp/runtime-kernel/pulse/native
+export XDG_CONFIG_HOME=/tmp/.chromium
+export XDG_CACHE_HOME=/tmp/.chromium
 
 # If the WITHDOCKER environment variable is not set, it means we are not running inside a Docker container.
 # Docker manages /dev/shm itself, and attempting to mount or modify it can cause permission or device errors.
@@ -107,6 +109,7 @@ dirs=(
   /home/kernel/.pki/nssdb
   /home/kernel/.cache/dconf
   /tmp/runtime-kernel/dconf
+  /tmp/.chromium
 )
 
 for dir in "${dirs[@]}"; do
@@ -114,7 +117,7 @@ for dir in "${dirs[@]}"; do
 done
 
 # Ensure correct ownership (ignore errors if already correct)
-chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel /tmp/.chromium 2>/dev/null || true
 
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
 # Use ncat to listen on 0.0.0.0:9222 since chromium does not let you listen on 0.0.0.0 anymore: https://github.com/pyppeteer/pyppeteer/pull/379#issuecomment-217029626
@@ -159,8 +162,8 @@ else
   # The required environment variables (DISPLAY, DBUS_SESSION_BUS_ADDRESS) are already exported
   # in this script's environment, so runuser will pass them to the child process.
   runuser -u kernel -- env \
-    XDG_CONFIG_HOME=/home/kernel/.config \
-    XDG_CACHE_HOME=/home/kernel/.cache \
+    XDG_CONFIG_HOME=/tmp/.chromium \
+    XDG_CACHE_HOME=/tmp/.chromium \
     HOME=/home/kernel \
     chromium \
     --remote-debugging-port=$INTERNAL_PORT \

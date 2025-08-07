@@ -183,4 +183,7 @@ ENV USER=kernel
 ENV XDG_RUNTIME_DIR=/tmp/runtime-kernel
 ENV PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
 
+ENV XDG_CONFIG_HOME=/tmp/.chromium
+ENV XDG_CACHE_HOME=/tmp/.chromium
+
 ENTRYPOINT [ "/wrapper.sh" ]
