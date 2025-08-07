@@ -83,19 +83,30 @@ echo "[pre:pulse] setting up permissions"
 # Ensure correct permissions and ownership for PulseAudio config
 # /etc/ and .config [ https://manpages.ubuntu.com/manpages/bionic/en/man5/pulse-daemon.conf.5.html ]
 # next try figure out daemon.conf if below fails
-mkdir -p /home/kernel/.config/pulse
+
 chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /etc/pulse 2>/dev/null || true
 chmod 777 /home/kernel/.config
 chmod 777 /home/kernel/.config/pulse
 chmod 777 /etc/pulse
 
-
-
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
 runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
-  pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+  pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
+
+echo "=== [debug:pulse] : ls /etc/pulse"
+ls -l /etc/pulse
+echo "=== [debug:pulse] : ls /home/kernel/.config"
+ls -l /home/kernel/.config
+echo "=== [debug:pulse] : ls /home/kernel/.config/pulse"
+ls -l /home/kernel/.config/pulse
+
+# Debug: Show the user(s) running pulseaudio processes
+echo "=== [debug:pulse] : pulseaudio process users"
+ps -eo user,comm | awk '$2=="pulseaudio"{print $1}' | sort | uniq | while read user; do
+  echo "pulseaudio is running as user: $user"
+done
 
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
