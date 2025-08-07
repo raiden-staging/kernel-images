@@ -27,8 +27,6 @@ Section "InputDevice"
   Identifier "dummy_touchscreen"
   Option "SendCoreEvents" "On"
   Option "SocketName" "/tmp/xf86-input-neko.sock"
-  # Allow any user (like 'kernel') to connect to the root-owned input socket.
-  Option "SocketMode" "0666"
   Driver "neko"
 EndSection
 
