@@ -97,7 +97,10 @@ chown -R kernel:kernel /tmp/runtime-kernel
 
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
-runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
+runuser -u kernel -- env \
+  XDG_RUNTIME_DIR=/tmp/runtime-kernel \
+  XDG_CONFIG_HOME=/home/kernel/.config \
+  XDG_CACHE_HOME=/home/kernel/.cache \
   pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
 
