@@ -129,13 +129,12 @@ cleanup () {
   enable_scale_to_zero
   kill -TERM $pid
   kill -TERM $pid2
-  # if [ -n "${pulse_pid:-}" ]; then
-  #   kill -TERM $pulse_pid 2>/dev/null || true
-  # fi
-  ##### <-- next attempt would be uncommenting dbus:kill , original wrapper had it -->
-  # if [ -n "${dbus_pid:-}" ]; then
-  #   kill -TERM $dbus_pid 2>/dev/null || true
-  # fi
+  if [ -n "${pulse_pid:-}" ]; then
+    kill -TERM $pulse_pid 2>/dev/null || true
+  fi
+  if [ -n "${dbus_pid:-}" ]; then
+    kill -TERM $dbus_pid 2>/dev/null || true
+  fi
   # Kill the API server if it was started
   if [[ -n "${pid3:-}" ]]; then
     kill -TERM $pid3 || true
