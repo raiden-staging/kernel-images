@@ -91,8 +91,7 @@ runuser -u kernel -- env \
   XDG_RUNTIME_DIR=/tmp/runtime-kernel \
   XDG_CONFIG_HOME=/home/kernel/.config \
   XDG_CACHE_HOME=/home/kernel/.cache \
-  pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 \
-  --no-cpu-limit --no-realtime > /tmp/pulseaudio.log 2>&1 &
+  pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 > /tmp/pulseaudio.log 2>&1 &
 pulse_pid=$!
 
 # Wait for the PulseAudio server to be fully ready before starting clients.
