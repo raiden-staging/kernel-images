@@ -84,9 +84,9 @@ echo "[pre:pulse] setting up permissions"
 # /etc/ and .config [ https://manpages.ubuntu.com/manpages/bionic/en/man5/pulse-daemon.conf.5.html ]
 # next try figure out daemon.conf if below fails
 
-chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /etc/pulse 2>/dev/null || true
+# chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /etc/pulse 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/.config /home/kernel/ /etc/pulse 2>/dev/null || true
 chmod 777 /home/kernel/.config
-chmod 777 /home/kernel/.config/pulse
 chmod 777 /etc/pulse
 
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
@@ -100,10 +100,31 @@ sleep 5
 
 echo "=== [debug:pulse] : ls /etc/pulse"
 ls -l /etc/pulse
-echo "=== [debug:pulse] : ls /home/kernel/.config"
-ls -l /home/kernel/.config
-echo "=== [debug:pulse] : ls /home/kernel/.config/pulse"
-ls -l /home/kernel/.config/pulse
+
+# echo "==========================================================="
+# echo "=== [debug:pulse] : cat /etc/pulse/default.pa"
+# echo "==========================================================="
+# cat /etc/pulse/default.pa || echo "Could not read /etc/pulse/default.pa"
+# echo "==========================================================="
+# echo "=== [debug:pulse] : cat /etc/pulse/daemon.conf"
+# echo "==========================================================="
+# cat /etc/pulse/daemon.conf || echo "Could not read /etc/pulse/daemon.conf"
+# echo "==========================================================="
+
+
+if [ -d /home/kernel/.config ]; then
+  echo "=== [debug:pulse] : ls /home/kernel/.config"
+  ls -l /home/kernel/.config
+else
+  echo "=== [debug:pulse] : /home/kernel/.config does not exist"
+fi
+
+if [ -d /home/kernel/.config/pulse ]; then
+  echo "=== [debug:pulse] : ls /home/kernel/.config/pulse"
+  ls -l /home/kernel/.config/pulse
+else
+  echo "=== [debug:pulse] : /home/kernel/.config/pulse does not exist"
+fi
 
 # Debug: Show the user(s) running pulseaudio processes
 echo "=== [debug:pulse] : pulseaudio process users"
@@ -133,7 +154,8 @@ for dir in "${dirs[@]}"; do
 done
 
 # Ensure correct ownership (ignore errors if already correct)
-chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel /tmp/.chromium 2>/dev/null || true
+# chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel /tmp/.chromium 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/.config /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel /tmp/.chromium 2>/dev/null || true
 
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
 # Use ncat to listen on 0.0.0.0:9222 since chromium does not let you listen on 0.0.0.0 anymore: https://github.com/pyppeteer/pyppeteer/pull/379#issuecomment-217029626
