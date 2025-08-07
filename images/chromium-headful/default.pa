@@ -11,6 +11,10 @@ load-module module-virtual-source source_name=microphone master=audio_input.moni
 
 ### Allow pulse audio to be accessed via a unix socket
 load-module module-native-protocol-unix auth-anonymous=1
+# from docker : ENV XDG_RUNTIME_DIR=/tmp/runtime-kernel
+# from docker : PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
+# load-module module-native-protocol-unix socket=/tmp/runtime-kernel/pulse/native auth-anonymous=1
+
 
 ### Make sure we always have a sink around, even if it is a null sink.
 load-module module-always-sink

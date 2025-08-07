@@ -1,0 +1,109 @@
+raidendotai@crdhost-image-snapshot-666-666:~/sza-snooze/kernel-images/images/chromium-headful$ [...] kraft cloud inst logs chromium-headful-test
+
+Disabling scale-to-zero
+starting mutter
+
+X.Org X Server 1.21.1.4
+X Protocol Version 11, Revision 0
+Current Operating System: Linux (none) 6.5.13 #2 SMP PREEMPT_DYNAMIC Wed Aug  6 17:10:07 UTC 2025 x86_64
+Kernel command line: i8042.noaux i8042.nomux i8042.nopnp i8042.dumbkbd console=ttyS0 reboot=k panic=1 quiet unikraft netdev.ip="172.21.112.1/24:172.21.112.254:172.21.112.254::chromium-headful-test:internal" vfs.fstab="initrd0:/:extract::ramfs=2:" vfs.fstab="bd0:/chromium:ext4:0::mkmp" env.vars='DISPLAY_NUM=1' env.vars='ENABLE_WEBRTC=true' env.vars='HEIGHT=768' env.vars='HOME=/' env.vars='NEKO_ICESERVERS=[...]' env.vars='RUN_AS_ROOT=false' env.vars='WIDTH=1024' env.vars='WITH_KERNEL_IMAGES_API=true' virtio_mmio.device=4K@0xd0001000:5 virtio_mmio.device=4K@0xd0002000:6 virtio_mmio.device=4K@0xd0003000:7 -- /wrapper.sh
+xorg-server 2:21.1.4-2ubuntu1.7~22.04.15 (For technical support please see http://www.ubuntu.com/support) 
+Current version of pixman: 0.40.0
+        Before reporting problems, check http://wiki.x.org
+        to make sure that you have the latest version.
+Markers: (--) probed, (**) from config file, (==) default setting,
+        (++) from command line, (!!) notice, (II) informational,
+        (WW) warning, (EE) error, (NI) not implemented, (??) unknown.
+(==) Log file: "/var/log/Xorg.1.log", Time: Thu Aug  7 03:58:07 2025
+(++) Using config file: "/etc/neko/xorg.conf"
+(==) Using system config directory "/usr/share/X11/xorg.conf.d"
+Starting system D-Bus daemon
+Waiting for D-Bus socket...
+D-Bus socket is available.
+[pre:pulse] setting up permissions
+Starting PulseAudio daemon...
+Starting Chromium on internal port 9223
+W: [pulseaudio] core-util.c: Failed to open configuration file '/home/kernel/.config/pulse//daemon.conf': Permission denied
+W: [pulseaudio] daemon-conf.c: Failed to open configuration file: Permission denied
+CHROMIUM_FLAGS:  --user-data-dir=/home/kernel/user-data --disable-dev-shm-usage --disable-gpu --start-maximized --disable-software-rasterizer --remote-allow-origins=*
+Setting up ncat proxy on port 9222
+✨ Starting neko (webrtc server).
+Waiting for neko port 0.0.0.0:8080...
+[417:417:0807/035809.057084:ERROR:chrome/browser/ui/views/message_box_dialog.cc:198] Unable to show message box: Failed To Create Data Directory - Chromium cannot read and write to its data directory:
+
+/home/kernel/user-data
+
+    _   __     __
+   / | / /__  / /______   \    /\
+  /  |/ / _ \/ //_/ __ \   )  ( ')
+ / /|  /  __/ ,< / /_/ /  (  /  )
+/_/ |_/\___/_/|_|\____/    \(__)|
+  nurdism/m1k1o server dev@dev
+{"level":"info","time":"2025-08-07T03:58:09Z","message":"legacy configuration is enabled"}
+3:58AM INF preflight complete with config file config=/etc/neko/neko.yaml log-dir= log-json=false log-level=info log-time=UNIX
+3:58AM WRN no video pipelines specified, using default
+3:58AM WRN no TCP, UDP mux or epr specified, using default epr range max=59100 min=59000
+3:58AM WRN you are using v2 configuration 'NEKO_ICESERVERS' which is deprecated, please use 'NEKO_WEBRTC_ICESERVERS_FRONTEND' and/or 'NEKO_WEBRTC_ICESERVERS_BACKEND' instead
+3:58AM WRN legacy configuration is enabled because at least one V2 configuration was used, please migrate to V3 configuration, visit https://neko.m1k1o.net/docs/v3/migration-from-v2 for more details
+3:58AM INF starting neko server service=neko
+3:58AM INF setting initial screen size module=desktop screen_size=1920x1080@60
+3:58AM INF syntax check for video stream pipeline passed module=capture pipeline="ximagesrc display-name=:1 show-pointer=true use-damage=false ! capsfilter caps=video/x-raw,framerate=2500/100 name=framerate ! videoconvert ! queue   ! vp8enc name=encoder target-bitrate=1996800 cpu-used=4 end-usage=cbr deadline=1 buffer-size=12288 keyframe-max-dist=25 min-quantizer=4 threads=4 undershoot=95 buffer-initial-size=6144 buffer-optimal-size=9216 max-quantizer=20  ! appsink name=appsink" video_id=legacy
+3:58AM INF syntax check for video stream pipeline passed module=capture pipeline="ximagesrc display-name=:1 show-pointer=false use-damage=false ! capsfilter caps=video/x-raw,framerate=2500/100 name=framerate ! videoconvert ! queue   ! vp8enc name=encoder min-quantizer=4 target-bitrate=1996800 cpu-used=4 end-usage=cbr deadline=1 buffer-size=12288 keyframe-max-dist=25 threads=4 undershoot=95 buffer-initial-size=6144 buffer-optimal-size=9216 max-quantizer=20  ! appsink name=appsink" video_id=main
+3:58AM INF starting module=webrtc submodule=cursor-image
+3:58AM INF webrtc starting epr=59000-59100 icelite=false iceservers-backend=[...] icetrickle=true module=webrtc nat1to1=172.241.31.226 tcpmux=0 udpmux=0
+
+DevTools listening on ws://127.0.0.1:9223/devtools/browser/105ab130-47dc-4139-9957-2ba003333cab
+3:58AM INF websocket starting module=websocket
+3:58AM INF plugin started module=plugins plugin=filetransfer
+3:58AM INF plugin started module=plugins plugin=chat
+3:58AM INF http listening on 0.0.0.0:8080 module=http
+3:58AM INF neko ready service=neko
+dbus-daemon[398]: [system] Activating service name='org.freedesktop.UPower' requested by ':1.3' (uid=1000 pid=417 comm="/usr/lib/chromium/chromium --show-component-extens") (using servicehelper)
+dbus-daemon[398]: [system] Activated service 'org.freedesktop.UPower' failed: Failed to execute program org.freedesktop.UPower: Permission denied
+[417:501:0807/035809.389518:ERROR:dbus/object_proxy.cc:590] Failed to call method: org.freedesktop.DBus.Properties.Get: object_path= /org/freedesktop/UPower: org.freedesktop.DBus.Error.Spawn.ExecFailed: Failed to execute program org.freedesktop.UPower: Permission denied
+dbus-daemon[398]: [system] Activating service name='org.freedesktop.UPower' requested by ':1.3' (uid=1000 pid=417 comm="/usr/lib/chromium/chromium --show-component-extens") (using servicehelper)
+dbus-daemon[398]: [system] Activated service 'org.freedesktop.UPower' failed: Failed to execute program org.freedesktop.UPower: Permission denied
+[417:501:0807/035809.402237:ERROR:dbus/object_proxy.cc:590] Failed to call method: org.freedesktop.UPower.GetDisplayDevice: object_path= /org/freedesktop/UPower: org.freedesktop.DBus.Error.Spawn.ExecFailed: Failed to execute program org.freedesktop.UPower: Permission denied
+dbus-daemon[398]: [system] Activating service name='org.freedesktop.UPower' requested by ':1.3' (uid=1000 pid=417 comm="/usr/lib/chromium/chromium --show-component-extens") (using servicehelper)
+dbus-daemon[398]: [system] Activated service 'org.freedesktop.UPower' failed: Failed to execute program org.freedesktop.UPower: Permission denied
+[417:501:0807/035809.416738:ERROR:dbus/object_proxy.cc:590] Failed to call method: org.freedesktop.UPower.EnumerateDevices: object_path= /org/freedesktop/UPower: org.freedesktop.DBus.Error.Spawn.ExecFailed: Failed to execute program org.freedesktop.UPower: Permission denied
+[417:457:0807/035809.448814:ERROR:crypto/nss_util.cc:48] Failed to create /home/kernel/.pki/nssdb directory.
+Port 8080 is open
+✨ Starting kernel-images API.
+time=2025-08-07T03:58:09.593Z level=INFO msg="server configuration" config="&{Port:10001 FrameRate:10 DisplayNum:1 MaxSizeInMB:500 OutputDir:/recordings PathToFFmpeg:ffmpeg}"
+time=2025-08-07T03:58:09.605Z level=INFO msg="http server starting" addr=:10001
+3:58AM WRN X event error occured error_code=3 minor_code=0 module=desktop request_code=20
+3:58AM INF session created module=websocket session_id=dummy-kPXnD
+3:58AM INF connection started address=127.0.0.1:39044 agent=Go-http-client/1.1 module=websocket session_id=dummy-kPXnD
+3:58AM INF set websocket connected module=session session_id=dummy-kPXnD
+3:58AM INF session connected module=websocket session_id=dummy-kPXnD
+3:58AM INF creating webrtc peer module=webrtc peer_id=1 session_id=dummy-kPXnD
+3:58AM INF signaling state changed to have-local-offer module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=pc
+3:58AM INF creating pipeline codec=vp8 id=main module=capture src="ximagesrc display-name=:1 show-pointer=false use-damage=false ! capsfilter caps=video/x-raw,framerate=2500/100 name=framerate ! videoconvert ! queue   ! vp8enc name=encoder threads=4 undershoot=95 buffer-initial-size=6144 buffer-optimal-size=9216 max-quantizer=20 target-bitrate=1996800 cpu-used=4 end-usage=cbr deadline=1 buffer-size=12288 keyframe-max-dist=25 min-quantizer=4  ! appsink name=appsink" submodule=stream-sink
+3:58AM INF first listener, starting id=main module=capture submodule=stream-sink
+3:58AM INF set video module=webrtc peer_id=1 session_id=dummy-kPXnD video_id=main
+3:58AM WRN estimator is disabled or in passive mode, cannot change video auto module=webrtc peer_id=1 session_id=dummy-kPXnD
+3:58AM INF creating pipeline codec=opus id=audio module=capture src="pulsesrc device=audio_output.monitor ! audio/x-raw,channels=2 ! audioconvert ! queue ! opusenc inband-fec=true bitrate=128000 ! appsink name=appsink" submodule=stream-sink
+3:58AM INF first listener, starting id=audio module=capture submodule=stream-sink
+3:58AM INF set audio disabled disabled=false module=webrtc peer_id=1 session_id=dummy-kPXnD
+[417:461:0807/035812.685875:ERROR:google_apis/gcm/engine/registration_request.cc:291] Registration response error message: DEPRECATED_ENDPOINT
+3:58AM INF creating pipeline codec=vp8 id=legacy module=capture src="ximagesrc display-name=:1 show-pointer=true use-damage=false ! capsfilter caps=video/x-raw,framerate=2500/100 name=framerate ! videoconvert ! queue   ! vp8enc name=encoder target-bitrate=1996800 cpu-used=4 end-usage=cbr deadline=1 buffer-size=12288 keyframe-max-dist=25 min-quantizer=4 threads=4 undershoot=95 buffer-initial-size=6144 buffer-optimal-size=9216 max-quantizer=20  ! appsink name=appsink" submodule=stream-sink
+3:58AM INF first listener, starting id=legacy module=capture submodule=stream-sink
+3:58AM INF destroying pipeline id=main module=capture submodule=stream-sink
+3:58AM INF last listener, stopping id=main module=capture submodule=stream-sink
+3:58AM INF set video module=webrtc peer_id=1 session_id=dummy-kPXnD video_id=legacy
+3:58AM INF signaling state changed to stable module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=pc
+3:58AM INF Setting new connection state: Checking module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=ice
+3:58AM INF ICE connection state changed: checking module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=pc
+3:58AM INF peer connection state changed: connecting module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=pc
+3:58AM WRN Failed to ping without candidate pairs. Connection is not possible yet. module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=ice
+3:58AM WRN Failed to ping without candidate pairs. Connection is not possible yet. module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=ice
+3:58AM INF Setting new connection state: Connected module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=ice
+3:58AM INF ICE connection state changed: connected module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=pc
+3:58AM INF peer connection state changed: connected module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=pc
+3:58AM INF set webrtc connected connected=true module=session session_id=dummy-kPXnD
+3:58AM INF session state changed module=websocket session_id=dummy-kPXnD
+3:58AM INF got remote data channel data_channel={} module=webrtc peer_id=1 session_id=dummy-kPXnD
+3:58AM WRN failed to get server reflexive address udp4 turn:global.relay.metered.ca:443?transport=udp: read udp4 0.0.0.0:59085: i/o timeout module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=ice
+3:58AM WRN failed to get server reflexive address udp4 turns:global.relay.metered.ca:443?transport=tcp: read udp4 0.0.0.0:59057: i/o timeout module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=ice
+3:58AM WRN failed to get server reflexive address udp4 turn:global.relay.metered.ca:80?transport=udp: read udp4 0.0.0.0:59042: i/o timeout module=webrtc peer_id=1 session_id=dummy-kPXnD submodule=pion subsystem=ice
