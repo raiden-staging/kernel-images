@@ -79,15 +79,14 @@ echo "D-Bus socket is available."
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
 echo "[pre:pulse] setting up permissions"
-dirs=(
-  /home/kernel/.config/pulse
-)
-for dir in "${dirs[@]}"; do
-  mkdir -p "$dir"
-done
 
-# Ensure correct ownership (ignore errors if already correct)
+# Ensure correct permissions and ownership for PulseAudio config
+mkdir -p /home/kernel/.config/pulse
 chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse 2>/dev/null || true
+chmod 777 /home/kernel/.config
+chmod 777 /home/kernel/.config/pulse
+
+
 
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
@@ -127,12 +126,12 @@ cleanup () {
   enable_scale_to_zero
   kill -TERM $pid
   kill -TERM $pid2
-  if [ -n "${pulse_pid:-}" ]; then
-    kill -TERM $pulse_pid 2>/dev/null || true
-  fi
-  if [ -n "${dbus_pid:-}" ]; then
-    kill -TERM $dbus_pid 2>/dev/null || true
-  fi
+  # if [ -n "${pulse_pid:-}" ]; then
+  #   kill -TERM $pulse_pid 2>/dev/null || true
+  # fi
+  # if [ -n "${dbus_pid:-}" ]; then
+  #   kill -TERM $dbus_pid 2>/dev/null || true
+  # fi
   # Kill the API server if it was started
   if [[ -n "${pid3:-}" ]]; then
     kill -TERM $pid3 || true

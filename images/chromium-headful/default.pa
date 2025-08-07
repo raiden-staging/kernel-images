@@ -10,10 +10,9 @@ load-module module-null-sink sink_name=audio_input sink_properties=device.descri
 load-module module-virtual-source source_name=microphone master=audio_input.monitor source_properties=device.description="Virtual_Microphone"
 
 ### Allow pulse audio to be accessed via a unix socket
-load-module module-native-protocol-unix auth-anonymous=1
-# from docker : ENV XDG_RUNTIME_DIR=/tmp/runtime-kernel
-# from docker : PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
-# load-module module-native-protocol-unix socket=/tmp/runtime-kernel/pulse/native auth-anonymous=1
+# load-module module-native-protocol-unix auth-anonymous=1
+# adapting from dockerfile : ENV XDG_RUNTIME_DIR=/tmp/runtime-kernel , PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
+load-module module-native-protocol-unix socket=/tmp/runtime-kernel/pulse/native auth-anonymous=1
 
 
 ### Make sure we always have a sink around, even if it is a null sink.
