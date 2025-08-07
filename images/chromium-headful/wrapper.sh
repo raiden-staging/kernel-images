@@ -95,6 +95,9 @@ runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
   pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
 
+echo "=== [debug:pulse] : sleep 5"
+sleep 5
+
 echo "=== [debug:pulse] : ls /etc/pulse"
 ls -l /etc/pulse
 echo "=== [debug:pulse] : ls /home/kernel/.config"
