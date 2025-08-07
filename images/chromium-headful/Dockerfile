@@ -135,7 +135,7 @@ RUN set -eux; \
     chmod 1777 /tmp/.X11-unix; \
     chown $KERNEL_USER:$KERNEL_USER /tmp/.X11-unix/; \
     #
-    # make directories for neko and ensure correct permissions for PulseAudio config
+    # make directories for neko
     mkdir -p /etc/neko /var/www /var/log/neko \
         /tmp/runtime-$KERNEL_USER \
         /home/$KERNEL_USER/.config/pulse  \
@@ -143,6 +143,7 @@ RUN set -eux; \
     chmod 1777 /var/log/neko; \
     chown $KERNEL_USER:$KERNEL_USER /var/log/neko/ /tmp/runtime-$KERNEL_USER; \
     chown -R $KERNEL_USER:$KERNEL_USER /home/$KERNEL_USER; \
+    chown -R $KERNEL_USER:$KERNEL_USER /home/$KERNEL_USER/.config/pulse /etc/pulse || true; \
     # Ensure /home/$KERNEL_USER/.config and /home/$KERNEL_USER/.config/pulse are owned by the user and world-writable
     chmod 777 /home/$KERNEL_USER/.config || true; \
     chmod 777 /home/$KERNEL_USER/.config/pulse || true; \
@@ -168,8 +169,10 @@ ENV WIDTH=1024
 ENV WITHDOCKER=true
 
 COPY xorg.conf /etc/neko/xorg.conf
+
 COPY default.pa /etc/pulse/default.pa
 COPY default.pa /home/kernel/.config/pulse/default.pa
+
 COPY dbus-pulseaudio.conf /etc/dbus-1/system.d/pulseaudio.conf
 COPY dbus-mpris.conf /etc/dbus-1/system.d/mpris.conf
 COPY neko.yaml /etc/neko/neko.yaml
