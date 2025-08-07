@@ -146,19 +146,6 @@ done
 echo "PulseAudio server is ready."
 echo "============== END: Wait for PulseAudio server =============="
 
-# waiting for pulse to reach : I: [pulseaudio] main.c: Daemon startup complete.
-echo "============== BEGIN: Wait for PulseAudio server =============="
-echo "Waiting for PulseAudio server to be ready..."
-for i in $(seq 1 20); do
-  if runuser -u kernel -- pactl info >/dev/null 2>&1; then
-    break
-  fi
-  echo "Waiting for PulseAudio daemon... (attempt $i)"
-  sleep 0.5
-done
-echo "PulseAudio server is ready."
-echo "============== END: Wait for PulseAudio server =============="
-
 
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
