@@ -187,6 +187,8 @@ COPY --from=client /src/dist/ /var/www
 COPY --from=xorg-deps /usr/local/lib/xorg/modules/drivers/dummy_drv.so /usr/lib/xorg/modules/drivers/dummy_drv.so
 COPY --from=xorg-deps /usr/local/lib/xorg/modules/input/neko_drv.so /usr/lib/xorg/modules/input/neko_drv.so
 
+RUN chown -R $KERNEL_USER:$KERNEL_USER /var/www /etc/neko
+
 COPY image-chromium/ /
 COPY ./wrapper.sh /wrapper.sh
 

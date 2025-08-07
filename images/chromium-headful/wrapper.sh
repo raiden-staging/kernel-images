@@ -226,7 +226,9 @@ ncat \
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   # use webrtc
   echo "✨ Starting neko (webrtc server)."
-  /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
+  # /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
+  runuser -u kernel -- \
+    /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
 
   # Wait for neko to be ready.
   echo "Waiting for neko port 0.0.0.0:8080..."
