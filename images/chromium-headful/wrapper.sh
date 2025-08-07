@@ -115,13 +115,16 @@ chmod 777 /etc/pulse
 # overriding the permissions set during the Docker build.
 chown -R kernel:kernel /tmp/runtime-kernel
 
+
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
+# Start pulseaudio and redirect its output to a log file for monitoring
 runuser -u kernel -- env \
   XDG_RUNTIME_DIR=/tmp/runtime-kernel \
   XDG_CONFIG_HOME=/home/kernel/.config \
   XDG_CACHE_HOME=/home/kernel/.cache \
-  pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+  pulseaudio -vvv --disallow-module-loading --disallow-exit --exit-idle-time=-1 \
+  > /tmp/pulseaudio.log 2>&1 &
 pulse_pid=$!
 
 # Debug: Show the user(s) running pulseaudio processes
@@ -130,13 +133,27 @@ ps -eo user,comm | awk '$2=="pulseaudio"{print $1}' | sort | uniq | while read u
   echo "pulseaudio is running as user: $user"
 done
 
+# Wait for PulseAudio to print "Daemon startup complete" in its log
+echo "============== BEGIN: Wait for PulseAudio server =============="
+echo "Waiting for PulseAudio server to be ready..."
+for i in $(seq 1 20); do
+  if grep -q "Daemon startup complete" /tmp/pulseaudio.log; then
+    break
+  fi
+  echo "Waiting for PulseAudio daemon... (attempt $i)"
+  sleep 0.5
+done
+echo "PulseAudio server is ready."
+echo "============== END: Wait for PulseAudio server =============="
+
+# waiting for pulse to reach : I: [pulseaudio] main.c: Daemon startup complete.
 echo "============== BEGIN: Wait for PulseAudio server =============="
 echo "Waiting for PulseAudio server to be ready..."
 for i in $(seq 1 20); do
   if runuser -u kernel -- pactl info >/dev/null 2>&1; then
     break
   fi
-  echo "Waiting for PulseAudio... (attempt $i)"
+  echo "Waiting for PulseAudio daemon... (attempt $i)"
   sleep 0.5
 done
 echo "PulseAudio server is ready."
@@ -230,7 +247,7 @@ if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   echo "✨ Starting neko (webrtc server)."
   # /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
   runuser -u kernel -- \
-    /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 &
+    /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
 
   # Wait for neko to be ready.
   echo "Waiting for neko port 0.0.0.0:8080..."
