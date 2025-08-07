@@ -27,14 +27,14 @@
           @touchstart.stop.prevent="onTouchHandler"
           @touchend.stop.prevent="onTouchHandler"
         />
-
+<!-- KERNEL
         <div v-if="!playing && playable" class="player-overlay" @click.stop.prevent="playAndUnmute">
           <i class="fas fa-play-circle" />
         </div>
         <div v-else-if="mutedOverlay && muted" class="player-overlay" @click.stop.prevent="unmute">
           <i class="fas fa-volume-up" />
         </div>
-
+-->
         <div ref="aspect" class="player-aspect" />
       </div>
       <ul v-if="!fullscreen && !hideControls" class="video-menu top">
@@ -71,7 +71,7 @@
           -->
         </li>
         <li
-          v-if="hosting && is_touch_device"
+          v-if="is_touch_device"
           :class="extraControls || 'extra-control'"
           @click.stop.prevent="openMobileKeyboard"
         >
@@ -373,6 +373,8 @@
       return this.$accessor.video.horizontal
     }
 
+
+
     get is_touch_device() {
       return (
         // detect if the device has touch support
@@ -533,6 +535,21 @@
         this.$client.sendData('keyup', { key: this.keyMap(key) })
       }
       this.keyboard.listenTo(this._overlay)
+
+      /* KERNEL : Unmute audio on first user interaction */
+      const unmuteOnFirstInteraction = () => {
+        // We only want to do this if the video is currently muted.
+        if (this.muted) {
+          this.unmute()
+          // Also set volume to 100% as a safety measure.
+          this.$accessor.video.setVolume(100)
+        }
+        // Listener is attached with { once: true }, so no manual removal is needed.
+      }
+
+      // Listen for the first interaction on the whole page.
+      document.documentElement.addEventListener('mousedown', unmuteOnFirstInteraction, { once: true })
+      document.documentElement.addEventListener('keydown', unmuteOnFirstInteraction, { once: true })
     }
 
     beforeDestroy() {
