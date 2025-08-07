@@ -81,6 +81,8 @@ export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 echo "[pre:pulse] setting up permissions"
 
 # Ensure correct permissions and ownership for PulseAudio config
+# /etc/ and .config [ https://manpages.ubuntu.com/manpages/bionic/en/man5/pulse-daemon.conf.5.html ]
+# next try figure out daemon.conf if below fails
 mkdir -p /home/kernel/.config/pulse
 chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /etc/pulse 2>/dev/null || true
 chmod 777 /home/kernel/.config

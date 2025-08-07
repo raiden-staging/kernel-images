@@ -135,7 +135,7 @@ RUN set -eux; \
     chmod 1777 /tmp/.X11-unix; \
     chown $KERNEL_USER:$KERNEL_USER /tmp/.X11-unix/; \
     #
-    # make directories for neko
+    # make directories for neko and ensure correct permissions for PulseAudio config
     mkdir -p /etc/neko /var/www /var/log/neko \
         /tmp/runtime-$KERNEL_USER \
         /home/$KERNEL_USER/.config/pulse  \
@@ -143,6 +143,11 @@ RUN set -eux; \
     chmod 1777 /var/log/neko; \
     chown $KERNEL_USER:$KERNEL_USER /var/log/neko/ /tmp/runtime-$KERNEL_USER; \
     chown -R $KERNEL_USER:$KERNEL_USER /home/$KERNEL_USER; \
+    # Ensure /home/$KERNEL_USER/.config and /home/$KERNEL_USER/.config/pulse are owned by the user and world-writable
+    chmod 777 /home/$KERNEL_USER/.config || true; \
+    chmod 777 /home/$KERNEL_USER/.config/pulse || true; \
+    # Also ensure /etc/pulse is world-writable for config file access
+    chmod 777 /etc/pulse || true; \
     # clean up
     apt-get clean -y; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/
