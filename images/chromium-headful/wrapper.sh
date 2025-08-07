@@ -85,7 +85,7 @@ echo "[pre:pulse] setting up permissions"
 # next try figure out daemon.conf if below fails
 
 # chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /etc/pulse 2>/dev/null || true
-chown -R kernel:kernel /home/kernel/.config /home/kernel/ /etc/pulse 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/ /home/kernel/.config /etc/pulse 2>/dev/null || true
 chmod 777 /home/kernel/.config
 chmod 777 /etc/pulse
 

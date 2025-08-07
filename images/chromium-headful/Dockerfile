@@ -139,6 +139,7 @@ RUN set -eux; \
     mkdir -p /etc/neko /var/www /var/log/neko \
         /tmp/runtime-$KERNEL_USER \
     #    /home/$KERNEL_USER/.config/pulse  \
+        /home/$KERNEL_USER/.config  \
         /home/$KERNEL_USER/.local/share/xorg; \
     chmod 1777 /var/log/neko; \
     chown $KERNEL_USER:$KERNEL_USER /var/log/neko/ /tmp/runtime-$KERNEL_USER; \
