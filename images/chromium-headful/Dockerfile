@@ -174,8 +174,8 @@ COPY default.pa /etc/pulse/default.pa
 COPY default.pa /home/kernel/.config/pulse/default.pa
 
 COPY daemon.conf /etc/pulse/daemon.conf
+# COPY daemon.conf /home/kernel/.config/pulse//daemon.conf
 COPY daemon.conf /home/kernel/.config/pulse/daemon.conf
-COPY daemon.conf /home/kernel/.config/pulse//daemon.conf
 
 COPY dbus-pulseaudio.conf /etc/dbus-1/system.d/pulseaudio.conf
 COPY dbus-mpris.conf /etc/dbus-1/system.d/mpris.conf
