@@ -76,30 +76,22 @@ echo "D-Bus socket is available."
 # autolaunch attempts that failed and spammed logs.
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
+echo "[pre:pulse] setting up permissions"
+dirs=(
+  /home/kernel/.config/pulse
+)
+for dir in "${dirs[@]}"; do
+  mkdir -p "$dir"
+done
+
+# Ensure correct ownership (ignore errors if already correct)
+chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse 2>/dev/null || true
+
 # Start PulseAudio as the 'kernel' user. It will connect to the system bus.
 echo "Starting PulseAudio daemon..."
 runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel \
   pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
 pulse_pid=$!
-
-# Wait for pulseaudio socket to be available, with a timeout
-echo "Waiting for PulseAudio socket..."
-for i in $(seq 1 20); do
-  if [ -S "$PULSE_SERVER" ]; then
-    break
-  fi
-  # check if pulseaudio process is still alive
-  if ! kill -0 $pulse_pid 2>/dev/null; then
-    echo "PulseAudio process died. Aborting." >&2
-    exit 1
-  fi
-  if [ $i -eq 20 ]; then
-    echo "PulseAudio socket not found after 10 seconds. Aborting." >&2
-    exit 1
-  fi
-  sleep 0.5
-done
-echo "PulseAudio socket is available."
 
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
@@ -122,7 +114,7 @@ for dir in "${dirs[@]}"; do
 done
 
 # Ensure correct ownership (ignore errors if already correct)
-chown -R kernel:kernel /home/kernel/.config /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel 2>/dev/null || true
+chown -R kernel:kernel /home/kernel/.config /home/kernel/.config/pulse /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel 2>/dev/null || true
 
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
 # Use ncat to listen on 0.0.0.0:9222 since chromium does not let you listen on 0.0.0.0 anymore: https://github.com/pyppeteer/pyppeteer/pull/379#issuecomment-217029626
