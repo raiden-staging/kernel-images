@@ -111,7 +111,7 @@ RUN set -eux; \
     apt-get install -y --no-install-recommends \
         wget ca-certificates python2 supervisor xclip xdotool \
         pulseaudio dbus-x11 xserver-xorg-video-dummy \
-        rtkit-daemon \
+        rtkit \
         libcairo2 libxcb1 libxrandr2 libxv1 libopus0 libvpx7 \
         gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
         gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
