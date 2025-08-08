@@ -193,7 +193,7 @@ COPY ./wrapper.sh /wrapper.sh
 COPY bin/kernel-images-api /usr/local/bin/kernel-images-api
 ENV WITH_KERNEL_IMAGES_API=false
 
-RUN useradd -m -s /bin/bash kernel
+# RUN useradd -m -s /bin/bash kernel
 RUN cp -r ./user-data /home/kernel/user-data
 
 ENV USER=kernel
