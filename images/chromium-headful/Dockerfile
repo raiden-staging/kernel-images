@@ -51,6 +51,7 @@ RUN apt-get update && \
     sudo \
     mutter \
     x11vnc \
+    upower \
     # Python/pyenv reqs
     build-essential \
     libssl-dev  \
@@ -102,17 +103,20 @@ RUN set -eux; \
     install -m755 /tmp/ffmpeg-*/ffprobe /usr/local/bin/ffprobe; \
     rm -rf /tmp/ffmpeg*
 
-# runtime
-ENV USERNAME=root
+ # runtime
+ARG KERNEL_USER=kernel
+ARG KERNEL_UID=1000
+ARG KERNEL_GID=$KERNEL_UID
 RUN set -eux; \
     apt-get update; \
     apt-get install -y --no-install-recommends \
-    wget ca-certificates python2 supervisor xclip xdotool \
-    pulseaudio dbus-x11 xserver-xorg-video-dummy \
-    libcairo2 libxcb1 libxrandr2 libxv1 libopus0 libvpx7 \
-    gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
-    gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
-    gstreamer1.0-pulseaudio gstreamer1.0-omx; \
+        wget ca-certificates python2 supervisor xclip xdotool \
+        pulseaudio dbus-x11 xserver-xorg-video-dummy \
+        rtkit \
+        libcairo2 libxcb1 libxrandr2 libxv1 libopus0 libvpx7 \
+        gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
+        gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
+        gstreamer1.0-pulseaudio gstreamer1.0-omx; \
     #
     # install libxcvt0 (not available in debian:bullseye)
     ARCH=$(dpkg --print-architecture); \
@@ -120,19 +124,35 @@ RUN set -eux; \
     apt-get install --no-install-recommends ./libxcvt0_0.1.2-1_${ARCH}.deb; \
     rm ./libxcvt0_0.1.2-1_${ARCH}.deb; \
     #
+    # create a non-root user and add to all relevant audio groups
+    groupadd --gid $KERNEL_GID $KERNEL_USER; \
+    useradd --uid $KERNEL_UID --gid $KERNEL_GID --shell /bin/bash --create-home $KERNEL_USER; \
+    adduser $KERNEL_USER audio; \
+    adduser $KERNEL_USER video; \
+    adduser $KERNEL_USER pulse; \
+    adduser $KERNEL_USER pulse-access; \
+    #
     # workaround for an X11 problem: http://blog.tigerteufel.de/?p=476
     mkdir /tmp/.X11-unix; \
     chmod 1777 /tmp/.X11-unix; \
-    chown $USERNAME /tmp/.X11-unix/; \
+    chown $KERNEL_USER:$KERNEL_USER /tmp/.X11-unix/; \
     #
     # make directories for neko
     mkdir -p /etc/neko /var/www /var/log/neko \
-    /tmp/runtime-$USERNAME \
-    /home/$USERNAME/.config/pulse  \
-    /home/$USERNAME/.local/share/xorg; \
+        /tmp/runtime-$KERNEL_USER \
+    #    /home/$KERNEL_USER/.config/pulse  \
+        /home/$KERNEL_USER/.config  \
+        /home/$KERNEL_USER/.local/share/xorg; \
     chmod 1777 /var/log/neko; \
-    chown $USERNAME /var/log/neko/ /tmp/runtime-$USERNAME; \
-    chown -R $USERNAME:$USERNAME /home/$USERNAME; \
+    chown $KERNEL_USER:$KERNEL_USER /var/log/neko/ /tmp/runtime-$KERNEL_USER; \
+    chown -R $KERNEL_USER:$KERNEL_USER /home/$KERNEL_USER; \
+    # chown -R $KERNEL_USER:$KERNEL_USER /home/$KERNEL_USER/.config/pulse /etc/pulse || true; \
+    chown -R $KERNEL_USER:$KERNEL_USER /etc/pulse || true; \
+    # Ensure /home/$KERNEL_USER/.config and /home/$KERNEL_USER/.config/pulse are owned by the user and world-writable
+    chmod 777 /home/$KERNEL_USER/.config || true; \
+    # chmod 777 /home/$KERNEL_USER/.config/pulse || true; \
+    # Also ensure /etc/pulse is world-writable for config file access
+    chmod 777 /etc/pulse || true; \
     # clean up
     apt-get clean -y; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/
@@ -153,11 +173,18 @@ ENV WIDTH=1024
 ENV WITHDOCKER=true
 
 COPY xorg.conf /etc/neko/xorg.conf
+
+COPY default.pa /etc/pulse/default.pa
+COPY daemon.conf /etc/pulse/daemon.conf
+COPY dbus-pulseaudio.conf /etc/dbus-1/system.d/pulseaudio.conf
+COPY dbus-mpris.conf /etc/dbus-1/system.d/mpris.conf
+
 COPY neko.yaml /etc/neko/neko.yaml
 COPY --from=neko /usr/bin/neko /usr/bin/neko
 COPY --from=client /src/dist/ /var/www
 COPY --from=xorg-deps /usr/local/lib/xorg/modules/drivers/dummy_drv.so /usr/lib/xorg/modules/drivers/dummy_drv.so
 COPY --from=xorg-deps /usr/local/lib/xorg/modules/input/neko_drv.so /usr/lib/xorg/modules/input/neko_drv.so
+RUN chown -R $KERNEL_USER:$KERNEL_USER /var/www /etc/neko
 
 COPY image-chromium/ /
 COPY ./wrapper.sh /wrapper.sh
@@ -169,5 +196,10 @@ ENV WITH_KERNEL_IMAGES_API=false
 RUN useradd -m -s /bin/bash kernel
 RUN cp -r ./user-data /home/kernel/user-data
 
-ENTRYPOINT [ "/wrapper.sh" ]
+ENV USER=kernel
+ENV XDG_RUNTIME_DIR=/tmp/runtime-kernel
+ENV PULSE_SERVER=unix:${XDG_RUNTIME_DIR}/pulse/native
+ENV XDG_CONFIG_HOME=/tmp/.chromium
+ENV XDG_CACHE_HOME=/tmp/.chromium
 
+ENTRYPOINT [ "/wrapper.sh" ]
