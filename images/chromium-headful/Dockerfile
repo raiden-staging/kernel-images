@@ -17,20 +17,20 @@ RUN npm run build
 # and the custom input driver (xf86-input-neko)
 ###############################################################################
 FROM ubuntu:22.04 AS xorg-deps
-
-ENV DEBIAN_FRONTEND=noninteractive
 WORKDIR /xorg
+ENV DEBIAN_FRONTEND=noninteractive
+
 
 # Build-time dependencies for Xorg modules
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        git gcc pkgconf autoconf automake libtool make \
-        xorg-dev xutils-dev && \
-    rm -rf /var/lib/apt/lists/*
+RUN set -eux; \
+    apt-get update; \
+    apt-get install -y \
+    git gcc pkgconf autoconf automake libtool make xorg-dev xutils-dev \
+    && rm -rf /var/lib/apt/lists/*;
 
 COPY xorg-deps/ /xorg/
 
-# Build dummy video driver
+# Build xf86-video-dummy v0.3.8 with RandR support
 RUN cd xf86-video-dummy/v0.3.8 && \
     patch -p1 < ../01_v0.3.8_xdummy-randr.patch && \
     autoreconf -v --install && \
@@ -38,7 +38,7 @@ RUN cd xf86-video-dummy/v0.3.8 && \
     make -j"$(nproc)" && \
     make install
 
-# Build input driver
+# Build custom input driver
 RUN cd xf86-input-neko && \
     ./autogen.sh --prefix=/usr && \
     ./configure && \
@@ -63,30 +63,22 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV DEBIAN_PRIORITY=high
 
 ###############################################################################
-# Base OS & core toolchain
+# Base OS & core toolchain & apps
 ###############################################################################
-RUN apt-get update && \
-    apt-get -y upgrade && \
-    apt-get -y install --no-install-recommends \
+RUN set -eux; \
+    apt-get update; \
+    apt-get -y upgrade; \
+    apt-get -y install \
         xvfb xterm xdotool scrot imagemagick sudo mutter x11vnc upower \
-        build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev \
-        libsqlite3-dev curl git libncursesw5-dev xz-utils tk-dev libxml2-dev \
-        libxmlsec1-dev libffi-dev liblzma-dev net-tools netcat \
-        software-properties-common && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
-
-
-###############################################################################
-# User-facing applications
-###############################################################################
-RUN add-apt-repository -y ppa:mozillateam/ppa && \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        chromium-browser libreoffice x11-apps xpdf gedit xpaint tint2 \
-        galculator pcmanfm wget xdg-utils libvulkan1 fonts-liberation unzip && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+        build-essential libssl-dev zlib1g-dev libbz2-dev libreadline-dev libsqlite3-dev \
+        curl git libncursesw5-dev xz-utils tk-dev libxml2-dev libxmlsec1-dev libffi-dev liblzma-dev \
+        net-tools netcat software-properties-common; \
+    \
+    sudo add-apt-repository ppa:mozillateam/ppa; \
+    sudo apt-get install -y --no-install-recommends \
+        chromium-browser libreoffice x11-apps xpdf gedit xpaint tint2 galculator pcmanfm \
+        wget xdg-utils libvulkan1 fonts-liberation unzip; \
+    apt-get clean
 
 
 ###############################################################################
@@ -117,11 +109,15 @@ RUN apt-get update && \
 ###############################################################################
 # FFmpeg (static build, latest 7.x)
 ###############################################################################
-RUN curl -fsSL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz \
-        -o /tmp/ffmpeg.tar.xz && \
-    tar -xJf /tmp/ffmpeg.tar.xz -C /tmp && \
-    install -m755 /tmp/ffmpeg-*/ffmpeg  /usr/local/bin/ffmpeg && \
-    install -m755 /tmp/ffmpeg-*/ffprobe /usr/local/bin/ffprobe && \
+# install ffmpeg manually since the version available in apt is from the 4.x branch due to #drama.
+# as of writing these static builds will be the latest 7.0.x release.
+RUN set -eux; \
+    URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"; \
+    echo "Downloading FFmpeg static build from $URL"; \
+    curl -fsSL "$URL" -o /tmp/ffmpeg.tar.xz; \
+    tar -xJf /tmp/ffmpeg.tar.xz -C /tmp; \
+    install -m755 /tmp/ffmpeg-*/ffmpeg  /usr/local/bin/ffmpeg; \
+    install -m755 /tmp/ffmpeg-*/ffprobe /usr/local/bin/ffprobe; \
     rm -rf /tmp/ffmpeg*
 
 
@@ -154,12 +150,12 @@ RUN apt-get update && \
              --shell /bin/bash --create-home "$KERNEL_USER" && \
     for g in audio video pulse pulse-access; do adduser "$KERNEL_USER" "$g"; done && \
     \
-    # X11 socket permissions
+    # workaround for an X11 problem: http://blog.tigerteufel.de/?p=476
     mkdir -p /tmp/.X11-unix && \
     chmod 1777 /tmp/.X11-unix && \
     chown "$KERNEL_USER:$KERNEL_USER" /tmp/.X11-unix && \
     \
-    # Runtime directories
+    # Make directories for neko
     mkdir -p /etc/neko /var/www /var/log/neko \
              /tmp/runtime-"$KERNEL_USER" \
              /home/"$KERNEL_USER"/.config \
@@ -169,7 +165,7 @@ RUN apt-get update && \
            /var/log/neko /tmp/runtime-"$KERNEL_USER" /home/"$KERNEL_USER" && \
     chmod 777 /etc/pulse || true && \
     apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    rm -rf /var/lib/apt/lists/* /var/cache/apt/
 
 
 ###############################################################################
@@ -200,7 +196,7 @@ ENV DISPLAY_NUM=1 \
 
 
 ###############################################################################
-# Copy build artefacts & configuration
+# Copy build artefacts & configurations
 ###############################################################################
 COPY xorg.conf            /etc/neko/xorg.conf
 COPY default.pa           /etc/pulse/default.pa
@@ -228,7 +224,7 @@ COPY wrapper.sh      /wrapper.sh
 
 
 ###############################################################################
-# Kernel images API
+# Copy the kernel-images API binary built externally
 ###############################################################################
 COPY bin/kernel-images-api /usr/local/bin/kernel-images-api
 ENV WITH_KERNEL_IMAGES_API=false
