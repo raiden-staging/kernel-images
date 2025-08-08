@@ -92,6 +92,13 @@ RUN apt-get update && \
     unzip && \
     apt-get clean
 
+RUN apt-get install -y --no-install-recommends locales && \
+    printf "zh_CN.UTF-8 UTF-8\nzh_TW.UTF-8 UTF-8\nja_JP.UTF-8 UTF-8\nko_KR.UTF-8 UTF-8\nar_SA.UTF-8 UTF-8\nhi_IN.UTF-8 UTF-8\nru_RU.UTF-8 UTF-8\nth_TH.UTF-8 UTF-8\nel_GR.UTF-8 UTF-8\nhe_IL.UTF-8 UTF-8" > /etc/locale.gen && \
+    locale-gen && update-locale LANG=en_US.UTF-8 && \
+    apt-get install -y --no-install-recommends \
+      fonts-noto-core fonts-noto-cjk fonts-noto-cjk-extra fonts-noto-ui-core && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
 # install ffmpeg manually since the version available in apt is from the 4.x branch due to #drama.
 # as of writing these static builds will be the latest 7.0.x release.
 RUN set -eux; \
