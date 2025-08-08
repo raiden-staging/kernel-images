@@ -63,7 +63,7 @@ fi
 # Input-socket permission fix : Force-change after creation ────────────────────
 # ------------------------------------------------------------------------------
 echo "[wrapper] Waiting for xf86-input socket"
-for _ in {1..10}; do
+for i in $(seq 1 10); do
   if [[ -S /tmp/xf86-input-neko.sock ]]; then
     chmod 666 /tmp/xf86-input-neko.sock
     echo "[wrapper] Socket chmod 666 applied"
@@ -90,7 +90,7 @@ dbus-daemon --system \
 dbus_pid=$!
 
 echo "[wrapper] Waiting for D-Bus socket"
-for _ in {1..20}; do
+for i in $(seq 1 20); do
   [[ -S /run/dbus/system_bus_socket ]] && break
   sleep 0.5
 done
@@ -116,9 +116,12 @@ runuser -u kernel -- env \
 pulse_pid=$!
 
 echo "[pulse] Waiting for server"
-for _ in {1..20}; do
+for i in $(seq 1 20); do
   runuser -u kernel -- pactl info >/dev/null 2>&1 && break
-  [[ $_ -eq 20 ]] && { echo "[pulse] ERROR: failed to start"; exit 1; }
+  if [ "$i" -eq 20 ]; then
+    echo "[pulse] ERROR: failed to start"
+    exit 1
+  fi
   sleep 0.5
 done
 
