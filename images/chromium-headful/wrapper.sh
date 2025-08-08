@@ -1,125 +1,144 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# ------------------------------------------------------------------------------
+# wrapper.sh – container entrypoint
+# ------------------------------------------------------------------------------
+# NOTE: Critical path. Preserve operation order and variable semantics.
+#       Any modification risks production instability.
+# ------------------------------------------------------------------------------
 
-set -o pipefail -o errexit -o nounset
+set -o errexit -o nounset -o pipefail
 
-# This must match the PULSE_SERVER env var in the Dockerfile
-export PULSE_SERVER=/tmp/runtime-kernel/pulse/native
-export XDG_CONFIG_HOME=/tmp/.chromium
-export XDG_CACHE_HOME=/tmp/.chromium
-export XDG_RUNTIME_DIR=/tmp/runtime-kernel
+# ------------------------------------------------------------------------------
+# Environment ──────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
+export PULSE_SERVER="/tmp/runtime-kernel/pulse/native"
+export XDG_CONFIG_HOME="/tmp/.chromium"
+export XDG_CACHE_HOME="/tmp/.chromium"
+export XDG_RUNTIME_DIR="/tmp/runtime-kernel"
+export DISPLAY=":1"
 
+# ------------------------------------------------------------------------------
+# /dev/shm (only outside Docker) ───────────────────────────────────────────────
 # If the WITHDOCKER environment variable is not set, it means we are not running inside a Docker container.
 # Docker manages /dev/shm itself, and attempting to mount or modify it can cause permission or device errors.
 # However, in a unikernel container environment (non-Docker), we need to manually create and mount /dev/shm as a tmpfs
 # to support shared memory operations.
-if [ -z "${WITHDOCKER:-}" ]; then
+# ------------------------------------------------------------------------------
+if [[ -z "${WITHDOCKER:-}" ]]; then
   mkdir -p /dev/shm
   chmod 777 /dev/shm
   mount -t tmpfs tmpfs /dev/shm
 fi
 
+# ------------------------------------------------------------------------------
+# Scale-to-zero control ────────────────────────────────────────────────────────
 # We disable scale-to-zero for the lifetime of this script and restore
 # the original setting on exit.
+# ------------------------------------------------------------------------------
 SCALE_TO_ZERO_FILE="/uk/libukp/scale_to_zero_disable"
+
 scale_to_zero_write() {
-  local char="$1"
   # Skip when not running inside Unikraft Cloud (control file absent)
-  if [[ -e "$SCALE_TO_ZERO_FILE" ]]; then
-    # Write the character, but do not fail the whole script if this errors out
-    echo -n "$char" > "$SCALE_TO_ZERO_FILE" 2>/dev/null || \
-      echo "Failed to write to scale-to-zero control file" >&2
-  fi
+  [[ -e "$SCALE_TO_ZERO_FILE" ]] || return 0
+  # Write the character, but do not fail the whole script if this errors out
+  echo -n "$1" >"$SCALE_TO_ZERO_FILE" 2>/dev/null || \
+    echo "[wrapper] WARN: cannot write scale-to-zero flag" >&2
 }
+
 disable_scale_to_zero() { scale_to_zero_write "+"; }
 enable_scale_to_zero()  { scale_to_zero_write "-"; }
 
 # Disable scale-to-zero for the duration of the script when not running under Docker
 if [[ -z "${WITHDOCKER:-}" ]]; then
-  echo "Disabling scale-to-zero"
+  echo "[wrapper] Disabling scale-to-zero"
   disable_scale_to_zero
 fi
 
-export DISPLAY=:1
-
+# ------------------------------------------------------------------------------
+# Xorg ─────────────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 /usr/bin/Xorg :1 -config /etc/neko/xorg.conf -noreset -nolisten tcp &
 
-# Force-change the permissions on the input socket after it's created.
-echo "Waiting for input socket to appear for diagnostic chmod..."
-for i in $(seq 1 10); do
-  if [ -S /tmp/xf86-input-neko.sock ]; then
-    echo "Socket found. Applying diagnostic chmod 666."
+# ------------------------------------------------------------------------------
+# Input-socket permission fix : Force-change after creation ────────────────────
+# ------------------------------------------------------------------------------
+echo "[wrapper] Waiting for xf86-input socket"
+for _ in {1..10}; do
+  if [[ -S /tmp/xf86-input-neko.sock ]]; then
     chmod 666 /tmp/xf86-input-neko.sock
+    echo "[wrapper] Socket chmod 666 applied"
     break
   fi
   sleep 0.5
 done
-if ! [ -S /tmp/xf86-input-neko.sock ]; then echo "Warning: Input socket never appeared." >&2; fi
-# --- END DIAGNOSTIC WORKAROUND ---
+[[ -S /tmp/xf86-input-neko.sock ]] || echo "[wrapper] WARN: socket not found" >&2
 
+# ------------------------------------------------------------------------------
+# Mutter ───────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 ./mutter_startup.sh
 
-# -----------------------------------------------------------------------------
-# System-bus setup --------------------------------------------------------------
-# -----------------------------------------------------------------------------
-echo "Starting system D-Bus daemon"
+# ------------------------------------------------------------------------------
+# system D-Bus Setup ───────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
+echo "[wrapper] Starting system D-Bus"
 mkdir -p /run/dbus
 dbus-uuidgen --ensure
-dbus-daemon --system --address=unix:path=/run/dbus/system_bus_socket --nopidfile --nosyslog --nofork &
+dbus-daemon --system \
+  --address="unix:path=/run/dbus/system_bus_socket" \
+  --nopidfile --nosyslog --nofork &
 dbus_pid=$!
 
-echo "Waiting for D-Bus socket..."
-for i in $(seq 1 20); do
-  if [ -S /run/dbus/system_bus_socket ]; then break; fi; sleep 0.5
+echo "[wrapper] Waiting for D-Bus socket"
+for _ in {1..20}; do
+  [[ -S /run/dbus/system_bus_socket ]] && break
+  sleep 0.5
 done
-echo "D-Bus socket is available."
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
-
-# -----------------------------------------------------------------------------
-# PulseAudio Setup --------------------------------------------------------------
-# -----------------------------------------------------------------------------
-echo "[pulse] setting up permissions"
+# ------------------------------------------------------------------------------
+# PulseAudio Setup ─────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
+echo "[pulse] Setting up permissions"
 chown -R kernel:kernel /home/kernel/ /home/kernel/.config /etc/pulse
-chmod 777 /home/kernel/.config
-chmod 777 /etc/pulse
+chmod 777 /home/kernel/.config /etc/pulse
 chown -R kernel:kernel /tmp/runtime-kernel
 
-echo "Starting PulseAudio daemon..."
+echo "[pulse] Starting daemon"
 runuser -u kernel -- env \
   XDG_RUNTIME_DIR=/tmp/runtime-kernel \
   XDG_CONFIG_HOME=/home/kernel/.config \
   XDG_CACHE_HOME=/home/kernel/.cache \
-  pulseaudio --log-level=error --disallow-module-loading --disallow-exit --exit-idle-time=-1 &
+  pulseaudio --log-level=error \
+             --disallow-module-loading \
+             --disallow-exit \
+             --exit-idle-time=-1 &
 pulse_pid=$!
 
-# Wait for the PulseAudio server to be fully ready before starting clients.
-echo "Waiting for PulseAudio server to be ready..."
-for i in $(seq 1 20); do
-  if runuser -u kernel -- pactl info >/dev/null 2>&1; then
-    echo "PulseAudio server is ready."
-    break
-  fi
-  if [ $i -eq 20 ]; then
-    echo "PulseAudio failed to start"
-    exit 1
-  fi
-  echo "Waiting for PulseAudio... (attempt $i)"
+echo "[pulse] Waiting for server"
+for _ in {1..20}; do
+  runuser -u kernel -- pactl info >/dev/null 2>&1 && break
+  [[ $_ -eq 20 ]] && { echo "[pulse] ERROR: failed to start"; exit 1; }
   sleep 0.5
 done
 
+# ------------------------------------------------------------------------------
+# VNC / WebRTC ─────────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
   ./x11vnc_startup.sh
 fi
 
-# -----------------------------------------------------------------------------
-# House-keeping for the unprivileged "kernel" user --------------------------------
+# ------------------------------------------------------------------------------
+# Filesystem housekeeping for unprivileged user ────────────────────────────────
 # Some Chromium subsystems want to create files under $HOME (NSS cert DB, dconf
 # cache).  If those directories are missing or owned by root Chromium emits
 # noisy error messages such as:
 #   [ERROR:crypto/nss_util.cc:48] Failed to create /home/kernel/.pki/nssdb ...
 #   dconf-CRITICAL **: unable to create directory '/home/kernel/.cache/dconf'
 # Pre-create them and hand ownership to the user so the messages disappear.
-
+# Also critical to avoid Permission Denied when running as kernel user
+# ------------------------------------------------------------------------------
 dirs=(
   /home/kernel/user-data
   /home/kernel/.config/chromium
@@ -127,88 +146,91 @@ dirs=(
   /home/kernel/.cache/dconf
   /tmp
   /var/log
-  /home/kernel/.cache/dconf
   /tmp/runtime-kernel/dconf
   /tmp/.chromium
 )
-
-for dir in "${dirs[@]}"; do
-  if [ ! -d "$dir" ]; then
-    mkdir -p "$dir"
-  fi
+for d in "${dirs[@]}"; do
+  [[ -d "$d" ]] || mkdir -p "$d"
 done
+chown -R kernel:kernel /home/kernel/user-data /home/kernel/.config \
+  /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel /tmp/.chromium 2>/dev/null || true
 
-# Ensure correct ownership (ignore errors if already correct)
-chown -R kernel:kernel /home/kernel/user-data /home/kernel/.config /home/kernel/.pki /home/kernel/.cache /tmp/runtime-kernel /tmp/.chromium 2>/dev/null || true
-
-# Start Chromium with display :1 and remote debugging, loading our recorder extension.
-# Use ncat to listen on 0.0.0.0:9222 since chromium does not let you listen on 0.0.0.0 anymore: https://github.com/pyppeteer/pyppeteer/pull/379#issuecomment-217029626
-cleanup () {
-  echo "Cleaning up..."
-  # Re-enable scale-to-zero if the script terminates early
+# ------------------------------------------------------------------------------
+# Cleanup handler ──────────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
+cleanup() {
+  echo "[wrapper] Cleaning up"
   enable_scale_to_zero
-  kill -TERM $pid
-  kill -TERM $pid2
-  # Kill the API server if it was started
-  if [[ -n "${pid3:-}" ]]; then
-    kill -TERM $pid3 || true
-  fi
-  if [ -n "${dbus_pid:-}" ]; then
-    kill -TERM $dbus_pid 2>/dev/null || true
-  fi
+  kill -TERM "$pid" "$pid2"
+  [[ -n "${pid3:-}" ]] && kill -TERM "$pid3" || true
+  [[ -n "${dbus_pid:-}" ]] && kill -TERM "$dbus_pid" || true
 }
 trap cleanup TERM INT
 pid=
 pid2=
 pid3=
-INTERNAL_PORT=9223
-CHROME_PORT=9222  # External port mapped to host
-echo "Starting Chromium on internal port $INTERNAL_PORT"
+export INTERNAL_PORT=9223
+export CHROME_PORT=9222  
+
+# ------------------------------------------------------------------------------
+# Chromium ─────────────────────────────────────────────────────────────────────
+# Start Chromium with display :1 and remote debugging, loading our recorder extension.
+# Use ncat to listen on 0.0.0.0:9222 since chromium does not let you listen on 0.0.0.0 anymore: https://github.com/pyppeteer/pyppeteer/pull/379#issuecomment-217029626
+# ------------------------------------------------------------------------------
 
 # Load additional Chromium flags from /chromium/flags if present
+echo "[chromium] Preparing flags"
 CHROMIUM_FLAGS="${CHROMIUM_FLAGS:-}"
-if [[ -f /chromium/flags ]]; then
-  CHROMIUM_FLAGS="$CHROMIUM_FLAGS $(cat /chromium/flags)"
-fi
-echo "CHROMIUM_FLAGS: $CHROMIUM_FLAGS"
+[[ -f /chromium/flags ]] && CHROMIUM_FLAGS+=" $(< /chromium/flags)"
+echo "[chromium] Flags: $CHROMIUM_FLAGS"
 
-RUN_AS_ROOT=${RUN_AS_ROOT:-false}
+INTERNAL_PORT="${INTERNAL_PORT:-9223}"
+CHROME_PORT="${CHROME_PORT:-9222}" # External port mapped to host
+RUN_AS_ROOT="${RUN_AS_ROOT:-false}"
+
+echo "[chromium] Launching on display ${DISPLAY}"
 if [[ "$RUN_AS_ROOT" == "true" ]]; then
-  DISPLAY=:1 chromium \
-    --remote-debugging-port=$INTERNAL_PORT \
-    ${CHROMIUM_FLAGS:-} >&2 & pid=$!
+  DISPLAY="$DISPLAY" DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" chromium \
+    --remote-debugging-port="$INTERNAL_PORT" \
+    $CHROMIUM_FLAGS >&2 & pid=$!
 else
   # required environment variables (DISPLAY, DBUS_SESSION_BUS_ADDRESS) are already exported
   # in this script's environment, so runuser will pass them to the child process.
   runuser -u kernel -- env \
-    XDG_CONFIG_HOME=/tmp/.chromium XDG_CACHE_HOME=/tmp/.chromium HOME=/home/kernel \
-    chromium --remote-debugging-port=$INTERNAL_PORT ${CHROMIUM_FLAGS:-} > /tmp/chromium.log 2>&1 & pid=$!
+    XDG_CONFIG_HOME=/tmp/.chromium \
+    XDG_CACHE_HOME=/tmp/.chromium \
+    HOME=/home/kernel \
+    chromium --remote-debugging-port="$INTERNAL_PORT" $CHROMIUM_FLAGS \
+    > /tmp/chromium.log 2>&1 & pid=$!
 fi
 
-echo "Setting up ncat proxy on port $CHROME_PORT"
-ncat \
-  --sh-exec "ncat 0.0.0.0 $INTERNAL_PORT" \
-  -l "$CHROME_PORT" \
-  --keep-open & pid2=$!
+# ncat proxy → expose INTERNAL_PORT as CHROME_PORT
+echo "[chromium] Starting ncat proxy :$CHROME_PORT → :$INTERNAL_PORT"
+ncat --sh-exec "ncat 0.0.0.0 $INTERNAL_PORT" \
+     -l "$CHROME_PORT" --keep-open & pid2=$!
 
+# ------------------------------------------------------------------------------
+# Start Neko WebRTC / noVNC ────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
-  # use webrtc
-  echo "✨ Starting neko (webrtc server)."
-  runuser -u kernel -- \
-    /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 > /dev/null 2>&1 &
+  echo "[neko] Starting WebRTC server"
+  runuser -u kernel -- /usr/bin/neko serve \
+    --server.static /var/www \
+    --server.bind 0.0.0.0:8080 >/dev/null 2>&1 &
   neko_pid=$!
 
-  echo "Waiting for neko port 8080..."
-  while ! nc -z 127.0.0.1 8080 2>/dev/null; do sleep 0.5; done
-  echo "Port 8080 is open"
+  echo "[neko] Waiting on port 8080"
+  until nc -z 127.0.0.1 8080; do sleep 0.5; done
 else
-  # use novnc
   ./novnc_startup.sh
-  echo "✨ noVNC demo is ready to use!"
+  echo "[novnc] Ready"
 fi
 
+# ------------------------------------------------------------------------------
+# Start kernel-images API ──────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
-  echo "✨ Starting kernel-images API."
+  echo "[kernel-images:api] Starting service"
 
   API_PORT="${KERNEL_IMAGES_API_PORT:-10001}"
   API_FRAME_RATE="${KERNEL_IMAGES_API_FRAME_RATE:-10}"
@@ -224,6 +246,7 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   MAX_SIZE_MB="$API_MAX_SIZE_MB" \
   OUTPUT_DIR="$API_OUTPUT_DIR" \
   /usr/local/bin/kernel-images-api & pid3=$!
+
   # close the "--no-sandbox unsupported flag" warning when running as root
   # in the unikernel runtime we haven't been able to get chromium to launch as non-root without cryptic crashpad errors
   # and when running as root you must use the --no-sandbox flag, which generates a warning
@@ -278,9 +301,14 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   fi
 fi
 
+# ------------------------------------------------------------------------------
+# Scale-to-zero flag ───────────────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 if [[ -z "${WITHDOCKER:-}" ]]; then
   enable_scale_to_zero
 fi
 
-# Keep the container running
+# ------------------------------------------------------------------------------
+# Keep the container running ───────────────────────────────────────────────────
+# ------------------------------------------------------------------------------
 tail -f /dev/null
