@@ -122,21 +122,9 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
 /network/forward | 〰️ | 〰️ | 〰️ | N/A
 /network/forward/{forward_id} | 〰️ | 〰️ | 〰️ | N/A
-
-## /network/har
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
 /network/har/stream | 〰️ | 〰️ | 〰️ | N/A
-
-## /network/intercept
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
 /network/intercept/rules | 〰️ | 〰️ | 〰️ | N/A
 /network/intercept/rules/{rule_set_id} | 〰️ | 〰️ | 〰️ | N/A
-
-## /network/proxy/socks5
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
 /network/proxy/socks5/start | 〰️ | 〰️ | 〰️ | N/A
 /network/proxy/socks5/stop | 〰️ | 〰️ | 〰️ | N/A
 
