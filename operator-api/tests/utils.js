@@ -18,7 +18,6 @@ export function hasCmd(cmd) {
     return false
   }
 }
-
 export async function j(url, init = {}) {
   const fullUrl = `${BASE()}${url}`
   
@@ -51,7 +50,18 @@ export async function j(url, init = {}) {
   try {
     result = { status: r.status, body: JSON.parse(txt) }
   } catch {
-    result = { status: r.status, body: txt }
+    // If it's binary or very large, trim the output
+    const isBinary = /[\x00-\x08\x0E-\x1F]/.test(txt)
+    const isLarge = txt.length > 1000
+    
+    if (isBinary || isLarge) {
+      result = { 
+        status: r.status, 
+        body: `${txt.substring(0, 500)}... [${txt.length} bytes${isBinary ? ', binary content' : ''}]` 
+      }
+    } else {
+      result = { status: r.status, body: txt }
+    }
   }
   
   if (DEBUG_MODE) {
@@ -99,9 +109,37 @@ export async function raw(url, init = {}) {
 }
 
 // Minimal SSE reader: returns first N events parsed as JSON
-export async function readSSE(path, { max = 1, timeoutMs = 5000 } = {}) {
-  const res = await fetch(`${BASE()}${path}`)
-  if (!res.ok) throw new Error(`bad status ${res.status}`)
+export async function readSSE(path, { max = 1, timeoutMs = 5000, debug = DEBUG_MODE } = {}) {
+  const fullUrl = `${BASE()}${path}`
+  
+  if (debug) {
+    console.log(
+      chalk.cyan('🔌 SSE Connection:'),
+      chalk.yellow(fullUrl),
+      chalk.magenta(`(max: ${max}, timeout: ${timeoutMs}ms)`)
+    )
+  }
+  
+  const res = await fetch(fullUrl)
+  
+  if (!res.ok) {
+    if (debug) {
+      console.error(
+        chalk.red('❌ SSE Connection Failed:'),
+        chalk.yellow(`Status: ${res.status}`)
+      )
+    }
+    throw new Error(`bad status ${res.status}`)
+  }
+  
+  if (debug) {
+    console.log(
+      chalk.green('✅ SSE Connected:'),
+      chalk.yellow(`Status: ${res.status}`),
+      chalk.cyan('Waiting for events...')
+    )
+  }
+  
   const reader = res.body.getReader()
   const decoder = new TextDecoder('utf-8')
   const events = []
@@ -111,19 +149,62 @@ export async function readSSE(path, { max = 1, timeoutMs = 5000 } = {}) {
   while (events.length < max && Date.now() - start < timeoutMs) {
     const { value, done } = await reader.read()
     if (done) break
-    buf += decoder.decode(value, { stream: true })
+    
+    const newData = decoder.decode(value, { stream: true })
+    buf += newData
+    
+    if (debug && newData.trim()) {
+      console.log(
+        chalk.blue('📥 SSE Raw Data:'),
+        chalk.gray(newData.replace(/\n/g, '\\n'))
+      )
+    }
+    
     let idx
     while ((idx = buf.indexOf('\n\n')) !== -1) {
       const chunk = buf.slice(0, idx)
       buf = buf.slice(idx + 2)
       const dataLine = chunk.split('\n').find(l => l.startsWith('data: '))
+      
       if (dataLine) {
         const json = dataLine.slice(6)
-        try { events.push(JSON.parse(json)) } catch {}
+        try { 
+          const parsedEvent = JSON.parse(json)
+          events.push(parsedEvent)
+          
+          if (debug) {
+            console.log(
+              chalk.green('🎯 SSE Event Received:'),
+              chalk.yellow(`[${events.length}/${max}]`),
+              chalk.magenta('\nPayload:'),
+              chalk.cyan(JSON.stringify(parsedEvent, null, 2))
+            )
+          }
+        } catch (err) {
+          if (debug) {
+            console.error(
+              chalk.red('⚠️ SSE Parse Error:'),
+              chalk.yellow(json),
+              chalk.red(err.message)
+            )
+          }
+        }
       }
+      
       if (events.length >= max) break
     }
   }
+  
+  if (debug) {
+    const duration = Date.now() - start
+    console.log(
+      chalk.cyan('🏁 SSE Complete:'),
+      chalk.yellow(`${events.length} events`),
+      chalk.green(`(${duration}ms)`),
+      events.length < max ? chalk.red('(timed out)') : ''
+    )
+  }
+  
   try { reader.cancel() } catch {}
   return events
 }
@@ -131,5 +212,14 @@ export async function readSSE(path, { max = 1, timeoutMs = 5000 } = {}) {
 // helper to create random path under /tmp
 export function tmpPath(name = 'kco') {
   const id = Math.random().toString(36).slice(2)
-  return `/tmp/${name}-${id}`
+  const path = `/tmp/${name}-${id}`
+  
+  if (DEBUG_MODE) {
+    console.log(
+      chalk.cyan('📁 Temp Path:'),
+      chalk.yellow(path)
+    )
+  }
+  
+  return path
 }
