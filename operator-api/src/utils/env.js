@@ -1,7 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 
-export const DATA_DIR = process.env.DATA_DIR || './data'
+export const DATA_DIR = process.env.DATA_DIR || '/tmp/kernel-operator-api/data'
 export const TMP_DIR = path.join(DATA_DIR, 'tmp')
 export const SCRIPTS_DIR = path.join(DATA_DIR, 'scripts')
 export const RECORDINGS_DIR = path.join(DATA_DIR, 'recordings')
