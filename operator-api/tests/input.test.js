@@ -77,45 +77,45 @@ describe('input', () => {
   // Window endpoints
   describe('window', () => {
     it('input/window/activate', async () => {
-      const r = await j('/input/window/activate', { method: 'POST', body: JSON.stringify({ match: { only_visible: true } }) })
+      const r = await j('/input/window/activate', { method: 'POST', body: JSON.stringify({ match: { name: "chromium" } }) })
       expect(r.status).toBe(200)
     })
 
     it('input/window/focus', async () => {
-      const r = await j('/input/window/focus', { method: 'POST', body: JSON.stringify({ match: { only_visible: true } }) })
+      const r = await j('/input/window/focus', { method: 'POST', body: JSON.stringify({ match: { name: "chromium" } }) })
       expect(r.status).toBe(200)
     })
 
     it('input/window/move_resize', async () => {
       const r = await j('/input/window/move_resize', { 
         method: 'POST', 
-        body: JSON.stringify({ match: { only_visible: true }, x: 0, y: 0, width: 800, height: 600 }) 
+        body: JSON.stringify({ match: { name: "chromium" }, x: 0, y: 0, width: 800, height: 600 }) 
       })
       expect(r.status).toBe(200)
     })
 
     it('input/window/raise', async () => {
-      const r = await j('/input/window/raise', { method: 'POST', body: JSON.stringify({ match: { only_visible: true } }) })
+      const r = await j('/input/window/raise', { method: 'POST', body: JSON.stringify({ match: { name: "chromium" } }) })
       expect(r.status).toBe(200)
     })
 
     it('input/window/minimize', async () => {
-      const r = await j('/input/window/minimize', { method: 'POST', body: JSON.stringify({ match: { only_visible: true } }) })
+      const r = await j('/input/window/minimize', { method: 'POST', body: JSON.stringify({ match: { name: "chromium" } }) })
       expect(r.status).toBe(200)
     })
 
     it('input/window/map', async () => {
-      const r = await j('/input/window/map', { method: 'POST', body: JSON.stringify({ match: { only_visible: true } }) })
+      const r = await j('/input/window/map', { method: 'POST', body: JSON.stringify({ match: { name: "chromium" } }) })
       expect(r.status).toBe(200)
     })
 
     it('input/window/unmap', async () => {
-      const r = await j('/input/window/unmap', { method: 'POST', body: JSON.stringify({ match: { only_visible: true } }) })
+      const r = await j('/input/window/unmap', { method: 'POST', body: JSON.stringify({ match: { name: "chromium" } }) })
       expect(r.status).toBe(200)
     })
 
     it('input/window/close', async () => {
-      const r = await j('/input/window/close', { method: 'POST', body: JSON.stringify({ match: { only_visible: true } }) })
+      const r = await j('/input/window/close', { method: 'POST', body: JSON.stringify({ match: { name: "firefox" } }) })
       expect(r.status).toBe(200)
     })
 
