@@ -1,0 +1,36 @@
+{
+  "name": "kernel-computer-operator-api",
+  "version": "0.1.0",
+  "description": "Node.js (ESM) Hono server implementing the Kernel Computer Operator API",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "NODE_ENV=development nodemon --watch src --ext js,json index.js",
+    "test": "cross-env PORT=18002 vitest run --reporter=verbose",
+    "test:watch": "cross-env PORT=18002 vitest",
+    "build:linux": "bun build --compile --minify --sourcemap --bytecode --target=bun-linux-x64 ./index.js --outfile dist/kernel-operator-api"
+  },
+  "dependencies": {
+    "@hono/node-server": "^1.13.8",
+    "busboy": "^1.6.0",
+    "chokidar": "^3.6.0",
+    "dotenv": "^16.4.5",
+    "formdata-node": "^6.0.3",
+    "hono": "^4.5.10",
+    "http-proxy": "^1.18.1",
+    "httpolyglot": "^0.1.2",
+    "mime-types": "^2.1.35",
+    "morgan": "^1.10.0",
+    "nanoid": "^5.0.7",
+    "pidusage": "^3.0.2",
+    "socksv5": "^0.0.6",
+    "uuid": "^9.0.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "nodemon": "^3.1.7",
+    "undici": "^6.19.8",
+    "vitest": "^2.0.5"
+  }
+}

@@ -1,0 +1,7 @@
+dist/
+node_modules/
+bun.lockb
+bun.lock
+_bak/
+_wip/
+_dev/
