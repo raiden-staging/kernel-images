@@ -12,7 +12,9 @@ function asString(v, fallback = '') {
 }
 
 async function runXdotool(args) {
-  const res = await execCapture('xdotool', args)
+  const display = process.env.DISPLAY || ':0'
+  const env = { ...process.env, DISPLAY: display }
+  const res = await execCapture('xdotool', args, { env })
   if (res.code !== 0) throw new Error(res.stderr.toString('utf8') || 'xdotool error')
   return res
 }

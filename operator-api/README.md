@@ -37,21 +37,21 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 ## /fs
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/fs/create_directory | 〰️ | 〰️ | 〰️ | N/A
-/fs/delete_directory | 〰️ | 〰️ | 〰️ | N/A
-/fs/delete_file | 〰️ | 〰️ | 〰️ | N/A
-/fs/download | 〰️ | 〰️ | 〰️ | N/A
-/fs/file_info | 〰️ | 〰️ | 〰️ | N/A
-/fs/list_files | 〰️ | 〰️ | 〰️ | N/A
-/fs/move | 〰️ | 〰️ | 〰️ | N/A
-/fs/read_file | 〰️ | 〰️ | 〰️ | N/A
-/fs/set_file_permissions | 〰️ | 〰️ | 〰️ | N/A
+/fs/create_directory | ✅ | 〰️ | 〰️ | N/A
+/fs/delete_directory | ✅ | 〰️ | 〰️ | N/A
+/fs/delete_file | ✅ | 〰️ | 〰️ | N/A
+/fs/download | ✅ | 〰️ | 〰️ | N/A
+/fs/file_info | ✅ | 〰️ | 〰️ | N/A
+/fs/list_files | ✅ | 〰️ | 〰️ | N/A
+/fs/move | ✅ | 〰️ | 〰️ | N/A
+/fs/read_file | ✅ | 〰️ | 〰️ | N/A
+/fs/set_file_permissions | ✅ | 〰️ | 〰️ | N/A
 /fs/tail/stream | 〰️ | 〰️ | 〰️ | N/A
-/fs/upload | 〰️ | 〰️ | 〰️ | N/A
+/fs/upload | ✅ | 〰️ | 〰️ | N/A
 /fs/watch | 〰️ | 〰️ | 〰️ | N/A
 /fs/watch/{watch_id} | 〰️ | 〰️ | 〰️ | N/A
 /fs/watch/{watch_id}/events | 〰️ | 〰️ | 〰️ | N/A
-/fs/write_file | 〰️ | 〰️ | 〰️ | N/A
+/fs/write_file | ✅ | 〰️ | 〰️ | N/A
 
 ## /health
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
