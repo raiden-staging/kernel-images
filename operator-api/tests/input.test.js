@@ -115,6 +115,7 @@ describe('input', () => {
     })
 
     it('input/window/close', async () => {
+      // rather not close chromium - tested and works when firefox open
       const r = await j('/input/window/close', { method: 'POST', body: JSON.stringify({ match: { name: "firefox" } }) })
       expect(r.status).toBe(200)
     })

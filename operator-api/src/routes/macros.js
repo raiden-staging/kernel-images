@@ -1,10 +1,19 @@
 import { Hono } from 'hono'
 import { uid } from '../utils/ids.js'
 import { execCapture } from '../utils/exec.js'
+import 'dotenv/config'
 
 const macros = new Map() // id -> {name, steps}
+const display = process.env.DISPLAY || ':0'
+const XDOTOOL = process.env.XDOTOOL_BIN || '/usr/bin/xdotool'
 
 export const macrosRouter = new Hono()
+
+async function runXdotool(args) {
+  const res = await execCapture(XDOTOOL, args, { env: { ...process.env, DISPLAY: display } })
+  if (res.code !== 0) throw new Error(res.stderr.toString('utf8') || 'xdotool error')
+  return res
+}
 
 macrosRouter.post('/macros/create', async (c) => {
   const body = await c.req.json()
@@ -21,9 +30,9 @@ macrosRouter.post('/macros/run', async (c) => {
   const run_id = uid()
   ;(async () => {
     for (const step of item.steps) {
-      if (step.action === 'keyboard.type' && step.text) await execCapture('xdotool', ['type', '--', step.text])
-      else if (step.action === 'keyboard.key' && step.key) await execCapture('xdotool', ['key', step.key])
-      else if (step.action === 'sleep' && step.ms) await new Promise((r) => setTimeout(r, step.ms))
+      if (step.action === 'keyboard.type' && step.text) await runXdotool(['type', '--clearmodifiers', '--', step.text])
+      else if (step.action === 'keyboard.key' && step.key) await runXdotool(['key', step.key])
+      else if (step.action === 'sleep' && step.ms) await runXdotool(['sleep', String(step.ms / 1000)])
     }
   })()
   return c.json({ started: true, run_id })

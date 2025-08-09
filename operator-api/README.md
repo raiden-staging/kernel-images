@@ -57,51 +57,50 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
 /health | ✅ | 〰️ | 〰️ | N/A
-
 ## /input/desktop
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/input/combo/activate_and_type | 〰️ | 〰️ | 〰️ | N/A
-/input/combo/activate_and_keys | 〰️ | 〰️ | 〰️ | N/A
-/input/combo/window/center | 〰️ | 〰️ | 〰️ | N/A
-/input/combo/window/snap | 〰️ | 〰️ | 〰️ | N/A
-/input/desktop/count | 〰️ | 〰️ | 〰️ | N/A
-/input/desktop/current | 〰️ | 〰️ | 〰️ | N/A
-/input/desktop/viewport | 〰️ | 〰️ | 〰️ | N/A
-/input/desktop/window_desktop | 〰️ | 〰️ | 〰️ | N/A
-/input/display/geometry | 〰️ | 〰️ | 〰️ | N/A
-/input/keyboard/key | 〰️ | 〰️ | 〰️ | N/A
-/input/keyboard/key_down | 〰️ | 〰️ | 〰️ | N/A
-/input/keyboard/key_up | 〰️ | 〰️ | 〰️ | N/A
-/input/keyboard/type | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/click | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/down | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/location | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/move | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/move_relative | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/scroll | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/up | 〰️ | 〰️ | 〰️ | N/A
-/input/system/exec | 〰️ | 〰️ | 〰️ | N/A
-/input/system/sleep | 〰️ | 〰️ | 〰️ | N/A
-/input/window/activate | 〰️ | 〰️ | 〰️ | N/A
-/input/window/active | 〰️ | 〰️ | 〰️ | N/A
-/input/window/close | 〰️ | 〰️ | 〰️ | N/A
-/input/window/focus | 〰️ | 〰️ | 〰️ | N/A
-/input/window/focused | 〰️ | 〰️ | 〰️ | N/A
-/input/window/geometry | 〰️ | 〰️ | 〰️ | N/A
-/input/window/kill | 〰️ | 〰️ | 〰️ | N/A
-/input/window/map | 〰️ | 〰️ | 〰️ | N/A
-/input/window/minimize | 〰️ | 〰️ | 〰️ | N/A
-/input/window/move_resize | 〰️ | 〰️ | 〰️ | N/A
-/input/window/name | 〰️ | 〰️ | 〰️ | N/A
-/input/window/pid | 〰️ | 〰️ | 〰️ | N/A
-/input/window/raise | 〰️ | 〰️ | 〰️ | N/A
-/input/window/unmap | 〰️ | 〰️ | 〰️ | N/A
+/input/combo/activate_and_type | ✅ | 〰️ | 〰️ | N/A
+/input/combo/activate_and_keys | ✅ | 〰️ | 〰️ | N/A
+/input/combo/window/center | ✅ | 〰️ | 〰️ | N/A
+/input/combo/window/snap | ✅ | 〰️ | 〰️ | N/A
+/input/desktop/count | ✅ | 〰️ | 〰️ | N/A
+/input/desktop/current | ✅ | 〰️ | 〰️ | N/A
+/input/desktop/viewport | ✅ | 〰️ | 〰️ | N/A
+/input/desktop/window_desktop | ✅ | 〰️ | 〰️ | N/A
+/input/display/geometry | ✅ | 〰️ | 〰️ | N/A
+/input/keyboard/key | ✅ | 〰️ | 〰️ | N/A
+/input/keyboard/key_down | ✅ | 〰️ | 〰️ | N/A
+/input/keyboard/key_up | ✅ | 〰️ | 〰️ | N/A
+/input/keyboard/type | ✅ | 〰️ | 〰️ | N/A
+/input/mouse/click | ✅ | 〰️ | 〰️ | N/A
+/input/mouse/down | ✅ | 〰️ | 〰️ | N/A
+/input/mouse/location | ✅ | 〰️ | 〰️ | N/A
+/input/mouse/move | ✅ | 〰️ | 〰️ | N/A
+/input/mouse/move_relative | ✅ | 〰️ | 〰️ | N/A
+/input/mouse/scroll | ✅ | 〰️ | 〰️ | N/A
+/input/mouse/up | ✅ | 〰️ | 〰️ | N/A
+/input/system/exec | ✅ | 〰️ | 〰️ | N/A
+/input/system/sleep | ✅ | 〰️ | 〰️ | N/A
+/input/window/activate | ✅ | 〰️ | 〰️ | N/A
+/input/window/active | ✅ | 〰️ | 〰️ | N/A
+/input/window/close | ✅ | 〰️ | 〰️ | N/A
+/input/window/focus | ✅ | 〰️ | 〰️ | N/A
+/input/window/focused | ✅ | 〰️ | 〰️ | N/A
+/input/window/geometry | ✅ | 〰️ | 〰️ | N/A
+/input/window/kill | ✅ | 〰️ | 〰️ | N/A
+/input/window/map | ✅ | 〰️ | 〰️ | N/A
+/input/window/minimize | ✅ | 〰️ | 〰️ | N/A
+/input/window/move_resize | ✅ | 〰️ | 〰️ | N/A
+/input/window/name | ✅ | 〰️ | 〰️ | N/A
+/input/window/pid | ✅ | 〰️ | 〰️ | N/A
+/input/window/raise | ✅ | 〰️ | 〰️ | N/A
+/input/window/unmap | ✅ | 〰️ | 〰️ | N/A
 
 ## /logs
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/logs/stream | 〰️ | 〰️ | 〰️ | N/A
+/logs/stream | ✅ | 〰️ | 〰️ | N/A
 
 ## /macros
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
