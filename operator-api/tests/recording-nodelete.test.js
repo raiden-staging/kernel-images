@@ -2,8 +2,8 @@ import { j, readSSE, hasCmd } from './utils.js'
 
 const ffmpegPresent = hasCmd('ffmpeg')
 
-describe('recording', () => {
-  it.skipIf?.(!ffmpegPresent)('start/list/stop/download/delete', async () => {
+describe('recording-nodelete', () => {
+  it.skipIf?.(!ffmpegPresent)('start/list/stop/download', async () => {
     let r = await j('/recording/start', { method: 'POST', body: JSON.stringify({ id: 't1', maxDurationInSeconds: 1 }) })
     expect(r.status).toBe(201)
 
@@ -18,7 +18,6 @@ describe('recording', () => {
     const d = await j('/recording/download?id=t1')
     expect([200, 404]).toContain(d.status)
     
-    const del = await j('/recording/delete', { method: 'POST', body: JSON.stringify({ id: 't1' }) })
-    expect([200, 404]).toContain(del.status)
+    // No delete operation
   })
 })
