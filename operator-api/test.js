@@ -19,7 +19,9 @@ async function listAvailableTests() {
   try {
     const testsDir = join(__dirname, 'tests');
     const files = await readdir(testsDir);
-    return files.filter(file => file.endsWith('.test.js'));
+    return files
+      .filter(file => file.endsWith('.test.js'))
+      .sort((a, b) => a.localeCompare(b));
   } catch (error) {
     console.error(chalk.red(`Error listing test files: ${error.message}`));
     return [];
@@ -45,7 +47,7 @@ async function printAvailableTests() {
   });
   
   console.log(chalk.gray('─'.repeat(50)));
-  console.log(chalk.italic(`Run a specific test with: ${chalk.cyan('node test.js <test-name>')}\n`));
+  console.log(chalk.italic(`Run a specific test with: ${chalk.cyan('bun test.js <test-name>')}\n`));
   
   // Add a final separator before tests start
   console.log(chalk.gray('═'.repeat(70)));

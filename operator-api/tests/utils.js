@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process'
 import { request, fetch } from 'undici'
 import { Readable } from 'node:stream'
 import 'dotenv/config'
+import chalk from 'chalk'
 
 // Hardcoded BASE URL using PORT from environment
 export const BASE = () => `http://localhost:${process.env.PORT || '9999'}`
@@ -16,20 +17,82 @@ export function hasCmd(cmd) {
 }
 
 export async function j(url, init = {}) {
-  const r = await fetch(`${BASE()}${url}`, {
+  const fullUrl = `${BASE()}${url}`
+  
+  if (process.env.DEBUG_LOGS === 'true') {
+    // Generate curl equivalent
+    let curlCmd = `curl -X ${init.method || 'GET'} "${fullUrl}"`
+    
+    // Add headers
+    const headers = { 'content-type': 'application/json', ...(init.headers || {}) }
+    Object.entries(headers).forEach(([key, value]) => {
+      curlCmd += ` -H "${key}: ${value}"`
+    })
+    
+    // Add body if present
+    if (init.body) {
+      curlCmd += ` -d '${init.body}'`
+    }
+    
+    console.log(chalk.cyan('🔍 Request:'), chalk.yellow(curlCmd))
+  }
+  
+  const r = await fetch(fullUrl, {
     ...init,
     headers: { 'content-type': 'application/json', ...(init.headers || {}) }
   })
+  
   const txt = await r.text()
+  let result
+  
   try {
-    return { status: r.status, body: JSON.parse(txt) }
+    result = { status: r.status, body: JSON.parse(txt) }
   } catch {
-    return { status: r.status, body: txt }
+    result = { status: r.status, body: txt }
   }
+  
+  if (process.env.DEBUG_LOGS === 'true') {
+    console.log(chalk.cyan('📡 Response:'), 
+      chalk.green(`Status: ${r.status}`), 
+      chalk.magenta('\nBody:'), 
+      typeof result.body === 'object' ? 
+        chalk.yellow(JSON.stringify(result.body, null, 2)) : 
+        chalk.yellow(result.body)
+    )
+  }
+  
+  return result
 }
 
 export async function raw(url, init = {}) {
-  return fetch(`${BASE()}${url}`, init)
+  const fullUrl = `${BASE()}${url}`
+  
+  if (process.env.DEBUG_LOGS === 'true') {
+    // Generate curl equivalent
+    let curlCmd = `curl -X ${init.method || 'GET'} "${fullUrl}"`
+    
+    // Add headers
+    if (init.headers) {
+      Object.entries(init.headers).forEach(([key, value]) => {
+        curlCmd += ` -H "${key}: ${value}"`
+      })
+    }
+    
+    // Add body if present
+    if (init.body) {
+      curlCmd += ` -d '${init.body}'`
+    }
+    
+    console.log(chalk.cyan('🔍 Raw Request:'), chalk.yellow(curlCmd))
+  }
+  
+  const response = await fetch(fullUrl, init)
+  
+  if (process.env.DEBUG_LOGS === 'true') {
+    console.log(chalk.cyan('📡 Raw Response:'), chalk.green(`Status: ${response.status}`))
+  }
+  
+  return response
 }
 
 // Minimal SSE reader: returns first N events parsed as JSON
