@@ -6,44 +6,44 @@ describe('input', () => {
     it('input/mouse/move', async () => {
       const r = await j('/input/mouse/move', { method: 'POST', body: JSON.stringify({ x: 100, y: 100 }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/mouse/move_relative', async () => {
       const r = await j('/input/mouse/move_relative', { method: 'POST', body: JSON.stringify({ dx: 10, dy: 10 }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/mouse/click', async () => {
       const r = await j('/input/mouse/click', { method: 'POST', body: JSON.stringify({ button: 'left', count: 1 }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/mouse/down', async () => {
       const r = await j('/input/mouse/down', { method: 'POST', body: JSON.stringify({ button: 'left' }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/mouse/up', async () => {
       const r = await j('/input/mouse/up', { method: 'POST', body: JSON.stringify({ button: 'left' }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/mouse/scroll', async () => {
       const r = await j('/input/mouse/scroll', { method: 'POST', body: JSON.stringify({ dx: 0, dy: -120 }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/mouse/location', async () => {
       const r = await j('/input/mouse/location', { method: 'GET' })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('x')
-      expect(r.data).toHaveProperty('y')
+      expect(r.body.x).toBeDefined()
+      expect(r.body.y).toBeDefined()
     })
   })
 
@@ -52,25 +52,25 @@ describe('input', () => {
     it('input/keyboard/type', async () => {
       const r = await j('/input/keyboard/type', { method: 'POST', body: JSON.stringify({ text: 'test', wpm: 300 }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/keyboard/key', async () => {
       const r = await j('/input/keyboard/key', { method: 'POST', body: JSON.stringify({ keys: ['Return'] }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/keyboard/key_down', async () => {
       const r = await j('/input/keyboard/key_down', { method: 'POST', body: JSON.stringify({ key: 'ctrl' }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
 
     it('input/keyboard/key_up', async () => {
       const r = await j('/input/keyboard/key_up', { method: 'POST', body: JSON.stringify({ key: 'ctrl' }) })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
   })
 
@@ -122,13 +122,13 @@ describe('input', () => {
     it('input/window/active', async () => {
       const r = await j('/input/window/active', { method: 'GET' })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('wid')
+      expect(r.body.wid).toBeDefined()
     })
 
     it('input/window/focused', async () => {
       const r = await j('/input/window/focused', { method: 'GET' })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('wid')
+      expect(r.body.wid).toBeDefined()
     })
 
     it('input/window/name', async () => {
@@ -136,10 +136,10 @@ describe('input', () => {
       const active = await j('/input/window/active', { method: 'GET' })
       const r = await j('/input/window/name', { 
         method: 'POST', 
-        body: JSON.stringify({ wid: active.data.wid }) 
+        body: JSON.stringify({ wid: active.body.wid }) 
       })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('name')
+      expect(r.body.name).toBeDefined()
     })
 
     it('input/window/geometry', async () => {
@@ -147,11 +147,11 @@ describe('input', () => {
       const active = await j('/input/window/active', { method: 'GET' })
       const r = await j('/input/window/geometry', { 
         method: 'POST', 
-        body: JSON.stringify({ wid: active.data.wid }) 
+        body: JSON.stringify({ wid: active.body.wid }) 
       })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('width')
-      expect(r.data).toHaveProperty('height')
+      expect(r.body.width).toBeDefined()
+      expect(r.body.height).toBeDefined()
     })
   })
 
@@ -160,20 +160,20 @@ describe('input', () => {
     it('input/desktop/count', async () => {
       const r = await j('/input/desktop/count', { method: 'GET' })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('count')
+      expect(r.body.count).toBeDefined()
     })
 
     it('input/desktop/current', async () => {
       const r = await j('/input/desktop/current', { method: 'GET' })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('index')
+      expect(r.body.index).toBeDefined()
     })
 
     it('input/desktop/viewport', async () => {
       const r = await j('/input/desktop/viewport', { method: 'GET' })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('x')
-      expect(r.data).toHaveProperty('y')
+      expect(r.body.x).toBeDefined()
+      expect(r.body.y).toBeDefined()
     })
   })
 
@@ -182,8 +182,8 @@ describe('input', () => {
     it('input/display/geometry', async () => {
       const r = await j('/input/display/geometry', { method: 'GET' })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('width')
-      expect(r.data).toHaveProperty('height')
+      expect(r.body.width).toBeDefined()
+      expect(r.body.height).toBeDefined()
     })
   })
 
@@ -230,7 +230,7 @@ describe('input', () => {
         body: JSON.stringify({ command: 'echo', args: ['hello'] }) 
       })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('stdout', 'hello\n')
+      expect(r.body.stdout).toBe('hello\n')
     })
 
     it('input/system/sleep', async () => {
@@ -239,7 +239,7 @@ describe('input', () => {
         body: JSON.stringify({ seconds: 0.1 }) 
       })
       expect(r.status).toBe(200)
-      expect(r.data).toHaveProperty('ok', true)
+      expect(r.body.ok).toBe(true)
     })
   })
 })
