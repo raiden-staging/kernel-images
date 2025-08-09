@@ -7,10 +7,13 @@ import chalk from 'chalk'
 // Hardcoded BASE URL using PORT from environment
 export const BASE = () => `http://localhost:${process.env.PORT || '9999'}`
 
+// Debug mode constant
+const DEBUG_MODE = process.env.DEBUG_LOGS === 'true' || process.env.DEBUG_LOGS === true
+
 export function hasCmd(cmd) {
   try {
     execSync(`bash -lc "command -v ${cmd} >/dev/null 2>&1"`, { stdio: 'ignore' })
-    return tru
+    return true
   } catch {
     return false
   }
@@ -19,7 +22,7 @@ export function hasCmd(cmd) {
 export async function j(url, init = {}) {
   const fullUrl = `${BASE()}${url}`
   
-  if (process.env.DEBUG_LOGS === 'true') {
+  if (DEBUG_MODE) {
     // Generate curl equivalent
     let curlCmd = `curl -X ${init.method || 'GET'} "${fullUrl}"`
     
@@ -51,7 +54,7 @@ export async function j(url, init = {}) {
     result = { status: r.status, body: txt }
   }
   
-  if (process.env.DEBUG_LOGS === 'true') {
+  if (DEBUG_MODE) {
     console.log(chalk.cyan('📡 Response:'), 
       chalk.green(`Status: ${r.status}`), 
       chalk.magenta('\nBody:'), 
@@ -67,7 +70,7 @@ export async function j(url, init = {}) {
 export async function raw(url, init = {}) {
   const fullUrl = `${BASE()}${url}`
   
-  if (process.env.DEBUG_LOGS === 'true') {
+  if (DEBUG_MODE) {
     // Generate curl equivalent
     let curlCmd = `curl -X ${init.method || 'GET'} "${fullUrl}"`
     
@@ -88,7 +91,7 @@ export async function raw(url, init = {}) {
   
   const response = await fetch(fullUrl, init)
   
-  if (process.env.DEBUG_LOGS === 'true') {
+  if (DEBUG_MODE) {
     console.log(chalk.cyan('📡 Raw Response:'), chalk.green(`Status: ${response.status}`))
   }
   
