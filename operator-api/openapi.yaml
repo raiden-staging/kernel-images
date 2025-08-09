@@ -1007,7 +1007,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/OkResponse" } } } }
 
-  /combo/activate_and_type:
+  /input/combo/activate_and_type:
     post:
       summary: Activate a window then type
       operationId: comboActivateAndType
@@ -1019,7 +1019,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ComboWindowResponse" } } } }
 
-  /combo/activate_and_keys:
+  /input/combo/activate_and_keys:
     post:
       summary: Activate a window then send key sequence
       operationId: comboActivateAndKeys
@@ -1031,7 +1031,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/ComboWindowResponse" } } } }
 
-  /combo/window/center:
+  /input/combo/window/center:
     post:
       summary: Center and optionally size a window
       operationId: comboWindowCenter
@@ -1043,7 +1043,7 @@ paths:
       responses:
         "200": { description: OK, content: { application/json: { schema: { $ref: "#/components/schemas/WindowCenterResponse" } } } }
 
-  /combo/window/snap:
+  /input/combo/window/snap:
     post:
       summary: Snap window to position
       operationId: comboWindowSnap

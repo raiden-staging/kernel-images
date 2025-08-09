@@ -436,7 +436,7 @@ inputRouter.get('/input/desktop/viewport', async (c) => {
 })
 
 // ---------- combos / convenience ----------
-inputRouter.post('/combo/activate_and_type', async (c) => {
+inputRouter.post('/input/combo/activate_and_type', async (c) => {
   try {
     const { match, text, enter = false, wpm = 300 } = await c.req.json()
     const wid = await findWindowId(match)
@@ -451,7 +451,7 @@ inputRouter.post('/combo/activate_and_type', async (c) => {
   }
 })
 
-inputRouter.post('/combo/activate_and_keys', async (c) => {
+inputRouter.post('/input/combo/activate_and_keys', async (c) => {
   try {
     const { match, keys } = await c.req.json()
     const wid = await findWindowId(match)
@@ -466,7 +466,7 @@ inputRouter.post('/combo/activate_and_keys', async (c) => {
   }
 })
 
-inputRouter.post('/combo/window/center', async (c) => {
+inputRouter.post('/input/combo/window/center', async (c) => {
   try {
     const { match, width, height } = await c.req.json()
     const wid = await findWindowId(match)
@@ -500,7 +500,7 @@ inputRouter.post('/combo/window/center', async (c) => {
   }
 })
 
-inputRouter.post('/combo/window/snap', async (c) => {
+inputRouter.post('/input/combo/window/snap', async (c) => {
   try {
     const { match, position } = await c.req.json()
     const wid = await findWindowId(match)

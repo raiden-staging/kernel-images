@@ -25,16 +25,8 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 ## /clipboard
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/clipboard | 〰️ | 〰️ | 〰️ | N/A
+/clipboard | ✅ | 〰️ | 〰️ | N/A
 /clipboard/stream | 〰️ | 〰️ | 〰️ | N/A
-
-## /combo
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/combo/activate_and_type | 〰️ | 〰️ | 〰️ | N/A
-/combo/activate_and_keys | 〰️ | 〰️ | 〰️ | N/A
-/combo/window/center | 〰️ | 〰️ | 〰️ | N/A
-/combo/window/snap | 〰️ | 〰️ | 〰️ | N/A
 
 ## /computer
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
@@ -64,32 +56,24 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 ## /health
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/health | 〰️ | 〰️ | 〰️ | N/A
+/health | ✅ | 〰️ | 〰️ | N/A
 
 ## /input/desktop
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
+/input/combo/activate_and_type | 〰️ | 〰️ | 〰️ | N/A
+/input/combo/activate_and_keys | 〰️ | 〰️ | 〰️ | N/A
+/input/combo/window/center | 〰️ | 〰️ | 〰️ | N/A
+/input/combo/window/snap | 〰️ | 〰️ | 〰️ | N/A
 /input/desktop/count | 〰️ | 〰️ | 〰️ | N/A
 /input/desktop/current | 〰️ | 〰️ | 〰️ | N/A
 /input/desktop/viewport | 〰️ | 〰️ | 〰️ | N/A
 /input/desktop/window_desktop | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/display
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
 /input/display/geometry | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/keyboard
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
 /input/keyboard/key | 〰️ | 〰️ | 〰️ | N/A
 /input/keyboard/key_down | 〰️ | 〰️ | 〰️ | N/A
 /input/keyboard/key_up | 〰️ | 〰️ | 〰️ | N/A
 /input/keyboard/type | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/mouse
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
 /input/mouse/click | 〰️ | 〰️ | 〰️ | N/A
 /input/mouse/down | 〰️ | 〰️ | 〰️ | N/A
 /input/mouse/location | 〰️ | 〰️ | 〰️ | N/A
@@ -97,16 +81,8 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 /input/mouse/move_relative | 〰️ | 〰️ | 〰️ | N/A
 /input/mouse/scroll | 〰️ | 〰️ | 〰️ | N/A
 /input/mouse/up | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/system
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
 /input/system/exec | 〰️ | 〰️ | 〰️ | N/A
 /input/system/sleep | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/window
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
 /input/window/activate | 〰️ | 〰️ | 〰️ | N/A
 /input/window/active | 〰️ | 〰️ | 〰️ | N/A
 /input/window/close | 〰️ | 〰️ | 〰️ | N/A
