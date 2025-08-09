@@ -5,18 +5,13 @@ import { cors } from 'hono/cors'
 import morgan from 'morgan'
 import { app as api } from './src/app.js'
 
-// Debug environment variables in a structured way
-console.log('🔧 [DEBUG] process.env 🔧')
+
+console.log('🔧 [kernel:operator-api:debug] process.env 🔧')
 console.log('┌─────────────────────────────────────────────────────')
 Object.keys(process.env)
   .sort()
   .forEach(key => {
-    // Mask sensitive values
-    const isSensitive = /key|token|secret|password|auth/i.test(key)
-    const value = isSensitive 
-      ? `${process.env[key].substring(0, 3)}${'*'.repeat(6)}` 
-      : process.env[key]
-    console.log(`│ ${key.padEnd(25)} │ ${value}`)
+    console.log(`│ ${key.padEnd(25)} │ ${process.env[key]}`)
   })
 console.log('└─────────────────────────────────────────────────────')
 
