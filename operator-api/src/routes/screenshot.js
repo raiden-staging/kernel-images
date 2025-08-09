@@ -6,10 +6,14 @@ import { b64 } from '../utils/base64.js'
 import { execCapture } from '../utils/exec.js'
 import { SCREENSHOTS_DIR } from '../utils/env.js'
 
-const FFMPEG = process.env.FFMPEG_BIN || 'ffmpeg'
+const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
 const DISPLAY = process.env.DISPLAY || ':0'
 const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1280)
 const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 720)
+
+if (DISPLAY == ':20') {
+  console.warn(`DISPLAY from env: ${DISPLAY} [likely for debugging in a remote VM]`)
+}
 
 async function capture({ region, include_cursor, display = 0, format = 'png', quality }) {
   const id = uid()
