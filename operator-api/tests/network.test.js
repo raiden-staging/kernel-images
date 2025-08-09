@@ -22,7 +22,8 @@ describe('network', () => {
   })
 
   it('HAR stream opens', async () => {
-    const res = await fetch(`${globalThis.__TEST_BASE_URL__}/network/har/stream`)
+    // const res = await fetch(`${globalThis.__TEST_BASE_URL__}/network/har/stream`)
+    const res = await fetch(`/network/har/stream`)
     expect(res.status).toBe(200)
     // close immediately
     const reader = res.body.getReader()

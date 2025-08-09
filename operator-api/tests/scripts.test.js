@@ -10,7 +10,8 @@ describe('scripts', () => {
     form.set('path', scriptPath)
     form.set('file', new Blob([shebang + 'echo hi']), 'script.sh')
     form.set('executable', 'true')
-    const up = await fetch(`${globalThis.__TEST_BASE_URL__}/scripts/upload`, { method: 'POST', body: form })
+    // const up = await fetch(`${globalThis.__TEST_BASE_URL__}/scripts/upload`, { method: 'POST', body: form })
+    const up = await fetch(`/scripts/upload`, { method: 'POST', body: form })
     expect(up.status).toBe(200)
 
     const list = await j('/scripts/list')

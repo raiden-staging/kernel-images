@@ -13,14 +13,15 @@ describe('recording', () => {
     expect(item).toBeTruthy()
     expect(item.isRecording).toBe(true)
 
-    await new Promise(res => setTimeout(res, 1500))
+    await new Promise(res => setTimeout(res, 1_500))
     // Try download after it should have stopped
-    const d = await fetch(`${globalThis.__TEST_BASE_URL__}/recording/download?id=t1`)
+    const d = await j('/recording/download?id=t1')
     expect([200, 404]).toContain(d.status)
-
-    /*
+    
+    
     const del = await j('/recording/delete', { method: 'POST', body: JSON.stringify({ id: 't1' }) })
     expect([200, 404]).toContain(del.status)
-    */
+    
+
   })
 })

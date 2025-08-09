@@ -5,7 +5,8 @@ describe('browser HAR sessions', () => {
     const start = await j('/browser/har/start', { method: 'POST', body: JSON.stringify({}) })
     expect(start.status).toBe(200)
     const { har_session_id } = start.body
-    const res = await fetch(`${globalThis.__TEST_BASE_URL__}/browser/har/${har_session_id}/stream`)
+    // const res = await fetch(`${globalThis.__TEST_BASE_URL__}/browser/har/${har_session_id}/stream`)
+    const res = await fetch(`/browser/har/${har_session_id}/stream`)
     expect(res.status).toBe(200)
     const reader = res.body.getReader()
     await reader.cancel()
