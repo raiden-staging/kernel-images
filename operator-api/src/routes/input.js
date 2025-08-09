@@ -44,6 +44,15 @@ async function findWindowId(match) {
   return wid || undefined
 }
 
+
+async function findWindowIdsMultiple(match) {
+  const found = await execCapture('xdotool', matchToSearchArgs(match))
+  const stdout = found.stdout.toString('utf8')
+  const windowIds = stdout.split('\n').filter(Boolean)
+  return windowIds.length > 0 ? windowIds : []
+}
+
+
 function buttonNumFromName(name) {
   if (typeof name === 'number') return String(name)
   const map = { left: 1, middle: 2, right: 3, back: 8, forward: 9 }
@@ -274,14 +283,32 @@ inputRouter.post('/input/window/unmap', async (c) => {
 inputRouter.post('/input/window/close', async (c) => {
   try {
     const { match } = await c.req.json()
-    const wid = await findWindowId(match)
-    if (!wid) return c.json({ message: 'Not Found' }, 404)
-    await runXdotool(['windowclose', wid])
-    return c.json({ ok: true, wid })
+    // Note: Using findWindowIdsMultiple instead of findWindowId to close multiple windows
+    const windowIds = await findWindowIdsMultiple(match)
+    if (windowIds.length === 0) return c.json({ message: 'Not Found' }, 404)
+    
+    for (const wid of windowIds) {
+      await runXdotool(['windowclose', wid])
+    }
+    
+    return c.json({ ok: true, windowIds })
   } catch (e) {
     return c.json({ message: String(e.message) }, 400)
   }
 })
+
+// Original version that only closes a single window
+// inputRouter.post('/input/window/close', async (c) => {
+//   try {
+//     const { match } = await c.req.json()
+//     const wid = await findWindowId(match)
+//     if (!wid) return c.json({ message: 'Not Found' }, 404)
+//     await runXdotool(['windowclose', wid])
+//     return c.json({ ok: true, wid })
+//   } catch (e) {
+//     return c.json({ message: String(e.message) }, 400)
+//   }
+// })
 
 inputRouter.post('/input/window/kill', async (c) => {
   try {
