@@ -15,7 +15,6 @@ Object.keys(process.env)
   })
 console.log('└─────────────────────────────────────────────────────')
 
-
 const port = Number(process.env.PORT || 9999)
 
 const root = new Hono()
