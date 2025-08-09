@@ -4,8 +4,56 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
+import { readdir } from 'node:fs/promises';
+import chalk from 'chalk'
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+;
+
+/**
+ * Lists all available test files in the tests directory
+ * @returns {Promise<string[]>} Array of test file paths
+ */
+async function listAvailableTests() {
+  try {
+    const testsDir = join(__dirname, 'tests');
+    const files = await readdir(testsDir);
+    return files.filter(file => file.endsWith('.test.js'));
+  } catch (error) {
+    console.error(chalk.red(`Error listing test files: ${error.message}`));
+    return [];
+  }
+}
+/**
+ * Prints available tests in a formatted way
+ */
+async function printAvailableTests() {
+  const tests = await listAvailableTests();
+  
+  if (tests.length === 0) {
+    console.log(chalk.yellow('No test files found in the tests directory.'));
+    return;
+  }
+  
+  console.log(chalk.bold.blue('\n📋 Available Tests:'));
+  console.log(chalk.gray('─'.repeat(50)));
+  
+  tests.forEach((test, index) => {
+    const testName = test.replace('.test.js', '');
+    console.log(`${chalk.green(`[${index + 1}]`)} ${chalk.white(testName)}`);
+  });
+  
+  console.log(chalk.gray('─'.repeat(50)));
+  console.log(chalk.italic(`Run a specific test with: ${chalk.cyan('node test.js <test-name>')}\n`));
+  
+  // Add a final separator before tests start
+  console.log(chalk.gray('═'.repeat(70)));
+  console.log(chalk.bold.green('▶ Starting Tests...'));
+  console.log(chalk.gray('═'.repeat(70)) + '\n');
+}
+
+printAvailableTests()
 
 // Parse command line arguments
 const args = process.argv.slice(2);
