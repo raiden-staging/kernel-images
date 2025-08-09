@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { Hono } from 'hono'
 import { execCapture } from '../utils/exec.js'
 import chalk from 'chalk'
