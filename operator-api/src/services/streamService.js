@@ -1,8 +1,9 @@
+import 'dotenv/config'
 import { execSpawn } from '../utils/exec.js'
 import { uid } from '../utils/ids.js'
 import { EventEmitter } from 'node:events'
 
-const FFMPEG = process.env.FFMPEG_BIN || 'ffmpeg'
+const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
 const DISPLAY = process.env.DISPLAY || ':0'
 const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1280)
 const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 720)

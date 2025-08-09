@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import { Hono } from 'hono'
 import { spawn } from 'node:child_process'
 import { b64, fromB64 } from '../utils/base64.js'

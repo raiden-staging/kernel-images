@@ -1,3 +1,4 @@
+import 'dotenv/config'
 import http from 'node:http'
 import httpProxy from 'http-proxy'
 import { uid } from '../utils/ids.js'

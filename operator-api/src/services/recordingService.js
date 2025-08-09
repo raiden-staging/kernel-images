@@ -1,10 +1,11 @@
+import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
 import { execSpawn } from '../utils/exec.js'
 import { RECORDINGS_DIR } from '../utils/env.js'
 import { uid } from '../utils/ids.js'
 
-const FFMPEG = process.env.FFMPEG_BIN || 'ffmpeg'
+const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
 const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1280)
 const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 720)
 const DISPLAY = process.env.DISPLAY || ':0'
