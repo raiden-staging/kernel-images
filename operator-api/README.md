@@ -10,108 +10,23 @@ bun build:linux # bin : dist/kernel-operator-api
 
 ---
 
-
-
 # Checklist
 
 `[✅ : Works , 〰️ : Yet to be test , ❌ : Doesn't work]`
 
-## /recording
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/recording/start | 〰️ | 〰️ | 〰️ | N/A
-/recording/stop | 〰️ | 〰️ | 〰️ | N/A
-/recording/download | 〰️ | 〰️ | 〰️ | N/A
-/recording/list | 〰️ | 〰️ | 〰️ | N/A
-/recording/delete | 〰️ | 〰️ | 〰️ | N/A
+# Checklist
 
-## /fs
+## /bus
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/fs/read_file | 〰️ | 〰️ | 〰️ | N/A
-/fs/write_file | 〰️ | 〰️ | 〰️ | N/A
-/fs/list_files | 〰️ | 〰️ | 〰️ | N/A
-/fs/create_directory | 〰️ | 〰️ | 〰️ | N/A
-/fs/delete_file | 〰️ | 〰️ | 〰️ | N/A
-/fs/delete_directory | 〰️ | 〰️ | 〰️ | N/A
-/fs/set_file_permissions | 〰️ | 〰️ | 〰️ | N/A
-/fs/file_info | 〰️ | 〰️ | 〰️ | N/A
-/fs/move | 〰️ | 〰️ | 〰️ | N/A
-/fs/watch | 〰️ | 〰️ | 〰️ | N/A
-/fs/watch/{watch_id}/events | 〰️ | 〰️ | 〰️ | N/A
-/fs/watch/{watch_id} | 〰️ | 〰️ | 〰️ | N/A
-/fs/upload | 〰️ | 〰️ | 〰️ | N/A
-/fs/download | 〰️ | 〰️ | 〰️ | N/A
-/fs/tail/stream | 〰️ | 〰️ | 〰️ | N/A
+/bus/publish | ✅ | 〰️ | 〰️ | N/A
+/bus/subscribe | ✅ | 〰️ | 〰️ | N/A
 
-## /computer
+## /clipboard
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/computer/click_mouse | 〰️ | 〰️ | 〰️ | N/A
-/computer/move_mouse | 〰️ | 〰️ | 〰️ | N/A
-
-## /screenshot
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/screenshot/capture | 〰️ | 〰️ | 〰️ | N/A
-/screenshot/{screenshot_id} | 〰️ | 〰️ | 〰️ | N/A
-
-## /stream
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/stream/start | 〰️ | 〰️ | 〰️ | N/A
-/stream/stop | 〰️ | 〰️ | 〰️ | N/A
-/stream/{stream_id}/metrics/stream | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/mouse
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/input/mouse/move | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/click | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/scroll | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/move_relative | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/down | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/up | 〰️ | 〰️ | 〰️ | N/A
-/input/mouse/location | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/keyboard
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/input/keyboard/type | 〰️ | 〰️ | 〰️ | N/A
-/input/keyboard/key_down | 〰️ | 〰️ | 〰️ | N/A
-/input/keyboard/key_up | 〰️ | 〰️ | 〰️ | N/A
-/input/keyboard/key | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/window
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/input/window/activate | 〰️ | 〰️ | 〰️ | N/A
-/input/window/move_resize | 〰️ | 〰️ | 〰️ | N/A
-/input/window/close | 〰️ | 〰️ | 〰️ | N/A
-/input/window/focus | 〰️ | 〰️ | 〰️ | N/A
-/input/window/raise | 〰️ | 〰️ | 〰️ | N/A
-/input/window/minimize | 〰️ | 〰️ | 〰️ | N/A
-/input/window/map | 〰️ | 〰️ | 〰️ | N/A
-/input/window/unmap | 〰️ | 〰️ | 〰️ | N/A
-/input/window/kill | 〰️ | 〰️ | 〰️ | N/A
-/input/window/active | 〰️ | 〰️ | 〰️ | N/A
-/input/window/focused | 〰️ | 〰️ | 〰️ | N/A
-/input/window/name | 〰️ | 〰️ | 〰️ | N/A
-/input/window/pid | 〰️ | 〰️ | 〰️ | N/A
-/input/window/geometry | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/display
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/input/display/geometry | 〰️ | 〰️ | 〰️ | N/A
-
-## /input/desktop
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/input/desktop/count | 〰️ | 〰️ | 〰️ | N/A
-/input/desktop/current | 〰️ | 〰️ | 〰️ | N/A
-/input/desktop/window_desktop | 〰️ | 〰️ | 〰️ | N/A
-/input/desktop/viewport | 〰️ | 〰️ | 〰️ | N/A
+/clipboard | 〰️ | 〰️ | 〰️ | N/A
+/clipboard/stream | 〰️ | 〰️ | 〰️ | N/A
 
 ## /combo
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
@@ -121,61 +36,104 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 /combo/window/center | 〰️ | 〰️ | 〰️ | N/A
 /combo/window/snap | 〰️ | 〰️ | 〰️ | N/A
 
+## /computer
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/computer/click_mouse | 〰️ | 〰️ | 〰️ | N/A
+/computer/move_mouse | 〰️ | 〰️ | 〰️ | N/A
+
+## /fs
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/fs/create_directory | 〰️ | 〰️ | 〰️ | N/A
+/fs/delete_directory | 〰️ | 〰️ | 〰️ | N/A
+/fs/delete_file | 〰️ | 〰️ | 〰️ | N/A
+/fs/download | 〰️ | 〰️ | 〰️ | N/A
+/fs/file_info | 〰️ | 〰️ | 〰️ | N/A
+/fs/list_files | 〰️ | 〰️ | 〰️ | N/A
+/fs/move | 〰️ | 〰️ | 〰️ | N/A
+/fs/read_file | 〰️ | 〰️ | 〰️ | N/A
+/fs/set_file_permissions | 〰️ | 〰️ | 〰️ | N/A
+/fs/tail/stream | 〰️ | 〰️ | 〰️ | N/A
+/fs/upload | 〰️ | 〰️ | 〰️ | N/A
+/fs/watch | 〰️ | 〰️ | 〰️ | N/A
+/fs/watch/{watch_id} | 〰️ | 〰️ | 〰️ | N/A
+/fs/watch/{watch_id}/events | 〰️ | 〰️ | 〰️ | N/A
+/fs/write_file | 〰️ | 〰️ | 〰️ | N/A
+
+## /health
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/health | 〰️ | 〰️ | 〰️ | N/A
+
+## /input/desktop
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/input/desktop/count | 〰️ | 〰️ | 〰️ | N/A
+/input/desktop/current | 〰️ | 〰️ | 〰️ | N/A
+/input/desktop/viewport | 〰️ | 〰️ | 〰️ | N/A
+/input/desktop/window_desktop | 〰️ | 〰️ | 〰️ | N/A
+
+## /input/display
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/input/display/geometry | 〰️ | 〰️ | 〰️ | N/A
+
+## /input/keyboard
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/input/keyboard/key | 〰️ | 〰️ | 〰️ | N/A
+/input/keyboard/key_down | 〰️ | 〰️ | 〰️ | N/A
+/input/keyboard/key_up | 〰️ | 〰️ | 〰️ | N/A
+/input/keyboard/type | 〰️ | 〰️ | 〰️ | N/A
+
+## /input/mouse
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/input/mouse/click | 〰️ | 〰️ | 〰️ | N/A
+/input/mouse/down | 〰️ | 〰️ | 〰️ | N/A
+/input/mouse/location | 〰️ | 〰️ | 〰️ | N/A
+/input/mouse/move | 〰️ | 〰️ | 〰️ | N/A
+/input/mouse/move_relative | 〰️ | 〰️ | 〰️ | N/A
+/input/mouse/scroll | 〰️ | 〰️ | 〰️ | N/A
+/input/mouse/up | 〰️ | 〰️ | 〰️ | N/A
+
 ## /input/system
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
 /input/system/exec | 〰️ | 〰️ | 〰️ | N/A
 /input/system/sleep | 〰️ | 〰️ | 〰️ | N/A
 
-## /process
+## /input/window
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/process/exec | 〰️ | 〰️ | 〰️ | N/A
-/process/spawn | 〰️ | 〰️ | 〰️ | N/A
-/process/{process_id}/status | 〰️ | 〰️ | 〰️ | N/A
-/process/{process_id}/stdout/stream | 〰️ | 〰️ | 〰️ | N/A
-/process/{process_id}/stdin | 〰️ | 〰️ | 〰️ | N/A
-/process/{process_id}/kill | 〰️ | 〰️ | 〰️ | N/A
-
-## /network/proxy/socks5
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/network/proxy/socks5/start | 〰️ | 〰️ | 〰️ | N/A
-/network/proxy/socks5/stop | 〰️ | 〰️ | 〰️ | N/A
-
-## /network/intercept
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/network/intercept/rules | 〰️ | 〰️ | 〰️ | N/A
-/network/intercept/rules/{rule_set_id} | 〰️ | 〰️ | 〰️ | N/A
-
-## /network/har
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/network/har/stream | 〰️ | 〰️ | 〰️ | N/A
-
-## /network/forward
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/network/forward | 〰️ | 〰️ | 〰️ | N/A
-/network/forward/{forward_id} | 〰️ | 〰️ | 〰️ | N/A
-
-## /bus
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/bus/publish | 〰️ | 〰️ | 〰️ | N/A
-/bus/subscribe | 〰️ | 〰️ | 〰️ | N/A
+/input/window/activate | 〰️ | 〰️ | 〰️ | N/A
+/input/window/active | 〰️ | 〰️ | 〰️ | N/A
+/input/window/close | 〰️ | 〰️ | 〰️ | N/A
+/input/window/focus | 〰️ | 〰️ | 〰️ | N/A
+/input/window/focused | 〰️ | 〰️ | 〰️ | N/A
+/input/window/geometry | 〰️ | 〰️ | 〰️ | N/A
+/input/window/kill | 〰️ | 〰️ | 〰️ | N/A
+/input/window/map | 〰️ | 〰️ | 〰️ | N/A
+/input/window/minimize | 〰️ | 〰️ | 〰️ | N/A
+/input/window/move_resize | 〰️ | 〰️ | 〰️ | N/A
+/input/window/name | 〰️ | 〰️ | 〰️ | N/A
+/input/window/pid | 〰️ | 〰️ | 〰️ | N/A
+/input/window/raise | 〰️ | 〰️ | 〰️ | N/A
+/input/window/unmap | 〰️ | 〰️ | 〰️ | N/A
 
 ## /logs
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
 /logs/stream | 〰️ | 〰️ | 〰️ | N/A
 
-## /clipboard
+## /macros
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/clipboard | 〰️ | 〰️ | 〰️ | N/A
-/clipboard/stream | 〰️ | 〰️ | 〰️ | N/A
+/macros/create | 〰️ | 〰️ | 〰️ | N/A
+/macros/list | 〰️ | 〰️ | 〰️ | N/A
+/macros/run | 〰️ | 〰️ | 〰️ | N/A
+/macros/{macro_id} | 〰️ | 〰️ | 〰️ | N/A
 
 ## /metrics
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
@@ -183,46 +141,80 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 /metrics/snapshot | 〰️ | 〰️ | 〰️ | N/A
 /metrics/stream | 〰️ | 〰️ | 〰️ | N/A
 
-## /macros
+## /network/forward
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/macros/create | 〰️ | 〰️ | 〰️ | N/A
-/macros/run | 〰️ | 〰️ | 〰️ | N/A
-/macros/list | 〰️ | 〰️ | 〰️ | N/A
-/macros/{macro_id} | 〰️ | 〰️ | 〰️ | N/A
+/network/forward | 〰️ | 〰️ | 〰️ | N/A
+/network/forward/{forward_id} | 〰️ | 〰️ | 〰️ | N/A
 
-## /scripts
+## /network/har
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/scripts/upload | 〰️ | 〰️ | 〰️ | N/A
-/scripts/run | 〰️ | 〰️ | 〰️ | N/A
-/scripts/run/{run_id}/logs/stream | 〰️ | 〰️ | 〰️ | N/A
-/scripts/list | 〰️ | 〰️ | 〰️ | N/A
-/scripts/delete | 〰️ | 〰️ | 〰️ | N/A
+/network/har/stream | 〰️ | 〰️ | 〰️ | N/A
+
+## /network/intercept
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/network/intercept/rules | 〰️ | 〰️ | 〰️ | N/A
+/network/intercept/rules/{rule_set_id} | 〰️ | 〰️ | 〰️ | N/A
+
+## /network/proxy/socks5
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/network/proxy/socks5/start | 〰️ | 〰️ | 〰️ | N/A
+/network/proxy/socks5/stop | 〰️ | 〰️ | 〰️ | N/A
 
 ## /os
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
 /os/locale | 〰️ | 〰️ | 〰️ | N/A
 
-## /browser/har
-Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
---- | --- | --- | --- | ---
-/browser/har/start | 〰️ | 〰️ | 〰️ | N/A
-/browser/har/{har_session_id}/stream | 〰️ | 〰️ | 〰️ | N/A
-/browser/har/stop | 〰️ | 〰️ | 〰️ | N/A
-
 ## /pipe
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/pipe/send | 〰️ | 〰️ | 〰️ | N/A
 /pipe/recv/stream | 〰️ | 〰️ | 〰️ | N/A
+/pipe/send | 〰️ | 〰️ | 〰️ | N/A
 
-## /health
+## /process
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/health | 〰️ | 〰️ | 〰️ | N/A
+/process/exec | 〰️ | 〰️ | 〰️ | N/A
+/process/spawn | 〰️ | 〰️ | 〰️ | N/A
+/process/{process_id}/kill | 〰️ | 〰️ | 〰️ | N/A
+/process/{process_id}/status | 〰️ | 〰️ | 〰️ | N/A
+/process/{process_id}/stdin | 〰️ | 〰️ | 〰️ | N/A
+/process/{process_id}/stdout/stream | 〰️ | 〰️ | 〰️ | N/A
 
+## /recording
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/recording/delete | 〰️ | 〰️ | 〰️ | N/A
+/recording/download | 〰️ | 〰️ | 〰️ | N/A
+/recording/list | 〰️ | 〰️ | 〰️ | N/A
+/recording/start | 〰️ | 〰️ | 〰️ | N/A
+/recording/stop | 〰️ | 〰️ | 〰️ | N/A
+
+## /screenshot
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/screenshot/capture | 〰️ | 〰️ | 〰️ | N/A
+/screenshot/{screenshot_id} | 〰️ | 〰️ | 〰️ | N/A
+
+## /scripts
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/scripts/delete | 〰️ | 〰️ | 〰️ | N/A
+/scripts/list | 〰️ | 〰️ | 〰️ | N/A
+/scripts/run | 〰️ | 〰️ | 〰️ | N/A
+/scripts/run/{run_id}/logs/stream | 〰️ | 〰️ | 〰️ | N/A
+/scripts/upload | 〰️ | 〰️ | 〰️ | N/A
+
+## /stream
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | ---
+/stream/start | 〰️ | 〰️ | 〰️ | N/A
+/stream/stop | 〰️ | 〰️ | 〰️ | N/A
+/stream/{stream_id}/metrics/stream | 〰️ | 〰️ | 〰️ | N/A
 
 ---
 
