@@ -1,15 +1,8 @@
-import 'dotenv/config'
 import { Hono } from 'hono'
 import { execCapture } from '../utils/exec.js'
 import chalk from 'chalk'
 
 export const clipboardRouter = new Hono()
-
-// Check available clipboard tools on startup
-const CLIPBOARD_TOOLS = {
-  wayland: false,
-  xclip: false
-}
 
 // Debug logging function
 const debug = (message) => {
@@ -17,26 +10,6 @@ const debug = (message) => {
     console.log(chalk.cyan('[clipboard]'), message)
   }
 }
-
-// Initialize clipboard tools detection
-async function detectClipboardTools() {
-  try {
-    // Check if wl-paste is available and works
-    const wlCheck = await execCapture('bash', ['-lc', 'command -v wl-paste && wl-paste -t text 2>/dev/null'])
-    CLIPBOARD_TOOLS.wayland = wlCheck.exitCode === 0
-    
-    // Check if xclip is available
-    const xCheck = await execCapture('bash', ['-lc', 'command -v xclip'])
-    CLIPBOARD_TOOLS.xclip = xCheck.exitCode === 0
-    
-    debug(`Detected clipboard tools: wayland=${CLIPBOARD_TOOLS.wayland}, xclip=${CLIPBOARD_TOOLS.xclip}`)
-  } catch (error) {
-    debug(`Error detecting clipboard tools: ${error.message}`)
-  }
-}
-
-// Run detection on startup
-detectClipboardTools()
 
 async function wlGet() {
   debug('Attempting to get clipboard content using wl-paste')
@@ -69,19 +42,14 @@ async function xSet({ type, text }) {
 clipboardRouter.get('/clipboard', async (c) => {
   try {
     debug('GET /clipboard request received')
-    let res = { type: 'text', text: '' }
-    
-    if (CLIPBOARD_TOOLS.wayland) {
-      debug('Using wayland clipboard')
-      res = await wlGet()
-    } else if (CLIPBOARD_TOOLS.xclip) {
-      debug('Using xclip clipboard')
-      res = await xGet()
-    } else {
-      debug('No clipboard tools available')
+    // Try xclip first, fall back to wayland
+    try {
+      debug('Trying xclip first')
+      return c.json(await xGet())
+    } catch (error) {
+      debug(`xclip failed: ${error.message}, trying wayland`)
+      return c.json(await wlGet())
     }
-    
-    return c.json(res)
   } catch (error) {
     debug(`Error in GET /clipboard: ${error.message}`)
     return c.json({ type: 'text', text: '' })
@@ -93,15 +61,13 @@ clipboardRouter.post('/clipboard', async (c) => {
     debug('POST /clipboard request received')
     const body = await c.req.json()
     
-    if (CLIPBOARD_TOOLS.wayland) {
-      debug('Using wayland clipboard for setting content')
-      await wlSet(body)
-    } else if (CLIPBOARD_TOOLS.xclip) {
-      debug('Using xclip clipboard for setting content')
+    // Try xclip first, fall back to wayland
+    try {
+      debug('Trying to set clipboard with xclip')
       await xSet(body)
-    } else {
-      debug('No clipboard tools available for setting content')
-      return c.json({ message: 'No clipboard tools available' }, 400)
+    } catch (error) {
+      debug(`xclip set failed: ${error.message}, trying wayland`)
+      await wlSet(body)
     }
     
     return c.json({ ok: true })
@@ -122,10 +88,15 @@ clipboardRouter.get('/clipboard/stream', async (c) => {
         try {
           let res = { type: 'text', text: '' }
           
-          if (CLIPBOARD_TOOLS.wayland) {
-            res = await wlGet()
-          } else if (CLIPBOARD_TOOLS.xclip) {
+          // Try xclip first, fall back to wayland
+          try {
             res = await xGet()
+          } catch {
+            try {
+              res = await wlGet()
+            } catch (error) {
+              debug(`Both clipboard methods failed: ${error.message}`)
+            }
           }
           
           const curr = res.type === 'text' ? res.text : res.image_b64?.slice(0, 16) || ''
