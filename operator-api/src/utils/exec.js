@@ -8,10 +8,25 @@ function debug(...args) {
     console.log(...args)
   }
 }
-
 export function execSpawn(cmd, args = [], opts = {}) {
   debug(chalk.blue('[EXEC]'), chalk.cyan('Spawning command:'), chalk.yellow(`${cmd} ${args.join(' ')}`))
   const child = spawn(cmd, args, { shell: false, ...opts })
+  
+  if (DEBUG_ENABLED) {
+    child.stdout?.on('data', (data) => {
+      debug(chalk.blue('[EXEC]'), chalk.green('[STDOUT]'), data.toString().trim())
+    })
+    
+    child.stderr?.on('data', (data) => {
+      debug(chalk.blue('[EXEC]'), chalk.red('[STDERR]'), data.toString().trim())
+    })
+    
+    child.on('close', (code) => {
+      const exitColor = code === 0 ? chalk.green : chalk.red
+      debug(chalk.blue('[EXEC]'), chalk.cyan('Command exited with code:'), exitColor(code))
+    })
+  }
+  
   return child
 }
 

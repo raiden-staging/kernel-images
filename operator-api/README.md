@@ -175,9 +175,9 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 ## /stream
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/stream/start | 〰️ | 〰️ | 〰️ | N/A
-/stream/stop | 〰️ | 〰️ | 〰️ | N/A
-/stream/{stream_id}/metrics/stream | 〰️ | 〰️ | 〰️ | N/A
+/stream/start | ✅ | 〰️ | 〰️ | N/A
+/stream/stop | ✅ | 〰️ | 〰️ | N/A
+/stream/{stream_id}/metrics/stream | ✅ | 〰️ | 〰️ | N/A
 
 ---
 
