@@ -1,4 +1,4 @@
-import { j, readSSE, hasCmd } from './utils.js'
+import { j, readSSE, hasCmd, raw } from './utils.js'
 
 const ffmpegPresent = hasCmd('ffmpeg')
 
@@ -15,7 +15,7 @@ describe('recording-nodelete', () => {
 
     await new Promise(res => setTimeout(res, 1_500))
     // Try download after it should have stopped
-    const d = await j('/recording/download?id=t1')
+    const d = await raw('/recording/download?id=t1')
     expect([200, 404]).toContain(d.status)
     
     // No delete operation

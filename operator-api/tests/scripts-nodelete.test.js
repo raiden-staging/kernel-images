@@ -10,7 +10,7 @@ describe('scripts-nodelete', () => {
     form.set('path', scriptPath)
     form.set('file', new Blob([shebang + 'echo hi']), 'script-nodelete.sh')
     form.set('executable', 'true')
-    const up = await fetch(`/scripts/upload`, { method: 'POST', body: form })
+    const up = await j(`/scripts/upload`, { method: 'POST', body: form })
     expect(up.status).toBe(200)
 
     const list = await j('/scripts/list')

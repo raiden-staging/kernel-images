@@ -105,16 +105,16 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 ## /macros
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/macros/create | 〰️ | 〰️ | 〰️ | N/A
-/macros/list | 〰️ | 〰️ | 〰️ | N/A
-/macros/run | 〰️ | 〰️ | 〰️ | N/A
-/macros/{macro_id} | 〰️ | 〰️ | 〰️ | N/A
+/macros/create | ✅ | 〰️ | 〰️ | N/A
+/macros/list | ✅ | 〰️ | 〰️ | N/A
+/macros/run | ✅ | 〰️ | 〰️ | N/A
+/macros/{macro_id} | ✅ | 〰️ | 〰️ | N/A
 
 ## /metrics
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/metrics/snapshot | 〰️ | 〰️ | 〰️ | N/A
-/metrics/stream | 〰️ | 〰️ | 〰️ | N/A
+/metrics/snapshot | ✅ | 〰️ | 〰️ | N/A
+/metrics/stream | ✅ | 〰️ | 〰️ | N/A
 
 ## /network/forward
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
@@ -130,38 +130,38 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 ## /os
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/os/locale | 〰️ | 〰️ | 〰️ | N/A
+/os/locale | ✅ | 〰️ | 〰️ | N/A
 
 ## /pipe
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/pipe/recv/stream | 〰️ | 〰️ | 〰️ | N/A
-/pipe/send | 〰️ | 〰️ | 〰️ | N/A
+/pipe/recv/stream | ✅ | 〰️ | 〰️ | N/A
+/pipe/send | ✅ | 〰️ | 〰️ | N/A
 
 ## /process
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/process/exec | 〰️ | 〰️ | 〰️ | N/A
-/process/spawn | 〰️ | 〰️ | 〰️ | N/A
-/process/{process_id}/kill | 〰️ | 〰️ | 〰️ | N/A
-/process/{process_id}/status | 〰️ | 〰️ | 〰️ | N/A
-/process/{process_id}/stdin | 〰️ | 〰️ | 〰️ | N/A
-/process/{process_id}/stdout/stream | 〰️ | 〰️ | 〰️ | N/A
+/process/exec | ✅ | 〰️ | 〰️ | N/A
+/process/spawn | ✅ | 〰️ | 〰️ | N/A
+/process/{process_id}/kill | ✅ | 〰️ | 〰️ | N/A
+/process/{process_id}/status | ✅ | 〰️ | 〰️ | N/A
+/process/{process_id}/stdin | ✅ | 〰️ | 〰️ | N/A
+/process/{process_id}/stdout/stream | ✅ | 〰️ | 〰️ | N/A
 
 ## /recording
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/recording/delete | 〰️ | 〰️ | 〰️ | N/A
-/recording/download | 〰️ | 〰️ | 〰️ | N/A
-/recording/list | 〰️ | 〰️ | 〰️ | N/A
-/recording/start | 〰️ | 〰️ | 〰️ | N/A
-/recording/stop | 〰️ | 〰️ | 〰️ | N/A
+/recording/delete | ✅ | 〰️ | 〰️ | N/A
+/recording/download | ✅ | 〰️ | 〰️ | N/A
+/recording/list | ✅ | 〰️ | 〰️ | N/A
+/recording/start | ✅ | 〰️ | 〰️ | N/A
+/recording/stop | ✅ | 〰️ | 〰️ | N/A
 
 ## /screenshot
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 --- | --- | --- | --- | ---
-/screenshot/capture | 〰️ | 〰️ | 〰️ | N/A
-/screenshot/{screenshot_id} | 〰️ | 〰️ | 〰️ | N/A
+/screenshot/capture | ✅ | 〰️ | 〰️ | N/A
+/screenshot/{screenshot_id} | ✅ | 〰️ | 〰️ | N/A
 
 ## /scripts
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
