@@ -192,7 +192,7 @@ describe('input', () => {
     it('input/combo/activate_and_type', async () => {
       const r = await j('/input/combo/activate_and_type', { 
         method: 'POST', 
-        body: JSON.stringify({ match: { only_visible: true }, text: 'test' }) 
+        body: JSON.stringify({ match: { name: "chromium" }, text: 'test' }) 
       })
       expect(r.status).toBe(200)
     })
@@ -200,7 +200,7 @@ describe('input', () => {
     it('input/combo/activate_and_keys', async () => {
       const r = await j('/input/combo/activate_and_keys', { 
         method: 'POST', 
-        body: JSON.stringify({ match: { only_visible: true }, keys: ['Return'] }) 
+        body: JSON.stringify({ match: { name: "chromium" }, keys: ['Return'] }) 
       })
       expect(r.status).toBe(200)
     })
@@ -208,7 +208,7 @@ describe('input', () => {
     it('input/combo/window/center', async () => {
       const r = await j('/input/combo/window/center', { 
         method: 'POST', 
-        body: JSON.stringify({ match: { only_visible: true }, width: 800, height: 600 }) 
+        body: JSON.stringify({ match: { name: "chromium" }, width: 800, height: 600 }) 
       })
       expect(r.status).toBe(200)
     })
@@ -216,7 +216,7 @@ describe('input', () => {
     it('input/combo/window/snap', async () => {
       const r = await j('/input/combo/window/snap', { 
         method: 'POST', 
-        body: JSON.stringify({ match: { only_visible: true }, position: 'left' }) 
+        body: JSON.stringify({ match: { name: "chromium" }, position: 'left' }) 
       })
       expect(r.status).toBe(200)
     })
