@@ -6,6 +6,7 @@ import { execCapture } from '../utils/exec.js'
 export const inputRouter = new Hono()
 
 const display = process.env.DISPLAY || ':0'
+const XDOTOOL = process.env.XDOTOOL_BIN || '/usr/bin/xdotool'
 
 // ---------- helpers ----------
 function asString(v, fallback = '') {
@@ -13,8 +14,10 @@ function asString(v, fallback = '') {
   return String(v)
 }
 
+
+
 async function runXdotool(args) {
-  const res = await execCapture(`DISPLAY=${display} xdotool`, args)
+  const res = await execCapture(XDOTOOL, args, { env: { ...process.env, DISPLAY: display } })
   if (res.code !== 0) throw new Error(res.stderr.toString('utf8') || 'xdotool error')
   return res
 }
