@@ -53,7 +53,11 @@ const commandArgs = [
 // Run the tests
 const testProcess = spawn(command, commandArgs, {
   stdio: 'inherit',
-  shell: true
+  shell: true,
+  env: {
+    ...process.env,
+    PORT: '9999' // Ensure PORT is set in the environment for BASE_URL in tests
+  }
 });
 
 testProcess.on('close', code => {
@@ -64,17 +68,17 @@ testProcess.on('close', code => {
 Examples of how to use this test runner:
 
 1. Run all tests:
-   node test.js
+   bun test.js
 
 2. Run a specific test file:
-   node test.js screenshot
+   bun test.js screenshot
 
 3. Run multiple test files:
-   node test.js screenshot stream
+   bun test.js screenshot stream
 
 4. Run with vitest options:
-   node test.js screenshot --watch
+   bun test.js screenshot --watch
 
 5. Run with both file and options:
-   node test.js screenshot --bail
+   bun test.js screenshot --bail
 */

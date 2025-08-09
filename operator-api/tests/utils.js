@@ -1,13 +1,15 @@
 import { execSync } from 'node:child_process'
 import { request, fetch } from 'undici'
 import { Readable } from 'node:stream'
+import 'dotenv/config'
 
-export const BASE = () => globalThis.__TEST_BASE_URL__
+// Hardcoded BASE URL using PORT from environment
+export const BASE = () => `http://localhost:${process.env.PORT || '9999'}`
 
 export function hasCmd(cmd) {
   try {
     execSync(`bash -lc "command -v ${cmd} >/dev/null 2>&1"`, { stdio: 'ignore' })
-    return true
+    return tru
   } catch {
     return false
   }
