@@ -5,7 +5,7 @@ import { cors } from 'hono/cors'
 import morgan from 'morgan'
 import { app as api } from './src/app.js'
 
-const port = Number(process.env.PORT || 10002)
+const port = Number(process.env.PORT || 9999)
 
 const root = new Hono()
 root.use('*', cors())
