@@ -6,10 +6,9 @@ import { dirname, join } from 'node:path';
 import { existsSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import chalk from 'chalk'
+import { createWriteStream } from 'node:fs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-
-;
 
 /**
  * Lists all available test files in the tests directory
@@ -61,58 +60,107 @@ printAvailableTests()
 const args = process.argv.slice(2);
 const testFiles = [];
 const vitestArgs = [];
+let runAllTests = false;
 
 // Process arguments
 args.forEach(arg => {
-  if (arg.startsWith('--') || arg.startsWith('-')) {
+  if (arg === '--all') {
+    runAllTests = true;
+  } else if (arg.startsWith('--') || arg.startsWith('-')) {
     vitestArgs.push(arg);
   } else {
     testFiles.push(arg);
   }
 });
 
-// If no test files specified, run all tests
-if (testFiles.length === 0) {
-  console.log('Running all tests...');
+// If --all flag is provided, run all tests with output to log file
+if (runAllTests) {
+  console.log(chalk.bold.blue('Running all tests and logging output to /tmp/kernel-operator.tests.log'));
+  
+  const logStream = createWriteStream('/tmp/kernel-operator.tests.log');
+  
+  // Get all test files
+  listAvailableTests().then(allTests => {
+    const allTestPaths = allTests.map(test => join(__dirname, 'tests', test));
+    
+    // Build vitest command for all tests
+    const command = 'npx';
+    const commandArgs = [
+      'vitest',
+      'run',
+      ...allTestPaths,
+      ...vitestArgs
+    ];
+    
+    // Run the tests with output to both console and log file
+    const testProcess = spawn(command, commandArgs, {
+      env: {
+        ...process.env,
+        PORT: '9999'
+      }
+    });
+    
+    testProcess.stdout.on('data', (data) => {
+      process.stdout.write(data);
+      logStream.write(data);
+    });
+    
+    testProcess.stderr.on('data', (data) => {
+      process.stderr.write(data);
+      logStream.write(data);
+    });
+    
+    testProcess.on('close', code => {
+      logStream.end();
+      console.log(chalk.gray('─'.repeat(50)));
+      console.log(chalk.bold(`Test logs saved to: ${chalk.cyan('/tmp/kernel-operator.tests.log')}`));
+      process.exit(code);
+    });
+  });
 } else {
-  console.log(`Running tests: ${testFiles.join(', ')}`);
+  // If no test files specified, run all tests
+  if (testFiles.length === 0) {
+    console.log('Running all tests...');
+  } else {
+    console.log(`Running tests: ${testFiles.join(', ')}`);
+  }
+
+  // Prepare test file paths
+  const testPaths = testFiles.map(file => {
+    // If file doesn't end with .test.js, add it
+    const testFile = file.endsWith('.test.js') ? file : `${file}.test.js`;
+    return join(__dirname, 'tests', testFile);
+  }).filter(path => {
+    const exists = existsSync(path);
+    if (!exists) {
+      console.warn(`Warning: Test file not found: ${path}`);
+    }
+    return exists;
+  });
+
+  // Build vitest command
+  const command = 'npx';
+  const commandArgs = [
+    'vitest',
+    'run',
+    ...(testPaths.length > 0 ? testPaths : []),
+    ...vitestArgs
+  ];
+
+  // Run the tests
+  const testProcess = spawn(command, commandArgs, {
+    stdio: 'inherit',
+    shell: true,
+    env: {
+      ...process.env,
+      PORT: '9999' // Ensure PORT is set in the environment for BASE_URL in tests
+    }
+  });
+
+  testProcess.on('close', code => {
+    process.exit(code);
+  });
 }
-
-// Prepare test file paths
-const testPaths = testFiles.map(file => {
-  // If file doesn't end with .test.js, add it
-  const testFile = file.endsWith('.test.js') ? file : `${file}.test.js`;
-  return join(__dirname, 'tests', testFile);
-}).filter(path => {
-  const exists = existsSync(path);
-  if (!exists) {
-    console.warn(`Warning: Test file not found: ${path}`);
-  }
-  return exists;
-});
-
-// Build vitest command
-const command = 'npx';
-const commandArgs = [
-  'vitest',
-  'run',
-  ...(testPaths.length > 0 ? testPaths : []),
-  ...vitestArgs
-];
-
-// Run the tests
-const testProcess = spawn(command, commandArgs, {
-  stdio: 'inherit',
-  shell: true,
-  env: {
-    ...process.env,
-    PORT: '9999' // Ensure PORT is set in the environment for BASE_URL in tests
-  }
-});
-
-testProcess.on('close', code => {
-  process.exit(code);
-});
 
 /*
 Examples of how to use this test runner:
@@ -131,4 +179,7 @@ Examples of how to use this test runner:
 
 5. Run with both file and options:
    bun test.js screenshot --bail
+   
+6. Run all tests with output logged to file:
+   bun test.js --all
 */

@@ -65,4 +65,10 @@ else
 fi
 
 docker rm -f "$NAME" 2>/dev/null || true
-docker run -it "${RUN_ARGS[@]}" "$IMAGE"
+if [[ "${DEBUG_BASH:-false}" == "false" ]]; then
+  docker run -it "${RUN_ARGS[@]}" "$IMAGE"
+else
+  docker run -dit --name "$NAME" "${RUN_ARGS[@]}" "$IMAGE"
+  docker logs -f "$NAME" &
+  docker exec -it "$NAME" /bin/bash
+fi

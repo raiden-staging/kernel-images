@@ -28,13 +28,13 @@ macrosRouter.post('/macros/run', async (c) => {
   const item = [...macros.values()].find((m) => m.macro_id === body.macro_id)
   if (!item) return c.json({ message: 'Not Found' }, 404)
   const run_id = uid()
-  ;(async () => {
-    for (const step of item.steps) {
-      if (step.action === 'keyboard.type' && step.text) await runXdotool(['type', '--clearmodifiers', '--', step.text])
-      else if (step.action === 'keyboard.key' && step.key) await runXdotool(['key', step.key])
-      else if (step.action === 'sleep' && step.ms) await runXdotool(['sleep', String(step.ms / 1000)])
-    }
-  })()
+    ; (async () => {
+      for (const step of item.steps) {
+        if (step.action === 'keyboard.type' && step.text) await runXdotool(['type', '--clearmodifiers', '--', step.text])
+        else if (step.action === 'keyboard.key' && step.key) await runXdotool(['key', step.key])
+        else if (step.action === 'sleep' && step.ms) await runXdotool(['sleep', String(step.ms / 1000)])
+      }
+    })()
   return c.json({ started: true, run_id })
 })
 

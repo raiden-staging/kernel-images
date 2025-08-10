@@ -9,7 +9,9 @@
     "dev": "NODE_ENV=development nodemon --watch src --ext js,json index.js",
     "test": "cross-env PORT=9999 vitest run --reporter=verbose",
     "test:watch": "cross-env PORT=9999 vitest",
-    "build:linux": "cp .dev.env .env && bun build --compile --minify --sourcemap --bytecode --target=bun-linux-x64 ./index.js --outfile dist/kernel-operator-api && cp .env dist/.env"
+    "build:api": "cp .dev.env .env && bun build --compile --minify --sourcemap --bytecode --target=bun-linux-x64 ./index.js --outfile dist/kernel-operator-api && cp .env dist/.env",
+    "build:tests": "cp .dev.env .env && bun build --compile --minify --sourcemap --bytecode --target=bun-linux-x64 ./tests.js --outfile dist/kernel-operator-test && cp .env dist/.env",
+    "build": "build:api && build:tests"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",

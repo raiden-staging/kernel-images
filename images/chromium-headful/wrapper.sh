@@ -305,6 +305,34 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   fi
 fi
 
+
+# ------------------------------------------------------------------------------
+# Start kernel-operator API (runs as user: kernel, with elevated caps; sudo available)
+# ------------------------------------------------------------------------------
+if [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
+  echo "[kernel-operator:api] Starting service"
+
+  OP_ENV_FILE="/usr/local/bin/.env"
+  [[ -f "$OP_ENV_FILE" ]] && { set -a; source "$OP_ENV_FILE"; set +a; }
+
+  # Maximize file descriptor and process limits for heavy FS/exec workloads
+  ulimit -n "${KERNEL_OPERATOR_ULIMIT_NOFILE:-1048576}" || true
+  ulimit -u "${KERNEL_OPERATOR_ULIMIT_NPROC:-65535}"   || true
+  umask "${KERNEL_OPERATOR_UMASK:-0002}"
+
+  # When the binary shells out to privileged commands, it can use:
+  #   sudo -n <cmd>        (passwordless per Dockerfile sudoers)
+  # Capabilities on the binary already cover many privileged syscalls.
+  PORT="9999" \
+  /usr/local/bin/kernel-operator-api & pid4=$!
+
+  # if [[ "${RUN_KERNEL_OPERATOR_TESTS:-}" == "true" ]]; then
+  #   echo "[kernel-operator:tests] Running tests once"
+  #   /usr/local/bin/kernel-operator-tests || echo "[kernel-operator:tests] Non-zero exit code"
+  # fi
+fi
+
+
 # ------------------------------------------------------------------------------
 # Scale-to-zero flag ───────────────────────────────────────────────────────────
 # ------------------------------------------------------------------------------
