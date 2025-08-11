@@ -338,7 +338,7 @@ async function lookupUser(name) {
 }
 
 async function packWithChromium({ chromiumBinary, extRoot, pemPath, outCrx }) {
-  const args = [`--pack-extension=${extRoot}`, `--pack-extension-key=${pemPath}`]
+  const args = [`--no-sandbox`, `--pack-extension=${extRoot}`, `--pack-extension-key=${pemPath}`]
   const { uid, gid, home } = await lookupUser(process.env.PACK_AS_USER || 'kernel')
   // ensure the packer can read the private key
   try { await fs.chown(pemPath, uid, gid) } catch { }
