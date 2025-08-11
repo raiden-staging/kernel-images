@@ -41,10 +41,8 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
   # you can set DEBUG_OPERATOR_TEST=true to auto run all tests
   DEBUG_OPERATOR_TEST=true IMAGE=kernel-docker WITH_KERNEL_IMAGES_API=true ENABLE_WEBRTC=true  ./run-docker.sh
 
-  # after tests run
-  # you should be able to fetch the generated logs file
-  # using the operator api itself, from outside the container
-  # (provided /fs/read_file works)
+  # after tests complete, you should be able to fetch the generated logs file
+  # using the operator api itself, from outside the container (provided /fs/read_file works)
   curl -o tests.log "http://localhost:9999/fs/read_file?path=%2Ftmp%2Fkernel-operator%2Ftests.log"
   cat tests.log
   ```

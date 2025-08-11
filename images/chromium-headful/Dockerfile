@@ -242,6 +242,8 @@ RUN chmod +x /usr/local/bin/kernel-images-api \
              /usr/local/bin/kernel-operator-api \
              /usr/local/bin/kernel-operator-test
 
+ENV DEBUG_OPERATOR_TEST=false
+
 ###############################################################################
 # Grant kernel user + kernel operator api a lot of freedom
 ###############################################################################
