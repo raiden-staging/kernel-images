@@ -319,12 +319,18 @@ if [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
   ulimit -n "${KERNEL_OPERATOR_ULIMIT_NOFILE:-1048576}" || true
   ulimit -u "${KERNEL_OPERATOR_ULIMIT_NPROC:-65535}"   || true
   umask "${KERNEL_OPERATOR_UMASK:-0002}"
-
   # When the binary shells out to privileged commands, it can use:
   #   sudo -n <cmd>        (passwordless per Dockerfile sudoers)
   # Capabilities on the binary already cover many privileged syscalls.
-  PORT="9999" \
-  /usr/local/bin/kernel-operator-api & pid4=$!
+  
+  # Debug log to print parsed .env content
+  echo "[wrapper:kernel-operator:api] parsed operator .env content:"
+  grep -v "^#" /etc/kernel-operator/.env | while read -r line; do
+    echo "  $line"
+  done
+  
+  # Run the operator API with the parsed environment variables
+  grep -v "^#" /etc/kernel-operator/.env | xargs -I{} /usr/local/bin/kernel-operator-api {} & pid4=$!
 
   # if [[ "${RUN_KERNEL_OPERATOR_TESTS:-}" == "true" ]]; then
   #   echo "[kernel-operator:test] Running tests once"

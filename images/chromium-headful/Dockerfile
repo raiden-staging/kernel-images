@@ -232,15 +232,15 @@ ENV WITH_KERNEL_IMAGES_API=false
 ###############################################################################
 # Copy the kernel-operator artifacts built externally
 ###############################################################################
+RUN mkdir -p /tmp/kernel-operator
+
 COPY bin/kernel-operator-api /usr/local/bin/kernel-operator-api
 COPY bin/kernel-operator-test /usr/local/bin/kernel-operator-test
-COPY bin/.env /usr/local/bin/.env
+COPY bin/.env /tmp/kernel-operator/.env
 
 RUN chmod +x /usr/local/bin/kernel-images-api \
              /usr/local/bin/kernel-operator-api \
-             /usr/local/bin/kernel-operator-test \
- && mkdir -p /etc/kernel-operator
-
+             /usr/local/bin/kernel-operator-test
 
 ###############################################################################
 # Grant kernel user + kernel operator api a lot of freedom
