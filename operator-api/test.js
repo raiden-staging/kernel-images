@@ -56,8 +56,26 @@ async function j(url, init = {}) {
   }
   if (ALWAYS_DEBUG) {
     console.log(chalk.cyan('[http]'), chalk.green(`status=${r.status}`))
-    if (typeof body === 'object') console.log(chalk.magenta('[body]'), chalk.gray(JSON.stringify(body, null, 2)))
-    else console.log(chalk.magenta('[body]'), chalk.gray(body))
+    if (typeof body === 'object') {
+      const jsonString = JSON.stringify(body, null, 2)
+      const maxLength = 3_000
+      const maxLengthSlice = 1_000
+      if (jsonString.length > maxLength) {
+        console.log(chalk.magenta('[body]'), chalk.gray(`${jsonString.substring(0, maxLengthSlice)}... [${jsonString.length} bytes total]`))
+      } else {
+        console.log(chalk.magenta('[body]'), chalk.gray(jsonString))
+      }
+    } else if (typeof body === 'string') {
+      const maxLength = 3_000
+      const maxLengthSlice = 1_500
+      if (body.length > maxLength) {
+        console.log(chalk.magenta('[body]'), chalk.gray(`${body.substring(0, maxLengthSlice)}... [${body.length} bytes total]`))
+      } else {
+        console.log(chalk.magenta('[body]'), chalk.gray(body))
+      }
+    } else {
+      console.log(chalk.magenta('[body]'), chalk.gray(String(body)))
+    }
   }
   return { status: r.status, headers: r.headers, body }
 }
