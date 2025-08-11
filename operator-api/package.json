@@ -11,7 +11,7 @@
     "test:watch": "cross-env PORT=9999 vitest",
     "build:api": "cp .dev.env .env && bun build --compile --minify --sourcemap --bytecode --target=bun-linux-x64 ./index.js --outfile dist/kernel-operator-api && cp .env dist/.env",
     "build:tests": "cp .dev.env .env && bun build --compile --minify --sourcemap --bytecode --target=bun-linux-x64 ./tests.js --outfile dist/kernel-operator-test && cp .env dist/.env",
-    "build": "build:api && build:tests"
+    "build": "bun build:api && bun build:tests"
   },
   "dependencies": {
     "@hono/node-server": "^1.13.8",
