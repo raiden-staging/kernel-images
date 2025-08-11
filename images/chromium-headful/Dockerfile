@@ -236,7 +236,7 @@ RUN mkdir -p /tmp/kernel-operator
 
 COPY bin/kernel-operator-api /usr/local/bin/kernel-operator-api
 COPY bin/kernel-operator-test /usr/local/bin/kernel-operator-test
-COPY bin/.env /tmp/kernel-operator/.env
+COPY bin/kernel-operator.env /tmp/kernel-operator/.env
 
 RUN chmod +x /usr/local/bin/kernel-images-api \
              /usr/local/bin/kernel-operator-api \
