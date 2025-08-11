@@ -69,6 +69,11 @@ if [[ "${DEBUG_BASH:-false}" == "true" ]]; then
   docker run -dit --name "$NAME" "${RUN_ARGS[@]}" "$IMAGE"
   docker logs -f "$NAME" &
   docker exec -it "$NAME" /bin/bash
+elif [[ "${DEBUG_OPERATOR_TEST:-false}" == "true" ]]; then
+  # if DEBUG_OPERATOR_TEST set to true, start in detached mode
+  docker rm -f "$NAME" 2>/dev/null || true
+  docker run -dit "${RUN_ARGS[@]}" -e DEBUG_OPERATOR_TEST=true "$IMAGE"
+  docker logs -f "$NAME"
 else
   docker rm -f "$NAME" 2>/dev/null || true
   docker run -it "${RUN_ARGS[@]}" "$IMAGE"
