@@ -54,7 +54,7 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
 
 # Checklist
 
-`[✅ : Works , 〰️ : Yet to be test , ❌ : Doesn't work]`
+`[✅ : Works , 〰️ : Yet to be tested , ❌ : Doesn't work]`
 
 # Checklist
 
