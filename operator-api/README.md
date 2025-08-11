@@ -45,8 +45,8 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
 
   # after tests complete, you should be able to fetch the generated logs file
   # using the operator api itself, from outside the container (provided /fs/read_file works)
-  curl "http://localhost:10001/health" # health check
-  curl -o tests.log "http://localhost:10001/fs/read_file?path=%2Ftmp%2Fkernel-operator%2Ftests.log"
+  curl "http://localhost:444/health" # health check
+  curl -o tests.log "http://localhost:444/fs/read_file?path=%2Ftmp%2Fkernel-operator%2Ftests.log"
   cat tests.log
   ```
 ---

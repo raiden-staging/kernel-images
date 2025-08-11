@@ -332,7 +332,8 @@ elif [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
     grep -v "^#" /tmp/kernel-operator/.kernel-operator.env | xargs -I{} /usr/local/bin/kernel-operator-api {} & pid4=$!
 
     if [[ "${DEBUG_OPERATOR_TEST:-}" == "true" ]]; then
-      echo "[kernel-operator:test] Running tests once"
+      echo "[kernel-operator:test] sleep 10 then Running tests once"
+      sleep 10
       /usr/local/bin/kernel-operator-test --all > /tmp/kernel-operator/tests.log 2>&1 || echo "[kernel-operator:tests] Non-zero exit code"
     fi
     
