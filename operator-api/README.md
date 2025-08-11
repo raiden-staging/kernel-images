@@ -184,26 +184,26 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 # Tests
 
 ```bash
-bun test.js browser --watch
-bun test.js bus --watch
-bun test.js clipboard --watch
-bun test.js fs --watch
-bun test.js fs-nodelete --watch
-bun test.js health --watch
-bun test.js input --watch
-bun test.js logs --watch
-bun test.js macros --watch
-bun test.js metrics --watch
-bun test.js network --watch
-bun test.js os --watch
-bun test.js pipe --watch
-bun test.js process --watch
-bun test.js recording --watch
-bun test.js recording-nodelete --watch
-bun test.js screenshot --watch
-bun test.js scripts --watch
-bun test.js scripts-nodelete --watch
-bun test.js stream --watch
+bun test browser --watch
+bun test bus --watch
+bun test clipboard --watch
+bun test fs --watch
+bun test fs-nodelete --watch
+bun test health --watch
+bun test input --watch
+bun test logs --watch
+bun test macros --watch
+bun test metrics --watch
+bun test network --watch
+bun test os --watch
+bun test pipe --watch
+bun test process --watch
+bun test recording --watch
+bun test recording-nodelete --watch
+bun test screenshot --watch
+bun test scripts --watch
+bun test scripts-nodelete --watch
+bun test stream --watch
 ```
 
 ---

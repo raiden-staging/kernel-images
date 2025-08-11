@@ -13,7 +13,7 @@ set -euo pipefail
 #   - Runs Bun in Docker from /workspace/operator-api
 #   - Produces artifacts in operator-api/dist:
 #       dist/kernel-operator-api
-#       dist/kernel-operator-tests
+#       dist/kernel-operator-test
 #       dist/.env
 #   - Copies those three into DEST_DIR
 
@@ -34,15 +34,15 @@ docker run --rm \
   "${BUN_IMAGE}" \
   bash -lc 'bun i && bun run build'
 
-for f in kernel-operator-api kernel-operator-tests .env; do
+for f in kernel-operator-api kernel-operator-test .env; do
   [[ -e "$ART_DIR/$f" ]] || { echo "Missing artifact: $ART_DIR/$f" >&2; exit 1; }
 done
 
 mkdir -p "$DEST_DIR"
 cp -f "$ART_DIR/kernel-operator-api" "$DEST_DIR/"
-cp -f "$ART_DIR/kernel-operator-tests" "$DEST_DIR/"
+cp -f "$ART_DIR/kernel-operator-test" "$DEST_DIR/"
 cp -f "$ART_DIR/.env" "$DEST_DIR/"
 
-chmod +x "$DEST_DIR/kernel-operator-api" "$DEST_DIR/kernel-operator-tests" || true
+chmod +x "$DEST_DIR/kernel-operator-api" "$DEST_DIR/kernel-operator-test" || true
 
 echo "✅ kernel-operator-api (bin) , kernel-operator-test (bin) , .env copied to $DEST_DIR/..." 
