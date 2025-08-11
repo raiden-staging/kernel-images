@@ -52,6 +52,7 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
   # after tests complete (some tests have ~30s timeout)
   # you should be able to fetch the gradually generated tests logs file
   # using the operator api itself, from outside the container (provided /fs/read_file works)
+  # (use `localhost:10001` if you want to try from inside the container's chromium)
   curl "http://localhost:444/health" # health check
   curl -o kernel_operator_tests.log "http://localhost:444/fs/read_file?path=%2Ftmp%2Fkernel-operator%2Ftests.log"
   cat kernel_operator_tests.log
@@ -61,6 +62,11 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
 # Checklist
 
 `[✅ : Works , 〰️ : Yet to be tested , ❌ : Doesn't work]`
+
+## /browser-ext
+Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
+--- | --- | --- | --- | --- 
+/browser/extension/add/unpacked | 〰️ | 〰️ | 〰️ | Supports GitHub URL or zip file upload
 
 ## /bus
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes

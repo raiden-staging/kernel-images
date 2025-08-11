@@ -1817,6 +1817,72 @@ paths:
         "404":
           $ref: "#/components/responses/NotFoundError"
 
+  /browser/extension/add/unpacked:
+    post:
+      summary: Add an unpacked browser extension
+      operationId: browserExtensionAddUnpacked
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                github_url:
+                  type: string
+                  description: GitHub repository URL for the extension
+                archive_file:
+                  type: string
+                  format: binary
+                  description: ZIP archive containing the extension (manifest at root or in first-level dir)
+              oneOf:
+                - required: [github_url]
+                - required: [archive_file]
+      responses:
+        "201":
+          description: Extension added successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id:
+                    type: string
+                    description: Extension ID
+                  version:
+                    type: string
+                    description: Extension version
+                  crx_path:
+                    type: string
+                    description: Path to the CRX file
+                  update_xml_path:
+                    type: string
+                    description: Path to the update XML file
+                  update_url:
+                    type: string
+                    description: URL for extension updates
+                  policy_path:
+                    type: string
+                    description: Path to the policy file
+                  installed:
+                    type: boolean
+                    description: Whether the extension was installed
+                  profile_extensions_dir:
+                    type: string
+                    description: Directory where the extension is installed
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          description: Server error
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  error:
+                    type: string
+
+
   /pipe/send:
     post:
       summary: Send a JSON object onto a named pipe channel

@@ -329,9 +329,30 @@ async function decideKeyId({ github_url, manifest }) {
   return 'up_' + crypto.createHash('sha256').update(name).digest('hex').slice(0, 16)
 }
 
+async function lookupUser(name) {
+  const txt = await fs.readFile('/etc/passwd', 'utf8')
+  const line = txt.split('\n').find(l => l.startsWith(name + ':'))
+  if (!line) throw new Error(`User not found: ${name}`)
+  const parts = line.split(':')
+  return { uid: Number(parts[2]), gid: Number(parts[3]), home: parts[5] }
+}
+
 async function packWithChromium({ chromiumBinary, extRoot, pemPath, outCrx }) {
   const args = [`--pack-extension=${extRoot}`, `--pack-extension-key=${pemPath}`]
-  await execFileStrict(chromiumBinary, args, { env: { ...process.env, DISPLAY: process.env.DISPLAY || ':1' } })
+  const { uid, gid, home } = await lookupUser(process.env.PACK_AS_USER || 'kernel')
+  // ensure the packer can read the private key
+  try { await fs.chown(pemPath, uid, gid) } catch { }
+  await new Promise((resolve, reject) => {
+    const p = spawn(chromiumBinary, args, {
+      stdio: ['ignore', 'pipe', 'pipe'],
+      env: { ...process.env, HOME: home, DISPLAY: process.env.DISPLAY || ':1' },
+      uid, gid
+    })
+    let stderr = ''
+    p.stderr.on('data', d => { stderr += String(d) })
+    p.on('error', reject)
+    p.on('close', code => code === 0 ? resolve() : reject(new Error(`${chromiumBinary} ${args.join(' ')} exited ${code}\n${stderr}`)))
+  })
   const produced = `${extRoot}.crx`
   if (!fssync.existsSync(produced)) throw new Error('Chromium packer did not create .crx')
   await fs.copyFile(produced, outCrx)
