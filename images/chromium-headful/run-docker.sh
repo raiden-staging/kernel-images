@@ -43,7 +43,11 @@ RUN_ARGS=(
 )
 
 if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
-  RUN_ARGS+=( -p 444:10001 )
+  if [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
+    RUN_ARGS+=( -p 444:9999 )
+  else
+    RUN_ARGS+=( -p 444:10001 )
+  fi
   RUN_ARGS+=( -e WITH_KERNEL_IMAGES_API=true )
 fi
 
@@ -72,8 +76,8 @@ if [[ "${DEBUG_BASH:-false}" == "true" ]]; then
 elif [[ "${DEBUG_OPERATOR_TEST:-false}" == "true" ]]; then
   # if DEBUG_OPERATOR_TEST set to true, start in detached mode
   docker rm -f "$NAME" 2>/dev/null || true
-  docker run -dit "${RUN_ARGS[@]}" -e DEBUG_OPERATOR_TEST=true "$IMAGE"
-  docker logs -f "$NAME"
+  docker run -d "${RUN_ARGS[@]}" -e DEBUG_OPERATOR_TEST=true "$IMAGE"
+  echo "Container '$NAME' started in detached mode"
 else
   docker rm -f "$NAME" 2>/dev/null || true
   docker run -it "${RUN_ARGS[@]}" "$IMAGE"
