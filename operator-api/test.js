@@ -513,11 +513,25 @@ async function suite_stream() {
     }
   }, { skipIf: haveFFmpeg ? false : 'ffmpeg missing' })
 }
+async function suite_browser_ext() {
+  await runTest('browser-ext', 'add unpacked extension from GitHub', async () => {
+    const r = await j('/browser/extension/add/unpacked', { 
+      method: 'POST', 
+      body: JSON.stringify({ 
+        github_url: 'https://github.com/SimGus/chrome-extension-v3-starter' 
+      })
+    })
+    if (r.status !== 201) throw new Error(`bad status ${r.status}`)
+    if (!r.body.id || !r.body.version) throw new Error('missing extension details')
+    console.log(chalk.gray(`Extension ID: ${r.body.id}, Version: ${r.body.version}`))
+  })
+}
 
 // ---------------------------- Runner ----------------------------
 const SUITES = [
   ['health', suite_health],
   // ['browser', suite_browser],
+  ['browser-ext', suite_browser_ext],
   ['bus', suite_bus],
   ['clipboard', suite_clipboard],
   ['fs', suite_fs],

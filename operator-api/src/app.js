@@ -16,6 +16,7 @@ import { osRouter } from './routes/os.js'
 import { browserRouter } from './routes/browser.js'
 import { pipeRouter } from './routes/pipe.js'
 import { healthRouter } from './routes/health.js'
+import { browserExtRouter } from './routes/browser-ext.js'
 
 export const app = new Hono()
 
@@ -36,3 +37,4 @@ app.route('/', osRouter)
 app.route('/', browserRouter)
 app.route('/', pipeRouter)
 app.route('/', healthRouter)
+app.route('/', browserExtRouter)
