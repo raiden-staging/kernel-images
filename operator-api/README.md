@@ -24,10 +24,10 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
 
   ```bash
   # build the container ...
-  # start container with DEBUG_BASH=true for interactive mode
+  # start container with DEBUG_BASH=true for interactive mode (optional)
   # needs both WITH_KERNEL_IMAGES_API=true & WITH_KERNEL_OPERATOR_API=true
-  
-  DEBUG_BASH=true IMAGE=kernel-docker WITH_KERNEL_IMAGES_API=true WITH_KERNEL_OPERATOR_API=true ENABLE_WEBRTC=true  ./run-docker.sh
+
+  WITH_KERNEL_OPERATOR_API=true DEBUG_BASH=true IMAGE=kernel-docker WITH_KERNEL_IMAGES_API=true ENABLE_WEBRTC=true  ./run-docker.sh
 
   # when container launches, run tests from inside it
 
@@ -43,7 +43,7 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
   # you can set DEBUG_OPERATOR_TEST=true to auto run all tests
   # needs both WITH_KERNEL_IMAGES_API=true & WITH_KERNEL_OPERATOR_API=true
 
-  DEBUG_OPERATOR_TEST=true IMAGE=kernel-docker WITH_KERNEL_IMAGES_API=true ENABLE_WEBRTC=true  ./run-docker.sh
+  WITH_KERNEL_OPERATOR_API=true DEBUG_OPERATOR_TEST=true IMAGE=kernel-docker WITH_KERNEL_IMAGES_API=true ENABLE_WEBRTC=true  ./run-docker.sh
 
   # after tests complete, you should be able to fetch the generated logs file
   # using the operator api itself, from outside the container (provided /fs/read_file works)
