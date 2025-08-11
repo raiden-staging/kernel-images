@@ -6,8 +6,8 @@ import { RECORDINGS_DIR } from '../utils/env.js'
 import { uid } from '../utils/ids.js'
 
 const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
-const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1024)
-const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 768)
+const WIDTH = Number(process.env.WIDTH || 1024)
+const HEIGHT = Number(process.env.HEIGHT || 768)
 const DISPLAY = process.env.DISPLAY || ':0'
 
 const state = new Map() // id -> {proc, file, started_at, finished_at}

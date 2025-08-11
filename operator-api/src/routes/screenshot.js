@@ -9,8 +9,8 @@ import { SCREENSHOTS_DIR } from '../utils/env.js'
 
 const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
 const DISPLAY = process.env.DISPLAY || ':0'
-const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1024)
-const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 768)
+const WIDTH = Number(process.env.WIDTH || 1024)
+const HEIGHT = Number(process.env.HEIGHT || 768)
 
 if (DISPLAY == ':20') {
   console.warn(`DISPLAY from env: ${DISPLAY} [likely for debugging in a remote VM]`)

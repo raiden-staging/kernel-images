@@ -39,8 +39,10 @@ if [ "$EROFS_DISABLE" = "false" ]; then
   docker create --platform linux/amd64 --name cnt-"$app_name" "$IMAGE" /bin/sh
   docker cp cnt-"$app_name":/ ./.rootfs
   rm -f initrd || true
-  sudo mkfs.erofs --all-root -d2 -E noinline_data -b 4096 initrd ./.rootfs
-
+  # sudo mkfs.erofs --all-root -d2 -E noinline_data -b 4096 initrd ./.rootfs
+  # default block size is 4096 and -b fails for some reason, removed it
+  sudo mkfs.erofs --all-root -d2 -E noinline_data initrd ./.rootfs
+  
   # Package the unikernel (and the new initrd) to KraftCloud
   kraft pkg \
     --name $UKC_INDEX/$IMAGE \

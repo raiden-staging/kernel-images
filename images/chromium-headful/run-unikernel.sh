@@ -41,8 +41,20 @@ kraft cloud volume import -s "$FLAGS_DIR" -v "$volume_name"
 trap 'rm -rf "$FLAGS_DIR"' EXIT
 
 
+# ------------------------------------------------------------------------------
+# WARNING: MEMORY UPGRADE NOTICE
+# ------------------------------------------------------------------------------
+echo -e "\033[1;41m"
+echo -e "                                                                                "
+echo -e "  DEBUG : KERNEL : run-unikernel.sh : TESTING WITH 16GB INSTEAD OF 8GB         "
+echo -e "  AND SHOULD BE REPLACED BACK LATER                                            "
+echo -e "                                                                                "
+echo -e "\033[0m"
+
+
 deploy_args=(
-  -M 8192
+  # -M 8192  # Previous memory allocation
+  -M 16384   # Doubled memory allocation
   -p 9222:9222/tls
   -e DISPLAY_NUM=1
   -e HEIGHT=768

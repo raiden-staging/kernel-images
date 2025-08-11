@@ -5,8 +5,8 @@ import { EventEmitter } from 'node:events'
 
 const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
 const DISPLAY = process.env.DISPLAY || ':0'
-const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1024)
-const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 768)
+const WIDTH = Number(process.env.WIDTH || 1024)
+const HEIGHT = Number(process.env.HEIGHT || 768)
 const PULSE_SOURCE = process.env.PULSE_SOURCE || 'default'
 
 const streams = new Map() // id -> {proc, emitter}
