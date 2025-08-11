@@ -32,7 +32,7 @@ docker run --rm \
   -v "$REPO_ROOT":/workspace \
   -w /workspace/operator-api \
   "${BUN_IMAGE}" \
-  bash -lc 'bun i --frozen-lockfile && bun run build'
+  bash -lc 'bun i && bun run build'
 
 for f in kernel-operator-api kernel-operator-tests .env; do
   [[ -e "$ART_DIR/$f" ]] || { echo "Missing artifact: $ART_DIR/$f" >&2; exit 1; }
