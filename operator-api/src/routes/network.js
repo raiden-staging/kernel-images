@@ -1,11 +1,14 @@
 import { Hono } from 'hono'
-import { startSocks, stopSocks } from '../services/socksService.js'
+// import { startSocks, stopSocks } from '../services/socksService.js'
 import { applyRules, deleteRuleSet, harStreamEmitter } from '../services/interceptService.js'
 import { addForward, removeForward } from '../services/forwardService.js'
 import { sseHeaders, sseFormat } from '../utils/sse.js'
 
 export const networkRouter = new Hono()
 
+console.warn(`[operator-api/src/routes/network.js] : disabled socks5 endpoints + removed socks5 package for now (build crashes kernel container)`)
+
+/*
 networkRouter.post('/network/proxy/socks5/start', async (c) => {
   try {
     const body = await c.req.json()
@@ -25,6 +28,7 @@ networkRouter.post('/network/proxy/socks5/stop', async (c) => {
     return c.json({ message: String(e.message) }, 404)
   }
 })
+*/
 
 networkRouter.post('/network/intercept/rules', async (c) => {
   try {
