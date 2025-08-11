@@ -1,5 +1,12 @@
 // src/routes/browser-ext.js
-// ESM. Requires: hono, undici, extract-zip, ws
+// ESM. Requires: hono, undici, extract-zip, ws, chalk
+// Purpose: Force-install an unpacked Chromium extension from GitHub or a ZIP upload,
+//          publish it to a local "update server", and optionally pin its toolbar icon.
+// Notes:
+//   - Only Manifest V3 is supported.
+//   - Pinning is supported via policy key: ExtensionSettings[<id>].toolbar_pin = "force_pinned" (Chrome/Chromium 114+).
+//   - Incognito auto-enable is intentionally not implemented; Chrome policy does not support forcing it.
+
 import { Hono } from 'hono'
 import fs from 'node:fs/promises'
 import fssync from 'node:fs'
@@ -11,13 +18,23 @@ import { setTimeout as delay } from 'node:timers/promises'
 import extract from 'extract-zip'
 import { request } from 'undici'
 import { WebSocket } from 'ws'
+import chalk from 'chalk'
 
 export const browserExtRouter = new Hono()
 
-// POST /browser/extension/add/unpacked  (multipart/form-data)
+/* ────────────────────────────── HTTP routes ────────────────────────────── */
+
+// POST /browser/extension/add/unpacked  (multipart/form-data OR application/json)
 //   fields:
 //     github_url: string   OR
-//     archive_file: File (.zip, manifest at root or in first-level dir)
+//     archive_file: File (.zip, manifest at root or one-level nested)
+// Behavior:
+//   - Downloads/reads the archive
+//   - Extracts and validates manifest.json (MV3 only)
+//   - Packs extension with chromium --pack-extension using a stable per-source key
+//   - Publishes CRX + update.xml under repoStorageDir
+//   - Writes policy to force-install and (optionally) pin toolbar icon
+//   - Tries to hot-reload policy via DevTools; optionally restarts browser if needed
 browserExtRouter.post('/browser/extension/add/unpacked', async (c) => {
   const origin = new URL(c.req.url).origin
   const form = await readForm(c)
@@ -28,24 +45,38 @@ browserExtRouter.post('/browser/extension/add/unpacked', async (c) => {
     chromiumBinary: process.env.CHROMIUM_BINARY || 'chromium',
     devtoolsHost: process.env.CHROME_HOST || '127.0.0.1',
     devtoolsPort: Number(process.env.CHROME_PORT || 9222),
+
+    // Resolve a writable managed policy directory automatically
     policyDir: await detectPolicyDir([
       '/etc/chromium/policies/managed',
       '/etc/opt/chromium/policies/managed',
       '/etc/opt/chrome/policies/managed',
       '/etc/chrome/policies/managed'
     ]),
+
+    // Local "update server" root and base URL
     repoStorageDir: process.env.EXT_REPO_DIR || '/opt/extrepo',
     repoBaseUrl: process.env.EXT_REPO_BASE_URL || `${origin}/extrepo`,
+
+    // Directory holding persistent RSA keys for stable extension IDs
     keyStoreDir: process.env.EXT_KEY_STORE_DIR || '/var/lib/chrome-ext-keys',
+
+    // Toolbar pin control (Chrome/Chromium 114+). Safe to enable; ignored on older versions.
+    pinToToolbar: envBool(process.env.EXT_PIN_TOOLBAR, true),
+
     tryHotReloadPolicy: true,
     fallbackRestart: true,
-    waitInstallTimeoutMs: 25000
+    waitInstallTimeoutMs: 25_000
   }
+
+  logInfo('incoming', { from: params.github_url ? 'github' : 'upload', pinToToolbar: params.pinToToolbar })
 
   try {
     const result = await addUnpackedExtension(params)
+    logOk('done', { id: result.id, version: result.version, pinned: result.pinned, installed: result.installed })
     return c.json(result, 201)
   } catch (err) {
+    logFail('error', { error: err?.message || String(err) })
     return c.json({ error: err.message || String(err) }, 500)
   } finally {
     if (form.cleanup) await form.cleanup().catch(() => { })
@@ -53,6 +84,9 @@ browserExtRouter.post('/browser/extension/add/unpacked', async (c) => {
 })
 
 // GET /extrepo/*  (serves CRX and update.xml from repoStorageDir)
+//   Example paths:
+//     /extrepo/<extId>/<extId>.crx
+//     /extrepo/<extId>/update.xml
 browserExtRouter.get('/extrepo/*', async (c) => {
   const baseDir = process.env.EXT_REPO_DIR || '/opt/extrepo'
   const tail = c.req.path.replace(/^\/extrepo\/?/, '')
@@ -98,7 +132,9 @@ async function readForm(c) {
     archive_path = path.join(tmpRoot, 'upload.zip')
     const buf = Buffer.from(await file.arrayBuffer())
     await fs.writeFile(archive_path, buf)
-    cleanup = async () => { try { await fs.rm(tmpRoot, { recursive: true, force: true }) } catch { } }
+    cleanup = async () => {
+      try { await fs.rm(tmpRoot, { recursive: true, force: true }) } catch { }
+    }
   }
 
   return { github_url, archive_path, cleanup }
@@ -123,6 +159,10 @@ const DEFAULTS = {
 
 const NIBBLE_MAP = 'abcdefghijklmnop'.split('')
 
+/**
+ * Add an unpacked extension by source (GitHub or uploaded ZIP),
+ * pack to CRX with a deterministic key, publish, and force-install via policy.
+ */
 async function addUnpackedExtension({
   github_url,
   archive_file_path,
@@ -133,9 +173,10 @@ async function addUnpackedExtension({
   repoStorageDir = DEFAULTS.repoStorageDir,
   repoBaseUrl = DEFAULTS.repoBaseUrl,
   keyStoreDir = DEFAULTS.keyStoreDir,
+  pinToToolbar = true,
   tryHotReloadPolicy = true,
   fallbackRestart = true,
-  waitInstallTimeoutMs = 25000
+  waitInstallTimeoutMs = 25_000
 } = {}) {
   assertOneSource(github_url, archive_file_path)
 
@@ -147,62 +188,91 @@ async function addUnpackedExtension({
   const srcZip = path.join(workRoot, 'src.zip')
   const unpackDir = path.join(workRoot, 'unpacked')
 
+  // Acquire source archive
   if (github_url) {
+    logStep('download', { github_url })
     const zipUrl = await resolveGithubZipURL(github_url)
     await downloadToFile(zipUrl, srcZip)
   } else {
+    logStep('ingest-upload', { path: archive_file_path })
     await fs.copyFile(archive_file_path, srcZip)
   }
 
+  // Unpack and locate manifest.json
+  logStep('extract', { to: unpackDir })
   await extract(srcZip, { dir: unpackDir })
   const extRoot = await resolveExtensionRoot(unpackDir)
-  const manifest = await readJson(path.join(extRoot, 'manifest.json'))
-  validateManifest(manifest)
 
+  // Validate manifest
+  const manifestPath = path.join(extRoot, 'manifest.json')
+  const manifest = await readJson(manifestPath)
+  validateManifest(manifest)
+  logStep('manifest', { version: manifest.version, mv: manifest.manifest_version })
+
+  // Stable key per source to keep extension ID constant across updates
   const sourceKeyId = await decideKeyId({ github_url, manifest })
   const pemPath = path.join(keyStoreDir, `${sourceKeyId}.pem`)
   if (!fssync.existsSync(pemPath)) {
+    logStep('keygen', { id: sourceKeyId })
     await ensureDir(keyStoreDir)
     const { privateKey } = crypto.generateKeyPairSync('rsa', { modulusLength: 2048 })
     const pem = privateKey.export({ type: 'pkcs8', format: 'pem' })
     await fs.writeFile(pemPath, pem, { mode: 0o600 })
   }
 
+  // Pack to CRX
   const outCrx = path.join(workRoot, 'packed.crx')
+  logStep('pack', { binary: chromiumBinary })
   await packWithChromium({ chromiumBinary, extRoot, pemPath, outCrx })
 
+  // Compute extension ID from key
   const extId = await computeExtensionIdFromPem(pemPath)
+  logStep('ext-id', { id: extId })
 
+  // Publish CRX + update.xml
   const publicDir = path.join(repoStorageDir, extId)
   await ensureDir(publicDir)
   const finalCrx = path.join(publicDir, `${extId}.crx`)
   await fs.copyFile(outCrx, finalCrx)
   const updateXmlPath = path.join(publicDir, 'update.xml')
-
   const codebaseUrl = `${trimSlash(repoBaseUrl)}/${extId}/${extId}.crx`
   const updateUrl = `${trimSlash(repoBaseUrl)}/${extId}/update.xml`
   await writeUpdateXml({ updateXmlPath, extId, version: manifest.version, codebaseUrl })
+  logStep('publish', { crx: finalCrx, update_xml: updateXmlPath, update_url: updateUrl })
 
+  // Write policy: force-install and optionally force-pin
   const policyPath = path.join(policyDir, `force_${extId}.json`)
-  await fs.writeFile(
-    policyPath,
-    JSON.stringify({ ExtensionInstallForcelist: [`${extId};${updateUrl}`] }, null, 2) + '\n',
-    { mode: 0o644 }
-  )
+  const policyPayload = {
+    ExtensionInstallForcelist: [`${extId};${updateUrl}`],
+    ...(pinToToolbar && {
+      ExtensionSettings: {
+        [extId]: { toolbar_pin: 'force_pinned' } // Chrome/Chromium 114+
+      }
+    })
+  }
+  await fs.writeFile(policyPath, JSON.stringify(policyPayload, null, 2) + '\n', { mode: 0o644 })
+  logStep('policy-write', { path: policyPath, pin: !!pinToToolbar })
 
+  // Detect profile dir and check prior installation
   const userDataDir = await locateUserDataDir(DEFAULTS.userDataDirsProbe)
   const extInstallDir = path.join(userDataDir, 'Default', 'Extensions', extId)
   const installedBefore = await dirExists(extInstallDir)
 
+  // Try to apply policy without restart
   if (tryHotReloadPolicy) {
+    logStep('policy-reload', { via: 'DevTools' })
     await devtoolsReloadPolicies({ devtoolsHost, devtoolsPort }).catch(() => { })
   }
 
+  // Wait for install on disk
   let installed = await waitForExtensionInstallOnDisk(extInstallDir, waitInstallTimeoutMs)
+
+  // Fallback: restart browser to pick up policy
   if (!installed && fallbackRestart) {
+    logWarn('fallback-restart', { host: devtoolsHost, port: devtoolsPort })
     await devtoolsRestartBrowser({ devtoolsHost, devtoolsPort }).catch(() => { })
-    await waitDevToolsUp({ devtoolsHost, devtoolsPort, timeoutMs: 20000 }).catch(() => { })
-    installed = await waitForExtensionInstallOnDisk(extInstallDir, 15000)
+    await waitDevToolsUp({ devtoolsHost, devtoolsPort, timeoutMs: 20_000 }).catch(() => { })
+    installed = await waitForExtensionInstallOnDisk(extInstallDir, 15_000)
   }
 
   await safeRm(workRoot)
@@ -215,7 +285,8 @@ async function addUnpackedExtension({
     update_url: updateUrl,
     policy_path: policyPath,
     installed: installed || installedBefore || false,
-    profile_extensions_dir: extInstallDir
+    profile_extensions_dir: extInstallDir,
+    pinned: !!pinToToolbar
   }
 }
 
@@ -244,7 +315,7 @@ async function detectPolicyDir(candidates) {
       return dir
     } catch { }
   }
-  // last resort still return first path; write will error explicitly if not writable
+  // Last resort: return first path; writes will error explicitly if not writable
   return candidates[0]
 }
 
@@ -267,15 +338,17 @@ async function resolveGithubZipURL(input) {
   const parts = u.pathname.split('/').filter(Boolean)
   if (parts.length < 2) throw new Error('Invalid GitHub repo URL')
 
+  // Already a refs/heads archive URL
   if (parts.includes('archive') && parts.includes('refs') && parts.includes('heads')) {
     return String(u)
   }
 
+  // /owner/repo or /owner/repo/tree/<branch>
   const treeIdx = parts.indexOf('tree')
   let branch = null
   if (treeIdx >= 0 && parts[treeIdx + 1]) branch = parts[treeIdx + 1]
-
   const [owner, repo] = parts
+
   const tries = []
   if (branch) {
     tries.push(`https://codeload.github.com/${owner}/${repo}/zip/refs/heads/${branch}`)
@@ -293,6 +366,7 @@ async function resolveGithubZipURL(input) {
 
 async function resolveExtensionRoot(unpackedDir) {
   if (await fileExists(path.join(unpackedDir, 'manifest.json'))) return unpackedDir
+
   const entries = await fs.readdir(unpackedDir, { withFileTypes: true })
   const dirs = entries.filter((e) => e.isDirectory())
   if (dirs.length === 1) {
@@ -338,9 +412,9 @@ async function lookupUser(name) {
 }
 
 async function packWithChromium({ chromiumBinary, extRoot, pemPath, outCrx }) {
+  // chromium --pack-extension requires a readable key file; we chown to the target user if needed
   const args = [`--no-sandbox`, `--pack-extension=${extRoot}`, `--pack-extension-key=${pemPath}`]
   const { uid, gid, home } = await lookupUser(process.env.PACK_AS_USER || 'kernel')
-  // ensure the packer can read the private key
   try { await fs.chown(pemPath, uid, gid) } catch { }
   await new Promise((resolve, reject) => {
     const p = spawn(chromiumBinary, args, {
@@ -499,4 +573,31 @@ async function waitForExtensionInstallOnDisk(extInstallDir, timeoutMs) {
     await delay(500)
   }
   return false
+}
+
+/* ─────────────────────────── logging helpers ─────────────────────────── */
+
+function logStep(event, data) { log(chalk.cyan('[step]'), event, data) }
+function logInfo(event, data) { log(chalk.blue('[info]'), event, data) }
+function logWarn(event, data) { log(chalk.yellow('[warn]'), event, data) }
+function logOk(event, data) { log(chalk.green('[ok]'), event, data) }
+function logFail(event, data) { log(chalk.red('[fail]'), event, data) }
+
+function log(prefix, event, data) {
+  if (data && Object.keys(data).length) {
+    // Safe, one-line JSON for structured logs
+    console.log(prefix, event, JSON.stringify(data))
+  } else {
+    console.log(prefix, event)
+  }
+}
+
+/* ─────────────────────────── misc utilities ─────────────────────────── */
+
+function envBool(value, def = false) {
+  if (value == null) return def
+  const v = String(value).trim().toLowerCase()
+  if (['1', 'true', 'yes', 'y', 'on'].includes(v)) return true
+  if (['0', 'false', 'no', 'n', 'off'].includes(v)) return false
+  return def
 }

@@ -1,6 +1,7 @@
 import 'dotenv/config'
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import { execSpawn } from '../utils/exec.js'
 import { RECORDINGS_DIR } from '../utils/env.js'
 import { uid } from '../utils/ids.js'
@@ -12,12 +13,68 @@ const DISPLAY = process.env.DISPLAY || ':0'
 
 const state = new Map() // id -> {proc, file, started_at, finished_at}
 
-function buildArgsMp4({ framerate = 20, maxDurationInSeconds }) {
-  // We can omit video_size as ffmpeg will detect the screen dimensions automatically
-  const input = ['-f', 'x11grab', '-i', `${DISPLAY}.0`]
-  const common = ['-r', String(framerate), '-vcodec', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
-  if (maxDurationInSeconds) common.push('-t', String(maxDurationInSeconds))
-  return [...input, ...common]
+// Best-effort discovery of a PulseAudio monitor for "what-you-hear" capture.
+let _cachedPulseMonitor = undefined
+function detectPulseMonitor() {
+  if (_cachedPulseMonitor !== undefined) return _cachedPulseMonitor
+  const env = { ...process.env }
+  try {
+    // 1) Try the real default sink -> "<sink>.monitor"
+    let sink = null
+    const getSink = spawnSync('pactl', ['get-default-sink'], { env, encoding: 'utf8' })
+    if (getSink.status === 0) sink = getSink.stdout.trim()
+    if (!sink) {
+      // Older PulseAudio: parse "pactl info"
+      const info = spawnSync('pactl', ['info'], { env, encoding: 'utf8' })
+      if (info.status === 0) {
+        const m = info.stdout.match(/Default Sink:\s*(.+)\s*$/m)
+        if (m) sink = m[1].trim()
+      }
+    }
+    const list = spawnSync('pactl', ['list', 'short', 'sources'], { env, encoding: 'utf8' })
+    const sourcesTxt = list.status === 0 ? list.stdout : ''
+    const hasSource = (name) => sourcesTxt.split('\n').some((ln) => ln.split('\t')[1] === name)
+    if (sink && hasSource(`${sink}.monitor`)) {
+      _cachedPulseMonitor = `${sink}.monitor`
+      return _cachedPulseMonitor
+    }
+    // 2) Project's common virtual sink name
+    if (hasSource('audio_output.monitor')) {
+      _cachedPulseMonitor = 'audio_output.monitor'
+      return _cachedPulseMonitor
+    }
+  } catch (_) {
+    // ignore
+  }
+  _cachedPulseMonitor = null
+  return null
+}
+
+function buildArgsMp4({ framerate = 20, maxDurationInSeconds, audio = true }) {
+  const args = ['-nostdin', '-hide_banner']
+  // Video input (x11grab)
+  args.push('-f', 'x11grab')
+  // Width/height omitted intentionally; X server provides exact geometry
+  args.push('-i', `${DISPLAY}.0`)
+  // Optional audio input (PulseAudio "monitor" of output)
+  const pulseMonitor = audio ? detectPulseMonitor() : null
+  if (pulseMonitor) {
+    args.push('-f', 'pulse', '-i', pulseMonitor)
+  }
+  // Output encoders and common options
+  args.push(
+    '-r', String(framerate),
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-pix_fmt', 'yuv420p',
+    '-movflags', '+faststart'
+  )
+  if (maxDurationInSeconds) args.push('-t', String(maxDurationInSeconds))
+  if (pulseMonitor) {
+    // AAC in MP4; 48k stereo; stop when the shorter stream ends
+    args.push('-c:a', 'aac', '-b:a', '128k', '-ac', '2', '-ar', '48000', '-shortest')
+  }
+  return args
 }
 
 export function startRecording({ id, framerate, maxDurationInSeconds, maxFileSizeInMB }) {
