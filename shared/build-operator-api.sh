@@ -14,7 +14,7 @@ set -euo pipefail
 #   - Produces artifacts in operator-api/dist:
 #       dist/kernel-operator-api
 #       dist/kernel-operator-test
-#       dist/kernel-operator.env
+#       dist/.kernel-operator.env
 #   - Copies those three into DEST_DIR
 
 DEST_DIR="${1:-./bin}"
@@ -41,8 +41,8 @@ done
 mkdir -p "$DEST_DIR"
 cp -f "$ART_DIR/kernel-operator-api" "$DEST_DIR/"
 cp -f "$ART_DIR/kernel-operator-test" "$DEST_DIR/"
-cp -f "$ART_DIR/kernel-operator.env" "$DEST_DIR/"
+cp -f "$ART_DIR/.kernel-operator.env" "$DEST_DIR/"
 
 chmod +x "$DEST_DIR/kernel-operator-api" "$DEST_DIR/kernel-operator-test" || true
 
-echo "✅ kernel-operator-api (bin) , kernel-operator-test (bin) , kernel-operator.env copied to $DEST_DIR/..." 
+echo "✅ kernel-operator-api (bin) , kernel-operator-test (bin) , .kernel-operator.env copied to $DEST_DIR/..." 

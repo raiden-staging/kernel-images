@@ -312,7 +312,7 @@ fi
 if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   echo "[kernel-operator:api] Starting service"
 
-  OP_ENV_FILE="/tmp/kernel-operator/.env"
+  OP_ENV_FILE="/tmp/kernel-operator/.kernel-operator.env"
   [[ -f "$OP_ENV_FILE" ]] && { set -a; source "$OP_ENV_FILE"; set +a; }
 
   # Maximize file descriptor and process limits for heavy FS/exec workloads
@@ -325,12 +325,12 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   
   # Debug log to print parsed .env content
   echo "[wrapper:kernel-operator:api] parsed operator .env content:"
-  grep -v "^#" /tmp/kernel-operator/.env | while read -r line; do
+  grep -v "^#" /tmp/kernel-operator/.kernel-operator.env | while read -r line; do
     echo "  $line"
   done
   
   # Run the operator API with the parsed environment variables
-  grep -v "^#" /tmp/kernel-operator/.env | xargs -I{} /usr/local/bin/kernel-operator-api {} & pid4=$!
+  grep -v "^#" /tmp/kernel-operator/.kernel-operator.env | xargs -I{} /usr/local/bin/kernel-operator-api {} & pid4=$!
 
   # if [[ "${RUN_KERNEL_OPERATOR_TESTS:-}" == "true" ]]; then
   #   echo "[kernel-operator:test] Running tests once"
