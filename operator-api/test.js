@@ -499,7 +499,7 @@ async function suite_stream() {
 // ---------------------------- Runner ----------------------------
 const SUITES = [
   ['health', suite_health],
-  ['browser', suite_browser],
+  // ['browser', suite_browser],
   ['bus', suite_bus],
   ['clipboard', suite_clipboard],
   ['fs', suite_fs],

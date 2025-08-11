@@ -6,14 +6,15 @@ import { RECORDINGS_DIR } from '../utils/env.js'
 import { uid } from '../utils/ids.js'
 
 const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
-const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1280)
-const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 720)
+const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1024)
+const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 768)
 const DISPLAY = process.env.DISPLAY || ':0'
 
 const state = new Map() // id -> {proc, file, started_at, finished_at}
 
 function buildArgsMp4({ framerate = 20, maxDurationInSeconds }) {
-  const input = ['-f', 'x11grab', '-video_size', `${SCREEN_WIDTH}x${SCREEN_HEIGHT}`, '-i', `${DISPLAY}.0`]
+  // We can omit video_size as ffmpeg will detect the screen dimensions automatically
+  const input = ['-f', 'x11grab', '-i', `${DISPLAY}.0`]
   const common = ['-r', String(framerate), '-vcodec', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-movflags', '+faststart']
   if (maxDurationInSeconds) common.push('-t', String(maxDurationInSeconds))
   return [...input, ...common]

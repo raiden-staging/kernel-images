@@ -5,8 +5,8 @@ import { EventEmitter } from 'node:events'
 
 const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
 const DISPLAY = process.env.DISPLAY || ':0'
-const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1280)
-const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 720)
+const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1024)
+const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 768)
 const PULSE_SOURCE = process.env.PULSE_SOURCE || 'default'
 
 const streams = new Map() // id -> {proc, emitter}
@@ -26,7 +26,8 @@ export function startStream(req) {
 
   if (!rtmps_url || !stream_key) throw new Error('Missing RTMPS params')
 
-  const input = ['-f', 'x11grab', '-video_size', `${SCREEN_WIDTH}x${SCREEN_HEIGHT}`, '-r', String(fps), '-i', `${DISPLAY}.0`]
+  // We can omit video_size as ffmpeg will detect the screen dimensions automatically
+  const input = ['-f', 'x11grab', '-r', String(fps), '-i', `${DISPLAY}.0`]
   const audioArgs = audio?.capture_system ? ['-f', 'pulse', '-i', PULSE_SOURCE] : []
   const vf = region ? ['-filter:v', `crop=${region.width}:${region.height}:${region.x}:${region.y}`] : []
   const out = ['-c:v', video_codec === 'h265' ? 'libx265' : video_codec === 'av1' ? 'libsvtav1' : 'libx264', '-b:v', `${video_bitrate_kbps}k`, '-c:a', 'aac', '-f', 'flv', `${rtmps_url}/${stream_key}`]

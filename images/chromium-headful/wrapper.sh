@@ -332,10 +332,10 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   # Run the operator API with the parsed environment variables
   grep -v "^#" /tmp/kernel-operator/.kernel-operator.env | xargs -I{} /usr/local/bin/kernel-operator-api {} & pid4=$!
 
-  # if [[ "${RUN_KERNEL_OPERATOR_TESTS:-}" == "true" ]]; then
-  #   echo "[kernel-operator:test] Running tests once"
-  #   /usr/local/bin/kernel-operator-test || echo "[kernel-operator:tests] Non-zero exit code"
-  # fi
+  if [[ "${DEBUG_OPERATOR_TEST:-}" == "true" ]]; then
+    echo "[kernel-operator:test] Running tests once"
+    /usr/local/bin/kernel-operator-test --all > /tmp/kernel-operator/tests.log 2>&1 || echo "[kernel-operator:tests] Non-zero exit code"
+  fi
 fi
 
 

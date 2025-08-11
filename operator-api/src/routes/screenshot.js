@@ -9,8 +9,8 @@ import { SCREENSHOTS_DIR } from '../utils/env.js'
 
 const FFMPEG = process.env.FFMPEG_BIN || '/usr/bin/ffmpeg'
 const DISPLAY = process.env.DISPLAY || ':0'
-const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1280)
-const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 720)
+const SCREEN_WIDTH = Number(process.env.SCREEN_WIDTH || 1024)
+const SCREEN_HEIGHT = Number(process.env.SCREEN_HEIGHT || 768)
 
 if (DISPLAY == ':20') {
   console.warn(`DISPLAY from env: ${DISPLAY} [likely for debugging in a remote VM]`)
@@ -38,7 +38,8 @@ async function capture({ region, include_cursor, display = 0, format = 'png', qu
   }
 
   if (!ok) {
-    const input = ['-f', 'x11grab', '-video_size', `${SCREEN_WIDTH}x${SCREEN_HEIGHT}`, '-i', `${DISPLAY}.0`]
+    // We can omit video_size as ffmpeg will detect the screen dimensions automatically
+    const input = ['-f', 'x11grab', '-i', `${DISPLAY}.0`]
     const vf = region ? `crop=${region.width}:${region.height}:${region.x}:${region.y}` : 'null'
     const args = [...input, '-vframes', '1', '-vf', vf, outPath]
     const res = await execCapture(FFMPEG, ['-y', ...args])
