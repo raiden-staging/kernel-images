@@ -1,11 +1,17 @@
-Kernel Computer Operator API. To use on PORT=10001
+# Kernel Computer Operator API.
+
+- New operator API to replace current Go server API, with added functionalities (supports previous endpoints & schema)
+- To use on PORT=10001
 
 ---
 
-TODO
+# Todo
+
 ```
-- ffmpeg capture with audio
-- screen display resolution <> ffmpeg consistency
+- test ffmpeg capture with audio
+- screen display resolution <> ffmpeg in case of resize
+- add more tools that are useful for agents
+- document api
 ```
 
 ---
@@ -55,8 +61,6 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
 # Checklist
 
 `[✅ : Works , 〰️ : Yet to be tested , ❌ : Doesn't work]`
-
-# Checklist
 
 ## /bus
 Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
@@ -221,40 +225,3 @@ Endpoint/service | API Build | Kernel:Docker | Kernel:Unikraft | Notes
 /stream/start | ✅ | ✅ | 〰️ | N/A
 /stream/stop | ✅ | ✅ | 〰️ | N/A
 /stream/{stream_id}/metrics/stream | ✅ | ✅ | 〰️ | N/A
-
----
-
-# Tests
-
-```bash
-bun test browser --watch
-bun test bus --watch
-bun test clipboard --watch
-bun test fs --watch
-bun test fs-nodelete --watch
-bun test health --watch
-bun test input --watch
-bun test logs --watch
-bun test macros --watch
-bun test metrics --watch
-bun test network --watch
-bun test os --watch
-bun test pipe --watch
-bun test process --watch
-bun test recording --watch
-bun test recording-nodelete --watch
-bun test screenshot --watch
-bun test scripts --watch
-bun test scripts-nodelete --watch
-bun test stream --watch
-```
-
----
-
-# Notes
-
-#### Add to/ensure exists in Dockerfile
-
-```bash
-wayland tools , wl-paste , xclip # should be part of wayland but missing in my dev vm
-```
