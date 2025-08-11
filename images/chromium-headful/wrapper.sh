@@ -327,8 +327,8 @@ if [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
   /usr/local/bin/kernel-operator-api & pid4=$!
 
   # if [[ "${RUN_KERNEL_OPERATOR_TESTS:-}" == "true" ]]; then
-  #   echo "[kernel-operator:tests] Running tests once"
-  #   /usr/local/bin/kernel-operator-tests || echo "[kernel-operator:tests] Non-zero exit code"
+  #   echo "[kernel-operator:test] Running tests once"
+  #   /usr/local/bin/kernel-operator-test || echo "[kernel-operator:tests] Non-zero exit code"
   # fi
 fi
 

@@ -233,12 +233,12 @@ ENV WITH_KERNEL_IMAGES_API=false
 # Copy the kernel-operator artifacts built externally
 ###############################################################################
 COPY bin/kernel-operator-api /usr/local/bin/kernel-operator-api
-COPY bin/kernel-operator-tests /usr/local/bin/kernel-operator-tests
+COPY bin/kernel-operator-test /usr/local/bin/kernel-operator-test
 COPY bin/.env /usr/local/bin/.env
 
 RUN chmod +x /usr/local/bin/kernel-images-api \
              /usr/local/bin/kernel-operator-api \
-             /usr/local/bin/kernel-operator-tests \
+             /usr/local/bin/kernel-operator-test \
  && mkdir -p /etc/kernel-operator
 
 
@@ -251,7 +251,7 @@ RUN echo 'kernel ALL=(ALL) NOPASSWD:ALL' >/etc/sudoers.d/010-kernel-nopw && chmo
 # This preserves the "kernel" user identity but lifts FS/NET/NS limits typical for root tasks
 # To be adjusted for required capabilities range.
 RUN setcap 'cap_chown,cap_fowner,cap_fsetid,cap_dac_override,cap_dac_read_search,cap_mknod,cap_sys_admin,cap_sys_resource,cap_sys_ptrace,cap_sys_time,cap_sys_tty_config,cap_net_admin,cap_net_raw,cap_setuid,cap_setgid=ep' /usr/local/bin/kernel-operator-api || true && \
-    setcap 'cap_chown,cap_fowner,cap_fsetid,cap_dac_override,cap_dac_read_search,cap_mknod,cap_sys_admin,cap_sys_resource,cap_sys_ptrace,cap_net_admin,cap_net_raw=ep' /usr/local/bin/kernel-operator-tests || true
+    setcap 'cap_chown,cap_fowner,cap_fsetid,cap_dac_override,cap_dac_read_search,cap_mknod,cap_sys_admin,cap_sys_resource,cap_sys_ptrace,cap_net_admin,cap_net_raw=ep' /usr/local/bin/kernel-operator-test || true
 
 
 ###############################################################################

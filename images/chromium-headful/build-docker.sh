@@ -11,7 +11,7 @@ source ../../shared/start-buildkit.sh
 # Build the kernel-images API binary and place it into ./bin for Docker build context
 source ../../shared/build-server.sh "$(pwd)/bin"
 
-# Build operator api + tests + .env → ./bin
+# Build operator api + test + .env → ./bin
 source ../../shared/build-operator-api.sh "$(pwd)/bin"
 
 # Build (and optionally push) the Docker image.
