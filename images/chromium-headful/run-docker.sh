@@ -64,7 +64,6 @@ else
   RUN_ARGS+=( -p 8080:6080 )
 fi
 
-docker rm -f "$NAME" 2>/dev/null || true
 if [[ "${DEBUG_BASH:-false}" == "true" ]]; then
   # if DEBUG_BASH set to true, enters container bash
   docker run -dit --name "$NAME" "${RUN_ARGS[@]}" "$IMAGE"
