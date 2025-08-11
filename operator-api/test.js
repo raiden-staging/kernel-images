@@ -518,7 +518,32 @@ const SUITES = [
 ]
 
 async function main() {
-  banner('Kernel Computer Operator API — Native Test Runner')
+  // If no parameters specified and not running all tests, display available tests and exit
+  if (!RUN_ALL && names.length === 0) {
+    console.log(chalk.bgBlue.white(' AVAILABLE TESTS '))
+    console.log(chalk.gray('─'.repeat(78)))
+    
+    // Group tests by category
+    const categories = {}
+    for (const [cat, _] of SUITES) {
+      if (!categories[cat]) categories[cat] = true
+    }
+    
+    // Display available test categories
+    console.log(chalk.yellow('Categories:'))
+    Object.keys(categories).sort().forEach(cat => {
+      console.log(`  ${chalk.green('•')} ${chalk.cyan(cat)}`)
+    })
+    
+    console.log('')
+    console.log(chalk.yellow('Usage:'))
+    console.log(`  ${chalk.green('•')} Run all tests: ${chalk.white('--all')}`)
+    console.log(`  ${chalk.green('•')} Run specific categories: ${chalk.white('input fs network')}`)
+    
+    return
+  }
+
+  banner('Kernel Computer Operator API — Test Runner')
   console.log(chalk.white(`Base URL: ${BASE_URL}`))
   console.log(chalk.white(`Mode: ${RUN_ALL ? 'all' : (names.length ? `subset: ${names.join(', ')}` : 'default')}`))
   console.log(chalk.white('Server: external only (never spawned)'))
@@ -581,24 +606,5 @@ async function main() {
 // Entrypoint
 main().catch((e) => {
   console.error(chalk.bgRed.white(' FATAL '), String(e && e.message || e))
-  console.log(chalk.bgBlue.white(' AVAILABLE TESTS '))
-  console.log(chalk.gray('─'.repeat(78)))
-  
-  // Group tests by category
-  const categories = {}
-  for (const [cat, _] of SUITES) {
-    if (!categories[cat]) categories[cat] = true
-  }
-  
-  // Display available test categories
-  console.log(chalk.yellow('Categories:'))
-  Object.keys(categories).sort().forEach(cat => {
-    console.log(`  ${chalk.green('•')} ${chalk.cyan(cat)}`)
-  })
-  
-  console.log('')
-  console.log(chalk.yellow('Usage:'))
-  console.log(`  ${chalk.green('•')} Run all tests: ${chalk.white('--all')}`)
-  console.log(`  ${chalk.green('•')} Run specific categories: ${chalk.white('input fs network')}`)
   process.exit(1)
 })

@@ -2,10 +2,21 @@ Kernel Computer Operator API. To use on PORT=9999
 
 ---
 
-# Build
-Using bun builder
+# Build & Run
+
+
+- Using bun builder
+
 ```bash
-bun build:linux # bin : dist/kernel-operator-api
+bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
+```
+
+- To run tests from inside the container :
+
+```bash
+/usr/local/bin/kernel-operator-test # lists available tests
+/usr/local/bin/kernel-operator-test --all # run all tests
+/usr/local/bin/kernel-operator-test fs screenshot # specify test suites
 ```
 
 ---
