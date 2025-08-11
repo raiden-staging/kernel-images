@@ -12,7 +12,7 @@ const flags = new Set(args.filter(a => a.startsWith('-')))
 const names = args.filter(a => !a.startsWith('-'))
 
 const RUN_ALL = flags.has('--all')
-const BASE_URL = 'http://127.0.0.1:9999'
+const BASE_URL = 'http://127.0.0.1:10001'
 const ALWAYS_DEBUG = true
 
 // ---------------------------- Utilities ----------------------------

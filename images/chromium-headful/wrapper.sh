@@ -303,13 +303,10 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
       echo "xdotool failed to obtain display geometry; skipping sandbox warning dismissal." >&2
     fi
   fi
-fi
-
-
+elif [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
 # ------------------------------------------------------------------------------
 # Start kernel-operator API (runs as user: kernel, with elevated caps; sudo available)
 # ------------------------------------------------------------------------------
-if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   echo "[kernel-operator:api] Starting service"
 
   # Start the kernel-operator API in the background

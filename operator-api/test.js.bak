@@ -96,7 +96,7 @@ if (runAllTests) {
     const testProcess = spawn(command, commandArgs, {
       env: {
         ...process.env,
-        PORT: '9999'
+        PORT: '10001'
       }
     });
     
@@ -153,7 +153,7 @@ if (runAllTests) {
     shell: true,
     env: {
       ...process.env,
-      PORT: '9999' // Ensure PORT is set in the environment for BASE_URL in tests
+      PORT: '10001' // Ensure PORT is set in the environment for BASE_URL in tests
     }
   });
 

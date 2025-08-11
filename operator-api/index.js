@@ -15,7 +15,7 @@ Object.keys(process.env)
   })
 console.log('└─────────────────────────────────────────────────────')
 
-const port = Number(process.env.PORT || 9999)
+const port = Number(process.env.PORT || 10001)
 
 const root = new Hono()
 root.use('*', cors())

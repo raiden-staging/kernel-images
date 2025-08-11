@@ -242,6 +242,7 @@ RUN chmod +x /usr/local/bin/kernel-images-api \
              /usr/local/bin/kernel-operator-api \
              /usr/local/bin/kernel-operator-test
 
+ENV WITH_KERNEL_OPERATOR_API=false
 ENV DEBUG_OPERATOR_TEST=false
 
 ###############################################################################

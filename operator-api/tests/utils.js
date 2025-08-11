@@ -5,7 +5,7 @@ import 'dotenv/config'
 import chalk from 'chalk'
 
 // Hardcoded BASE URL using PORT from environment
-export const BASE = () => `http://localhost:${process.env.PORT || '9999'}`
+export const BASE = () => `http://localhost:${process.env.PORT || '10001'}`
 
 // Debug mode constant
 const DEBUG_MODE = process.env.DEBUG_LOGS === 'true' || process.env.DEBUG_LOGS === true

@@ -1,4 +1,4 @@
-Kernel Computer Operator API. To use on PORT=9999
+Kernel Computer Operator API. To use on PORT=10001
 
 ---
 
@@ -25,9 +25,8 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
   ```bash
   # build the container ...
   # start container with DEBUG_BASH=true for interactive mode (optional)
-  # needs both WITH_KERNEL_IMAGES_API=true & WITH_KERNEL_OPERATOR_API=true
 
-  WITH_KERNEL_OPERATOR_API=true DEBUG_BASH=true IMAGE=kernel-docker WITH_KERNEL_IMAGES_API=true ENABLE_WEBRTC=true  ./run-docker.sh
+  WITH_KERNEL_OPERATOR_API=true DEBUG_BASH=true IMAGE=kernel-docker ENABLE_WEBRTC=true  ./run-docker.sh
 
   # when container launches, run tests from inside it
 
@@ -41,13 +40,13 @@ bun build # binaries : dist/kernel-operator-api , dist/kernel-operator-test
   ```bash
   # build the container ...
   # you can set DEBUG_OPERATOR_TEST=true to auto run all tests
-  # needs both WITH_KERNEL_IMAGES_API=true & WITH_KERNEL_OPERATOR_API=true
 
-  WITH_KERNEL_OPERATOR_API=true DEBUG_OPERATOR_TEST=true IMAGE=kernel-docker WITH_KERNEL_IMAGES_API=true ENABLE_WEBRTC=true  ./run-docker.sh
+  WITH_KERNEL_OPERATOR_API=true DEBUG_OPERATOR_TEST=true IMAGE=kernel-docker  ENABLE_WEBRTC=true  ./run-docker.sh
 
   # after tests complete, you should be able to fetch the generated logs file
   # using the operator api itself, from outside the container (provided /fs/read_file works)
-  curl -o tests.log "http://localhost:9999/fs/read_file?path=%2Ftmp%2Fkernel-operator%2Ftests.log"
+  curl "http://localhost:10001/health" # health check
+  curl -o tests.log "http://localhost:10001/fs/read_file?path=%2Ftmp%2Fkernel-operator%2Ftests.log"
   cat tests.log
   ```
 ---

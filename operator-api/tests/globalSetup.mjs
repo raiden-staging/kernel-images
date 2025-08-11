@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { setTimeout as delay } from 'node:timers/promises'
 import { request } from 'undici'
 
-const TEST_PORT = Number(process.env.PORT || 9999)
+const TEST_PORT = Number(process.env.PORT || 10001)
 const BASE_URL = `http://127.0.0.1:${TEST_PORT}`
 
 let child

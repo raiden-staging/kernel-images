@@ -41,14 +41,12 @@ RUN_ARGS=(
   -e RUN_AS_ROOT="$RUN_AS_ROOT" \
   --mount type=bind,src="$FLAGS_FILE",dst=/chromium/flags,ro
 )
-
 if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
-  if [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
-    RUN_ARGS+=( -p 444:9999 )
-  else
-    RUN_ARGS+=( -p 444:10001 )
-  fi
+  RUN_ARGS+=( -p 444:10001 )
   RUN_ARGS+=( -e WITH_KERNEL_IMAGES_API=true )
+elif [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
+  RUN_ARGS+=( -p 444:10001 )
+  RUN_ARGS+=( -e WITH_KERNEL_OPERATOR_API=true )
 fi
 
 # noVNC vs WebRTC port mapping

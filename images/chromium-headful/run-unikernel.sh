@@ -54,12 +54,11 @@ deploy_args=(
 )
 
 if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
-  if [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
-    deploy_args+=( -p 444:9999/tls )
-  else
-    deploy_args+=( -p 444:10001/tls )
-  fi
+  deploy_args+=( -p 444:10001/tls )
   deploy_args+=( -e WITH_KERNEL_IMAGES_API=true )
+elif [[ "${WITH_KERNEL_OPERATOR_API:-}" == "true" ]]; then
+  deploy_args+=( -p 444:10001/tls )
+  deploy_args+=( -e WITH_KERNEL_OPERATOR_API=true )
 fi
 
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
