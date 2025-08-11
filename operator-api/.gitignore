@@ -3,3 +3,4 @@ node_modules/
 _bak/
 _wip/
 _dev/
+bun.lock
