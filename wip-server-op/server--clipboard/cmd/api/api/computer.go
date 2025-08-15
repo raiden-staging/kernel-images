@@ -1,3 +1,5 @@
+//go:build oapi
+
 package api
 
 import (

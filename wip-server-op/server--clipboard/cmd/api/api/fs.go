@@ -1,3 +1,5 @@
+//go:build oapi
+
 package api
 
 import (
@@ -207,16 +209,13 @@ func (s *ApiService) ListFiles(ctx context.Context, req oapi.ListFilesRequestObj
 	}
 	var list oapi.ListFiles
 	for _, entry := range entries {
-		// Retrieve FileInfo for each entry. If this fails (e.g. broken symlink, permission
-		// error) we surface the failure to the client instead of silently ignoring it so
-		// that consumers do not unknowingly operate on incomplete or unreliable metadata.
+		// Retrieve FileInfo for each entry.
 		info, err := entry.Info()
 		if err != nil {
 			log.Error("failed to stat directory entry", "err", err, "dir", path, "entry", entry.Name())
 			return oapi.ListFiles500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to stat directory entry"}}, nil
 		}
 
-		// By specification SizeBytes should be 0 for directories.
 		size := 0
 		if !info.IsDir() {
 			size = int(info.Size())
@@ -251,8 +250,6 @@ func (s *ApiService) FileInfo(ctx context.Context, req oapi.FileInfoRequestObjec
 		log.Error("failed to stat path", "err", err, "path", path)
 		return oapi.FileInfo500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to stat path"}}, nil
 	}
-	// By specification SizeBytes should be 0 for directories.
-	// Match behaviour of ListFiles for consistency.
 	size := 0
 	if !stat.IsDir() {
 		size = int(stat.Size())
@@ -354,7 +351,7 @@ func (s *ApiService) SetFilePermissions(ctx context.Context, req oapi.SetFilePer
 	return oapi.SetFilePermissions200Response{}, nil
 }
 
-// StartFsWatch is not implemented in this basic filesystem handler. It returns a 400 error to the client.
+// StartFsWatch implements watch start.
 func (s *ApiService) StartFsWatch(ctx context.Context, req oapi.StartFsWatchRequestObject) (oapi.StartFsWatchResponseObject, error) {
 	log := logger.FromContext(ctx)
 	if req.Body == nil {
@@ -403,30 +400,19 @@ func (s *ApiService) StartFsWatch(ctx context.Context, req oapi.StartFsWatchRequ
 		watcher:   watcher,
 	}
 
-	// Register the watch before starting the forwarding goroutine to avoid a
-	// race where the goroutine might exit before it is added to the map.
+	// Register the watch
 	s.watchMu.Lock()
 	s.watches[watchID] = w
 	s.watchMu.Unlock()
 
-	// Start background goroutine to forward events. We intentionally decouple
-	// its lifetime from the HTTP request context so that the watch continues
-	// to run until it is explicitly stopped via StopFsWatch or until watcher
-	// channels are closed.
+	// Forward events
 	go func(s *ApiService, id string) {
-		// Ensure resources are cleaned up no matter how the goroutine exits.
 		defer func() {
-			// Best-effort close (idempotent).
 			w.Close()
-
-			// Remove stale entry to avoid map/chan leak if the watch stops on
-			// its own (e.g. underlying fs error, watcher overflow, etc.). It
-			// is safe to call delete even if StopFsWatch already removed it.
 			s.watchMu.Lock()
 			delete(s.watches, id)
 			s.watchMu.Unlock()
-
-			close(w.events) // close after map cleanup so readers can finish
+			close(w.events)
 		}()
 
 		for {
@@ -451,16 +437,11 @@ func (s *ApiService) StartFsWatch(ctx context.Context, req oapi.StartFsWatchRequ
 				info, _ := os.Stat(ev.Name)
 				isDir := info != nil && info.IsDir()
 				name := filepath.Base(ev.Name)
-				// Attempt a non-blocking send so that event production never blocks
-				// even if the consumer is slow or absent. When the buffer is full we
-				// simply drop the event, preferring liveness over completeness.
 				select {
 				case w.events <- oapi.FileSystemEvent{Type: evType, Path: ev.Name, Name: &name, IsDir: &isDir}:
 				default:
 				}
 
-				// If recursive and new directory created, add watch recursively so that
-				// any nested sub-directories are also monitored.
 				if recursive && evType == "CREATE" && isDir {
 					if err := addRecursive(watcher, ev.Name); err != nil {
 						log.Error("failed to recursively watch new directory", "err", err, "path", ev.Name)
@@ -486,7 +467,6 @@ func (s *ApiService) StopFsWatch(ctx context.Context, req oapi.StopFsWatchReques
 	if ok {
 		delete(s.watches, id)
 		w.Close()
-		// channel will be closed by the event forwarding goroutine
 	}
 	s.watchMu.Unlock()
 
@@ -513,7 +493,6 @@ func (s *ApiService) StreamFsEvents(ctx context.Context, req oapi.StreamFsEvents
 	go func() {
 		defer pw.Close()
 		for ev := range w.events {
-			// Build SSE formatted event: data: <json>\n\n using a buffer and write in a single call
 			data, err := json.Marshal(ev)
 			if err != nil {
 				log.Error("failed to marshal fs event", "err", err)
@@ -521,7 +500,7 @@ func (s *ApiService) StreamFsEvents(ctx context.Context, req oapi.StreamFsEvents
 			}
 
 			var buf bytes.Buffer
-			buf.Grow(len("data: ") + len(data) + 2) // 2 for the separating newlines
+			buf.Grow(len("data: ") + len(data) + 2)
 			buf.WriteString("data: ")
 			buf.Write(data)
 			buf.WriteString("\n\n")
