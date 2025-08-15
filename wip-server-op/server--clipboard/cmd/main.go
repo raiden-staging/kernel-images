@@ -2,86 +2,104 @@ package main
 
 import (
 	"context"
-	"log"
+	"fmt"
+	"log/slog"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"syscall"
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chiMiddleware "github.com/go-chi/chi/v5/middleware"
+
 	"github.com/onkernel/kernel-images/server/cmd/api/api"
-	"github.com/onkernel/kernel-images/server/lib/clipboard"
+	"github.com/onkernel/kernel-images/server/cmd/config"
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
+	"github.com/onkernel/kernel-images/server/lib/scaletozero"
 )
 
 func main() {
-	ctx := context.Background()
-	log := logger.FromContext(ctx)
+	slogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
 
-	// Create API service
-	recordManager := recorder.NewRecordManager()
-	factory := recorder.NewFFmpegRecorderFactory()
-
-	apiService, err := api.New(recordManager, factory)
+	cfg, err := config.Load()
 	if err != nil {
-		log.Fatal("Failed to create API service", "err", err)
+		slogger.Error("failed to load configuration", "err", err)
+		os.Exit(1)
 	}
+	slogger.Info("server configuration", "config", cfg)
 
-	// Create clipboard manager
-	apiService.SetClipboardManager(api.NewClipboardManager())
+	mustFFmpeg()
 
-	// Create router
+	// Router with logger in request context
 	r := chi.NewRouter()
-	r.Use(middleware.Logger)
-	r.Use(middleware.Recoverer)
+	r.Use(
+		chiMiddleware.Logger,
+		chiMiddleware.Recoverer,
+		func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+				ctxWithLogger := logger.AddToContext(req.Context(), slogger)
+				next.ServeHTTP(w, req.WithContext(ctxWithLogger))
+			})
+		},
+	)
 
-	// Add routes
-	r.Get("/health", apiService.GetHealthHandler)
+	// Recorder deps (kept minimal; endpoints below only expose clipboard/health)
+	defaultParams := recorder.FFmpegRecordingParams{
+		DisplayNum:  &cfg.DisplayNum,
+		FrameRate:   &cfg.FrameRate,
+		MaxSizeInMB: &cfg.MaxSizeInMB,
+		OutputDir:   &cfg.OutputDir,
+	}
+	stz := scaletozero.NewUnikraftCloudController()
 
-	// Clipboard routes
-	r.Get("/clipboard", apiService.GetClipboardHandler)
-	r.Post("/clipboard", apiService.SetClipboardHandler)
-	r.Get("/clipboard/stream", apiService.StreamClipboardHandler)
-
-	// Determine port
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "10001"
+	svc, err := api.New(
+		recorder.NewFFmpegManager(),
+		recorder.NewFFmpegRecorderFactory(cfg.PathToFFmpeg, defaultParams, stz),
+	)
+	if err != nil {
+		slogger.Error("failed to create api service", "err", err)
+		os.Exit(1)
 	}
 
-	// Start server
-	server := &http.Server{
-		Addr:    ":" + port,
-		Handler: r,
-	}
+	// Manual HTTP wiring (no oapi codegen required)
+	r.Get("/health", svc.GetHealthHandler)
+	r.Get("/clipboard", svc.GetClipboardHandler)
+	r.Post("/clipboard", svc.SetClipboardHandler)
+	r.Get("/clipboard/stream", svc.StreamClipboardHandler)
 
-	// Handle graceful shutdown
+	addr := fmt.Sprintf(":%d", cfg.Port)
+	srv := &http.Server{Addr: addr, Handler: r}
+
+	// Start
 	go func() {
-		sigChan := make(chan os.Signal, 1)
-		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		<-sigChan
-
-		log.Info("Shutting down server...")
-
-		// Create shutdown context with timeout
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-
-		if err := apiService.Shutdown(shutdownCtx); err != nil {
-			log.Error("Error shutting down API service", "err", err)
-		}
-
-		if err := server.Shutdown(shutdownCtx); err != nil {
-			log.Error("Error shutting down HTTP server", "err", err)
+		slogger.Info("http server starting", "addr", addr)
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			slogger.Error("http server failed", "err", err)
+			os.Exit(1)
 		}
 	}()
 
-	// Start server
-	log.Info("Starting server", "port", port)
-	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		log.Fatal("Failed to start server", "err", err)
+	// Graceful shutdown
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	<-ctx.Done()
+	stop()
+	slogger.Info("shutdown signal received")
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	if err := svc.Shutdown(shutdownCtx); err != nil {
+		slogger.Error("api service shutdown error", "err", err)
 	}
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		slogger.Error("http server shutdown error", "err", err)
+	}
+}
+
+func mustFFmpeg() {
+	cmd := exec.Command("ffmpeg", "-version")
+	_ = cmd.Run() // clipboard/health don’t require ffmpeg; ignore absence
 }
