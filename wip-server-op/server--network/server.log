@@ -1,0 +1,5 @@
+time=2025-08-15T21:45:41.841Z level=INFO msg="server configuration" config="&{Port:10001 FrameRate:10 DisplayNum:1 MaxSizeInMB:500 OutputDir:. PathToFFmpeg:ffmpeg}"
+time=2025-08-15T21:45:41.930Z level=INFO msg="http server starting" addr=:10001
+2025/08/15 21:45:44 "GET http://localhost:10001/health HTTP/1.1" from 127.0.0.1:59212 - 200 31B in 70.55µs
+time=2025-08-15T21:45:46.628Z level=INFO msg="shutdown signal received"
+2025/08/15 21:45:46 INFO stopped all recorders count=0

@@ -1,0 +1,4 @@
+time=2025-08-15T22:15:30.170Z level=INFO msg="server configuration" config="&{Port:10001 FrameRate:10 DisplayNum:1 MaxSizeInMB:500 OutputDir:. PathToFFmpeg:ffmpeg}"
+time=2025-08-15T22:15:30.252Z level=INFO msg="http server starting" addr=:10001
+time=2025-08-15T22:16:00.723Z level=INFO msg="shutdown signal received"
+2025/08/15 22:16:00 INFO stopped all recorders count=0
