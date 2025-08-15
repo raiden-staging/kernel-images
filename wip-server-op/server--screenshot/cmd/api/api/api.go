@@ -17,8 +17,9 @@ type ApiService struct {
 	// defaultRecorderID is used whenever the caller doesn't specify an explicit ID.
 	defaultRecorderID string
 
-	recordManager recorder.RecordManager
-	factory       recorder.FFmpegRecorderFactory
+	recordManager    recorder.RecordManager
+	factory          recorder.FFmpegRecorderFactory
+	clipboardManager *ClipboardManager
 	// Filesystem watch management
 	watchMu sync.RWMutex
 	watches map[string]*fsWatch
@@ -39,6 +40,7 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 	return &ApiService{
 		recordManager:     recordManager,
 		factory:           factory,
+		clipboardManager:  NewClipboardManager(),
 		defaultRecorderID: "default",
 		watches:           make(map[string]*fsWatch),
 		startTime:         time.Now(),
