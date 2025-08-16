@@ -5185,66 +5185,57 @@ func (response CaptureScreenshotRegion500JSONResponse) VisitCaptureScreenshotReg
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// Simulate a mouse click action on the host computer
-	// (POST /computer/click_mouse)
+	// ClickMouse (POST /computer/click_mouse)
 	ClickMouse(ctx context.Context, request ClickMouseRequestObject) (ClickMouseResponseObject, error)
-	// Move the mouse cursor to the specified coordinates on the host computer
-	// (POST /computer/move_mouse)
+	// MoveMouse (POST /computer/move_mouse)
 	MoveMouse(ctx context.Context, request MoveMouseRequestObject) (MoveMouseResponseObject, error)
-	// Create a new directory
-	// (PUT /fs/create_directory)
+	// CreateDirectory (PUT /fs/create_directory)
 	CreateDirectory(ctx context.Context, request CreateDirectoryRequestObject) (CreateDirectoryResponseObject, error)
-	// Delete a directory
-	// (PUT /fs/delete_directory)
+	// DeleteDirectory (PUT /fs/delete_directory)
 	DeleteDirectory(ctx context.Context, request DeleteDirectoryRequestObject) (DeleteDirectoryResponseObject, error)
-	// Delete a file
-	// (PUT /fs/delete_file)
+	// DeleteFile (PUT /fs/delete_file)
 	DeleteFile(ctx context.Context, request DeleteFileRequestObject) (DeleteFileResponseObject, error)
-	// Get information about a file or directory
-	// (GET /fs/file_info)
+	// FileInfo (GET /fs/file_info)
 	FileInfo(ctx context.Context, request FileInfoRequestObject) (FileInfoResponseObject, error)
-	// List files in a directory
-	// (GET /fs/list_files)
+	// ListFiles (GET /fs/list_files)
 	ListFiles(ctx context.Context, request ListFilesRequestObject) (ListFilesResponseObject, error)
-	// Move or rename a file or directory
-	// (PUT /fs/move)
+	// MovePath (PUT /fs/move)
 	MovePath(ctx context.Context, request MovePathRequestObject) (MovePathResponseObject, error)
-	// Read file contents
-	// (GET /fs/read_file)
+	// ReadFile (GET /fs/read_file)
 	ReadFile(ctx context.Context, request ReadFileRequestObject) (ReadFileResponseObject, error)
-	// Set file or directory permissions/ownership
-	// (PUT /fs/set_file_permissions)
+	// SetFilePermissions (PUT /fs/set_file_permissions)
 	SetFilePermissions(ctx context.Context, request SetFilePermissionsRequestObject) (SetFilePermissionsResponseObject, error)
-	// Watch a directory for changes
-	// (POST /fs/watch)
+	// StartFsWatch (POST /fs/watch)
 	StartFsWatch(ctx context.Context, request StartFsWatchRequestObject) (StartFsWatchResponseObject, error)
-	// Stop watching a directory
-	// (DELETE /fs/watch/{watch_id})
+	// StopFsWatch (DELETE /fs/watch/{watch_id})
 	StopFsWatch(ctx context.Context, request StopFsWatchRequestObject) (StopFsWatchResponseObject, error)
-	// Stream filesystem events for a watch
-	// (GET /fs/watch/{watch_id}/events)
+	// StreamFsEvents (GET /fs/watch/{watch_id}/events)
 	StreamFsEvents(ctx context.Context, request StreamFsEventsRequestObject) (StreamFsEventsResponseObject, error)
-	// Write or create a file
-	// (PUT /fs/write_file)
+	// WriteFile (PUT /fs/write_file)
 	WriteFile(ctx context.Context, request WriteFileRequestObject) (WriteFileResponseObject, error)
-	// Check API health status
-	// (GET /health)
+	// GetHealth (GET /health)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
-	// Delete a previously recorded video file
-	// (POST /recording/delete)
+	// DeleteRecording (POST /recording/delete)
 	DeleteRecording(ctx context.Context, request DeleteRecordingRequestObject) (DeleteRecordingResponseObject, error)
-	// Download the most recently recorded video file
-	// (GET /recording/download)
+	// DownloadRecording (GET /recording/download)
 	DownloadRecording(ctx context.Context, request DownloadRecordingRequestObject) (DownloadRecordingResponseObject, error)
-	// List all recorders
-	// (GET /recording/list)
+	// ListRecorders (GET /recording/list)
 	ListRecorders(ctx context.Context, request ListRecordersRequestObject) (ListRecordersResponseObject, error)
-	// Start a screen recording. Only one recording per ID can be registered at a time.
-	// (POST /recording/start)
+	// StartRecording (POST /recording/start)
 	StartRecording(ctx context.Context, request StartRecordingRequestObject) (StartRecordingResponseObject, error)
-	// Stop the recording
-	// (POST /recording/stop)
+	// StopRecording (POST /recording/stop)
 	StopRecording(ctx context.Context, request StopRecordingRequestObject) (StopRecordingResponseObject, error)
+	// CaptureScreenshot (GET /screenshot)
+	CaptureScreenshot(ctx context.Context, request CaptureScreenshotRequestObject) (CaptureScreenshotResponseObject, error)
+	// CaptureScreenshotRegion (POST /screenshot)
+	CaptureScreenshotRegion(ctx context.Context, request CaptureScreenshotRegionRequestObject) (CaptureScreenshotRegionResponseObject, error)
+
+	// GetClipboard (GET /clipboard)
+	GetClipboard(ctx context.Context, request GetClipboardRequestObject) (GetClipboardResponseObject, error)
+	// SetClipboard (POST /clipboard)
+	SetClipboard(ctx context.Context, request SetClipboardRequestObject) (SetClipboardResponseObject, error)
+	// StreamClipboard (GET /clipboard/stream)
+	StreamClipboard(ctx context.Context, request StreamClipboardRequestObject) (StreamClipboardResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, args interface{}) (interface{}, error)

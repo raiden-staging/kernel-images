@@ -77,7 +77,11 @@ func main() {
 	}
 
 	strictHandler := oapi.NewStrictHandler(apiService, nil)
+	// Use the standard handlers
 	oapi.HandlerFromMux(strictHandler, r)
+
+	// Manually register our clipboard endpoints using the custom handler
+	api.RegisterClipboardHandlers(r, apiService)
 
 	// endpoints to expose the spec
 	r.Get("/spec.yaml", func(w http.ResponseWriter, r *http.Request) {

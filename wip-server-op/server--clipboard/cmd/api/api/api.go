@@ -24,6 +24,8 @@ type ApiService struct {
 	watches map[string]*fsWatch
 	// Server start time for health endpoint
 	startTime time.Time
+	// Clipboard management
+	clipboardManager *clipboardManager
 }
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
