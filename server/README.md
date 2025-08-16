@@ -44,6 +44,82 @@ curl http://localhost:10001/recording/stop -d {}
 curl http://localhost:10001/recording/download --output recording.mp4
 ```
 
+#### Additional routes
+
+```bash
+# Input operations
+
+# Mouse operations
+# | POST /input/mouse/move - Move mouse to absolute coordinates
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"x": 500, "y": 500}' \
+  http://localhost:10001/input/mouse/move
+# Response: {"ok":true}
+
+# | GET /input/mouse/location - Get current mouse location
+curl http://localhost:10001/input/mouse/location
+# Response: {"x":500,"y":500,"screen":0,"window":"60817493"}
+
+# | POST /input/mouse/click - Click mouse button
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"button": "left", "count": 1}' \
+  http://localhost:10001/input/mouse/click
+# Response: {"ok":true}
+
+# | POST /input/mouse/scroll - Scroll mouse wheel
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"dx": 0, "dy": -120}' \
+  http://localhost:10001/input/mouse/scroll
+# Response: {"ok":true}
+
+# Keyboard operations
+# | POST /input/keyboard/type - Type text
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"text": "Hello, World!", "wpm": 300, "enter": true}' \
+  http://localhost:10001/input/keyboard/type
+# Response: {"ok":true}
+
+# | POST /input/keyboard/key - Send key presses
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"keys": ["ctrl", "a"]}' \
+  http://localhost:10001/input/keyboard/key
+# Response: {"ok":true}
+
+# Window operations
+# | GET /input/window/active - Get active window
+curl http://localhost:10001/input/window/active
+# Response: {"wid":"60817493"}
+
+# | POST /input/window/name - Get window name
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"wid": "60817493"}' \
+  http://localhost:10001/input/window/name
+# Response: {"wid":"60817493","name":"New Tab - Google Chrome"}
+
+# | POST /input/window/close - Close window by match
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"match": {"title_contains": "New Tab"}}' \
+  http://localhost:10001/input/window/close
+# Response: {"ok":true,"wid":"60817493","windowIds":["60817493"]}
+
+# | GET /input/display/geometry - Get display geometry
+curl http://localhost:10001/input/display/geometry
+# Response: {"width":1536,"height":776}
+
+# Legacy endpoints (for compatibility)
+# | POST /computer/move_mouse - Move mouse cursor (maps to /input/mouse/move)
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"x": 100, "y": 100}' \
+  http://localhost:10001/computer/move_mouse
+# Response: {"ok":true}
+
+# | POST /computer/click_mouse - Click mouse (maps to /input/mouse/click)
+curl -X POST -H "Content-Type: application/json" \
+  --data '{"button": "left", "x": 100, "y": 100}' \
+  http://localhost:10001/computer/click_mouse
+# Response: {"ok":true}
+```
+
 ### ⚙️ Configuration
 
 Configure the server using environment variables:
