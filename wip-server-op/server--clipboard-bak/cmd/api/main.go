@@ -77,6 +77,7 @@ func main() {
 	}
 
 	strictHandler := oapi.NewStrictHandler(apiService, nil)
+	// Use the standard handlers
 	oapi.HandlerFromMux(strictHandler, r)
 
 	// Manually register our clipboard endpoints using the custom handler
