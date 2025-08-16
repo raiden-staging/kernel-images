@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/onkernel/kernel-images/server/lib/logger"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/stretchr/testify/assert"
 )
