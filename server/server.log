@@ -1,0 +1,19 @@
+time=2025-08-16T03:45:37.176Z level=INFO msg="server configuration" config="&{Port:10002 FrameRate:10 DisplayNum:1 MaxSizeInMB:500 OutputDir:. PathToFFmpeg:ffmpeg}"
+time=2025-08-16T03:45:37.255Z level=INFO msg="http server starting" addr=:10002
+time=2025-08-16T03:45:41.756Z level=INFO msg="setting clipboard content" type=text
+time=2025-08-16T03:45:41.778Z level=INFO msg="sent clipboard change event" event="{\"ts\":\"2025-08-16T03:45:41Z\",\"type\":\"text\",\"preview\":\"Testing clipboard\"}"
+2025/08/16 03:45:41 "POST http://localhost:10002/clipboard HTTP/1.1" from 127.0.0.1:51352 - 200 12B in 22.157457ms
+time=2025-08-16T03:45:44.126Z level=INFO msg="getting clipboard content"
+2025/08/16 03:45:44 "GET http://localhost:10002/clipboard HTTP/1.1" from 127.0.0.1:52284 - 200 43B in 11.086238ms
+time=2025-08-16T03:45:48.212Z level=INFO msg="starting clipboard stream"
+time=2025-08-16T03:45:49.224Z level=INFO msg="clipboard content changed"
+time=2025-08-16T03:45:49.224Z level=INFO msg="sent clipboard change event" event="{\"ts\":\"2025-08-16T03:45:49Z\",\"type\":\"text\",\"preview\":\"Testing clipboard\"}"
+time=2025-08-16T03:45:50.210Z level=INFO msg="setting clipboard content" type=text
+time=2025-08-16T03:45:50.221Z level=INFO msg="sent clipboard change event" event="{\"ts\":\"2025-08-16T03:45:50Z\",\"type\":\"text\",\"preview\":\"Testing clipboard stream\"}"
+2025/08/16 03:45:50 "POST http://localhost:10002/clipboard HTTP/1.1" from 127.0.0.1:52312 - 200 12B in 10.639749ms
+time=2025-08-16T03:45:50.226Z level=INFO msg="clipboard content changed"
+time=2025-08-16T03:45:50.226Z level=INFO msg="sent clipboard change event" event="{\"ts\":\"2025-08-16T03:45:50Z\",\"type\":\"text\",\"preview\":\"Testing clipboard stream\"}"
+time=2025-08-16T03:45:52.226Z level=INFO msg="clipboard polling stopped due to context cancellation"
+time=2025-08-16T03:45:59.062Z level=INFO msg="shutdown signal received"
+2025/08/16 03:45:59 INFO stopped all recorders count=0
+time=2025-08-16T03:46:09.063Z level=ERROR msg="server failed to shutdown" err="context deadline exceeded"
