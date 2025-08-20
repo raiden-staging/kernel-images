@@ -21,7 +21,7 @@ scale_to_zero_write() {
   if [[ -e "$SCALE_TO_ZERO_FILE" ]]; then
     # Write the character, but do not fail the whole script if this errors out
     echo -n "$char" > "$SCALE_TO_ZERO_FILE" 2>/dev/null || \
-      echo "Failed to write to scale-to-zero control file" >&2
+      echo "[wrapper] Failed to write to scale-to-zero control file" >&2
   fi
 }
 disable_scale_to_zero() { scale_to_zero_write "+"; }
@@ -29,18 +29,8 @@ enable_scale_to_zero()  { scale_to_zero_write "-"; }
 
 # Disable scale-to-zero for the duration of the script when not running under Docker
 if [[ -z "${WITHDOCKER:-}" ]]; then
-  echo "Disabling scale-to-zero"
+  echo "[wrapper] Disabling scale-to-zero"
   disable_scale_to_zero
-fi
-
-export DISPLAY=:1
-
-/usr/bin/Xorg :1 -config /etc/neko/xorg.conf -noreset -nolisten tcp &
-
-./mutter_startup.sh
-
-if [[ "${ENABLE_WEBRTC:-}" != "true" ]]; then
-  ./x11vnc_startup.sh
 fi
 
 # -----------------------------------------------------------------------------
@@ -51,121 +41,178 @@ fi
 #   [ERROR:crypto/nss_util.cc:48] Failed to create /home/kernel/.pki/nssdb ...
 #   dconf-CRITICAL **: unable to create directory '/home/kernel/.cache/dconf'
 # Pre-create them and hand ownership to the user so the messages disappear.
+# When RUN_AS_ROOT is true, we skip ownership changes since we're running as root.
 
-dirs=(
-  /home/kernel/user-data
-  /home/kernel/.config/chromium
-  /home/kernel/.pki/nssdb
-  /home/kernel/.cache/dconf
-  /tmp
-  /var/log
-)
+if [[ "${RUN_AS_ROOT:-}" != "true" ]]; then
+  dirs=(
+    /home/kernel/user-data
+    /home/kernel/.config/chromium
+    /home/kernel/.pki/nssdb
+    /home/kernel/.cache/dconf
+    /tmp
+    /var/log
+    /var/log/supervisord
+  )
 
-for dir in "${dirs[@]}"; do
-  if [ ! -d "$dir" ]; then
-    mkdir -p "$dir"
+  for dir in "${dirs[@]}"; do
+    if [ ! -d "$dir" ]; then
+      mkdir -p "$dir"
+    fi
+  done
+
+  # Ensure correct ownership (ignore errors if already correct)
+  chown -R kernel:kernel /home/kernel /home/kernel/user-data /home/kernel/.config /home/kernel/.pki /home/kernel/.cache 2>/dev/null || true
+else
+  # When running as root, just create the necessary directories without ownership changes
+  dirs=(
+    /tmp
+    /var/log
+    /var/log/supervisord
+    /home/kernel
+    /home/kernel/user-data
+  )
+
+  for dir in "${dirs[@]}"; do
+    if [ ! -d "$dir" ]; then
+      mkdir -p "$dir"
+    fi
+  done
+fi
+
+# -----------------------------------------------------------------------------
+# Dynamic log aggregation for /var/log/supervisord -----------------------------
+# -----------------------------------------------------------------------------
+# Tails any existing and future files under /var/log/supervisord,
+# prefixing each line with the relative filepath, e.g. [chromium] ...
+start_dynamic_log_aggregator() {
+  echo "[wrapper] Starting dynamic log aggregator for /var/log/supervisord"
+  (
+    declare -A tailed_files=()
+    start_tail() {
+      local f="$1"
+      [[ -f "$f" ]] || return 0
+      [[ -n "${tailed_files[$f]:-}" ]] && return 0
+      local label="${f#/var/log/supervisord/}"
+      # Tie tails to this subshell lifetime so they exit when we stop it
+      tail --pid="$$" -n +1 -F "$f" 2>/dev/null | sed -u "s/^/[${label}] /" &
+      tailed_files[$f]=1
+    }
+    # Periodically scan for new *.log files without extra dependencies
+    while true; do
+      while IFS= read -r -d '' f; do
+        start_tail "$f"
+      done < <(find /var/log/supervisord -type f -print0 2>/dev/null || true)
+      sleep 1
+    done
+  ) &
+  tail_pids+=("$!")
+}
+
+# Start log aggregator early so we see supervisor and service logs as they appear
+start_dynamic_log_aggregator
+
+export DISPLAY=:1
+
+# Predefine ports and export for services
+export INTERNAL_PORT="${INTERNAL_PORT:-9223}"
+export CHROME_PORT="${CHROME_PORT:-9222}"
+
+# Track background tailing processes for cleanup
+tail_pids=()
+
+# Cleanup handler (set early so we catch early failures)
+cleanup () {
+  echo "[wrapper] Cleaning up..."
+  # Re-enable scale-to-zero if the script terminates early
+  enable_scale_to_zero
+  supervisorctl -c /etc/supervisor/supervisord.conf stop chromium || true
+  supervisorctl -c /etc/supervisor/supervisord.conf stop kernel-images-api || true
+  supervisorctl -c /etc/supervisor/supervisord.conf stop dbus || true
+  # Stop log tailers
+  if [[ -n "${tail_pids[*]:-}" ]]; then
+    for tp in "${tail_pids[@]}"; do
+      kill -TERM "$tp" 2>/dev/null || true
+    done
   fi
+}
+trap cleanup TERM INT
+
+# Start supervisord early so it can manage Xorg and Mutter
+echo "[wrapper] Starting supervisord"
+supervisord -c /etc/supervisor/supervisord.conf
+echo "[wrapper] Waiting for supervisord socket..."
+for i in {1..30}; do
+if [ -S /var/run/supervisor.sock ]; then
+    break
+fi
+sleep 0.2
 done
 
-# Ensure correct ownership (ignore errors if already correct)
-chown -R kernel:kernel /home/kernel/user-data /home/kernel/.config /home/kernel/.pki /home/kernel/.cache 2>/dev/null || true
+echo "[wrapper] Starting Xorg via supervisord"
+supervisorctl -c /etc/supervisor/supervisord.conf start xorg
+echo "[wrapper] Waiting for Xorg to open display $DISPLAY..."
+for i in {1..50}; do
+  if xdpyinfo -display "$DISPLAY" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 0.2
+done
+
+echo "[wrapper] Starting Mutter via supervisord"
+supervisorctl -c /etc/supervisor/supervisord.conf start mutter
+echo "[wrapper] Waiting for Mutter to be ready..."
+timeout=30
+while [ $timeout -gt 0 ]; do
+  if xdotool search --class "mutter" >/dev/null 2>&1; then
+    break
+  fi
+  sleep 1
+  ((timeout--))
+done
 
 # -----------------------------------------------------------------------------
-# System-bus setup --------------------------------------------------------------
+# System-bus setup via supervisord --------------------------------------------
 # -----------------------------------------------------------------------------
-# Start a lightweight system D-Bus daemon if one is not already running.  We
-# will later use this very same bus as the *session* bus as well, avoiding the
-# autolaunch fallback that produced many "Connection refused" errors.
-# Start a lightweight system D-Bus daemon if one is not already running (Chromium complains otherwise)
-if [ ! -S /run/dbus/system_bus_socket ]; then
-  echo "Starting system D-Bus daemon"
-  mkdir -p /run/dbus
-  # Ensure a machine-id exists (required by dbus-daemon)
-  dbus-uuidgen --ensure
-  # Launch dbus-daemon in the background and remember its PID for cleanup
-  dbus-daemon --system \
-    --address=unix:path=/run/dbus/system_bus_socket \
-    --nopidfile --nosyslog --nofork >/dev/null 2>&1 &
-  dbus_pid=$!
-fi
+echo "[wrapper] Starting system D-Bus daemon via supervisord"
+supervisorctl -c /etc/supervisor/supervisord.conf start dbus
+echo "[wrapper] Waiting for D-Bus system bus socket..."
+for i in {1..50}; do
+  if [ -S /run/dbus/system_bus_socket ]; then
+    break
+  fi
+  sleep 0.2
+done
 
 # We will point DBUS_SESSION_BUS_ADDRESS at the system bus socket to suppress
 # autolaunch attempts that failed and spammed logs.
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
-# Use ncat to listen on 0.0.0.0:9222 since chromium does not let you listen on 0.0.0.0 anymore: https://github.com/pyppeteer/pyppeteer/pull/379#issuecomment-217029626
-cleanup () {
-  echo "Cleaning up..."
-  # Re-enable scale-to-zero if the script terminates early
-  enable_scale_to_zero
-  kill -TERM $pid
-  kill -TERM $pid2
-  # Kill the API server if it was started
-  if [[ -n "${pid3:-}" ]]; then
-    kill -TERM $pid3 || true
+echo "[wrapper] Starting Chromium via supervisord on internal port $INTERNAL_PORT"
+supervisorctl -c /etc/supervisor/supervisord.conf start chromium
+echo "[wrapper] Waiting for Chromium remote debugging on 127.0.0.1:$INTERNAL_PORT..."
+for i in {1..100}; do
+  if nc -z 127.0.0.1 "$INTERNAL_PORT" 2>/dev/null; then
+    break
   fi
-  if [ -n "${dbus_pid:-}" ]; then
-    kill -TERM $dbus_pid 2>/dev/null || true
-  fi
-}
-trap cleanup TERM INT
-pid=
-pid2=
-pid3=
-INTERNAL_PORT=9223
-CHROME_PORT=9222  # External port mapped to host
-echo "Starting Chromium on internal port $INTERNAL_PORT"
-
-# Load additional Chromium flags from /chromium/flags if present
-CHROMIUM_FLAGS="${CHROMIUM_FLAGS:-}"
-if [[ -f /chromium/flags ]]; then
-  CHROMIUM_FLAGS="$CHROMIUM_FLAGS $(cat /chromium/flags)"
-fi
-echo "CHROMIUM_FLAGS: $CHROMIUM_FLAGS"
-
-RUN_AS_ROOT=${RUN_AS_ROOT:-false}
-if [[ "$RUN_AS_ROOT" == "true" ]]; then
-  DISPLAY=:1 DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" chromium \
-    --remote-debugging-port=$INTERNAL_PORT \
-    ${CHROMIUM_FLAGS:-} >&2 & pid=$!
-else
-  runuser -u kernel -- env \
-    DISPLAY=:1 \
-    DBUS_SESSION_BUS_ADDRESS="$DBUS_SESSION_BUS_ADDRESS" \
-    XDG_CONFIG_HOME=/home/kernel/.config \
-    XDG_CACHE_HOME=/home/kernel/.cache \
-    HOME=/home/kernel \
-    chromium \
-    --remote-debugging-port=$INTERNAL_PORT \
-    ${CHROMIUM_FLAGS:-} >&2 & pid=$!
-fi
-
-echo "Setting up ncat proxy on port $CHROME_PORT"
-ncat \
-  --sh-exec "ncat 0.0.0.0 $INTERNAL_PORT" \
-  -l "$CHROME_PORT" \
-  --keep-open & pid2=$!
+  sleep 0.2
+done
 
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   # use webrtc
-  echo "✨ Starting neko (webrtc server)."
-  /usr/bin/neko serve --server.static /var/www --server.bind 0.0.0.0:8080 >&2 &
+  echo "[wrapper] ✨ Starting neko (webrtc server) via supervisord."
+  supervisorctl -c /etc/supervisor/supervisord.conf start neko
 
   # Wait for neko to be ready.
-  echo "Waiting for neko port 0.0.0.0:8080..."
+  echo "[wrapper] Waiting for neko port 0.0.0.0:8080..."
   while ! nc -z 127.0.0.1 8080 2>/dev/null; do
     sleep 0.5
   done
-  echo "Port 8080 is open"
-else
-  # use novnc
-  ./novnc_startup.sh
-  echo "✨ noVNC demo is ready to use!"
+  echo "[wrapper] Port 8080 is open"
 fi
 
 if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
-  echo "✨ Starting kernel-images API."
+  echo "[wrapper] ✨ Starting kernel-images API."
 
   API_PORT="${KERNEL_IMAGES_API_PORT:-10001}"
   API_FRAME_RATE="${KERNEL_IMAGES_API_FRAME_RATE:-10}"
@@ -173,19 +220,13 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
   API_MAX_SIZE_MB="${KERNEL_IMAGES_API_MAX_SIZE_MB:-500}"
   API_OUTPUT_DIR="${KERNEL_IMAGES_API_OUTPUT_DIR:-/recordings}"
 
-  mkdir -p "$API_OUTPUT_DIR"
-
-  PORT="$API_PORT" \
-  FRAME_RATE="$API_FRAME_RATE" \
-  DISPLAY_NUM="$API_DISPLAY_NUM" \
-  MAX_SIZE_MB="$API_MAX_SIZE_MB" \
-  OUTPUT_DIR="$API_OUTPUT_DIR" \
-  /usr/local/bin/kernel-images-api & pid3=$!
+  # Start via supervisord (env overrides are read by the service's command)
+  supervisorctl -c /etc/supervisor/supervisord.conf start kernel-images-api
   # close the "--no-sandbox unsupported flag" warning when running as root
   # in the unikernel runtime we haven't been able to get chromium to launch as non-root without cryptic crashpad errors
   # and when running as root you must use the --no-sandbox flag, which generates a warning
   if [[ "${RUN_AS_ROOT:-}" == "true" ]]; then
-    echo "Running as root, attempting to dismiss the --no-sandbox unsupported flag warning"
+    echo "[wrapper] Running as root, attempting to dismiss the --no-sandbox unsupported flag warning"
     if read -r WIDTH HEIGHT <<< "$(xdotool getdisplaygeometry 2>/dev/null)"; then
       # Work out an x-coordinate slightly inside the right-hand edge of the
       OFFSET_X=$(( WIDTH - 30 ))
@@ -193,22 +234,22 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
         OFFSET_X=0
       fi
 
-      # Wait for kernel-images API port 10001 to be ready.
-      echo "Waiting for kernel-images API port 127.0.0.1:10001..."
-      while ! nc -z 127.0.0.1 10001 2>/dev/null; do
+      # Wait for kernel-images API port to be ready.
+      echo "[wrapper] Waiting for kernel-images API port 127.0.0.1:${API_PORT}..."
+      while ! nc -z 127.0.0.1 "${API_PORT}" 2>/dev/null; do
         sleep 0.5
       done
-      echo "Port 10001 is open"
+      echo "[wrapper] Port ${API_PORT} is open"
 
       # Wait for Chromium window to open before dismissing the --no-sandbox warning.
       target='New Tab - Chromium'
-      echo "Waiting for Chromium window \"${target}\" to appear and become active..."
+      echo "[wrapper] Waiting for Chromium window \"${target}\" to appear and become active..."
       while :; do
         win_id=$(xwininfo -root -tree 2>/dev/null | awk -v t="$target" '$0 ~ t {print $1; exit}')
         if [[ -n $win_id ]]; then
           win_id=${win_id%:}
           if xdotool windowactivate --sync "$win_id"; then
-            echo "Focused window $win_id ($target) on $DISPLAY"
+            echo "[wrapper] Focused window $win_id ($target) on $DISPLAY"
             break
           fi
         fi
@@ -220,17 +261,17 @@ if [[ "${WITH_KERNEL_IMAGES_API:-}" == "true" ]]; then
       sleep 5
 
       # Attempt to click the warning's close button
-      echo "Clicking the warning's close button at x=$OFFSET_X y=115"
+      echo "[wrapper] Clicking the warning's close button at x=$OFFSET_X y=115"
       if curl -s -o /dev/null -X POST \
-        http://localhost:10001/computer/click_mouse \
+        http://localhost:${API_PORT}/computer/click_mouse \
         -H "Content-Type: application/json" \
         -d "{\"x\":${OFFSET_X},\"y\":115}"; then
-          echo "Successfully clicked the warning's close button"
+          echo "[wrapper] Successfully clicked the warning's close button"
       else
-        echo "Failed to click the warning's close button" >&2
+        echo "[wrapper] Failed to click the warning's close button" >&2
       fi
     else
-      echo "xdotool failed to obtain display geometry; skipping sandbox warning dismissal." >&2
+      echo "[wrapper] xdotool failed to obtain display geometry; skipping sandbox warning dismissal." >&2
     fi
   fi
 fi
@@ -239,5 +280,5 @@ if [[ -z "${WITHDOCKER:-}" ]]; then
   enable_scale_to_zero
 fi
 
-# Keep the container running
-tail -f /dev/null
+# Keep the container running while streaming logs
+wait

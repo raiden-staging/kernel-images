@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"path"
@@ -21,6 +22,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/oapi-codegen/runtime"
 	strictnethttp "github.com/oapi-codegen/runtime/strictmiddleware/nethttp"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for ClickMouseRequestButton.
@@ -45,6 +47,37 @@ const (
 	DELETE FileSystemEventType = "DELETE"
 	RENAME FileSystemEventType = "RENAME"
 	WRITE  FileSystemEventType = "WRITE"
+)
+
+// Defines values for ProcessKillRequestSignal.
+const (
+	HUP  ProcessKillRequestSignal = "HUP"
+	INT  ProcessKillRequestSignal = "INT"
+	KILL ProcessKillRequestSignal = "KILL"
+	TERM ProcessKillRequestSignal = "TERM"
+)
+
+// Defines values for ProcessStatusState.
+const (
+	Exited  ProcessStatusState = "exited"
+	Running ProcessStatusState = "running"
+)
+
+// Defines values for ProcessStreamEventEvent.
+const (
+	Exit ProcessStreamEventEvent = "exit"
+)
+
+// Defines values for ProcessStreamEventStream.
+const (
+	Stderr ProcessStreamEventStream = "stderr"
+	Stdout ProcessStreamEventStream = "stdout"
+)
+
+// Defines values for LogsStreamParamsSource.
+const (
+	Path       LogsStreamParamsSource = "path"
+	Supervisor LogsStreamParamsSource = "supervisor"
 )
 
 // ClickMouseRequest defines model for ClickMouseRequest.
@@ -142,6 +175,15 @@ type FileSystemEventType string
 // ListFiles Array of file or directory information entries.
 type ListFiles = []FileInfo
 
+// LogEvent A log entry from the application.
+type LogEvent struct {
+	// Message Log message text.
+	Message string `json:"message"`
+
+	// Timestamp Time the log entry was produced.
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // MoveMouseRequest defines model for MoveMouseRequest.
 type MoveMouseRequest struct {
 	// HoldKeys Modifier keys to hold during the move
@@ -162,6 +204,153 @@ type MovePathRequest struct {
 	// SrcPath Absolute source path.
 	SrcPath string `json:"src_path"`
 }
+
+// OkResponse Generic OK response.
+type OkResponse struct {
+	// Ok Indicates success.
+	Ok bool `json:"ok"`
+}
+
+// ProcessExecRequest Request to execute a command synchronously.
+type ProcessExecRequest struct {
+	// Args Command arguments.
+	Args *[]string `json:"args,omitempty"`
+
+	// AsRoot Run the process with root privileges.
+	AsRoot *bool `json:"as_root,omitempty"`
+
+	// AsUser Run the process as this user.
+	AsUser *string `json:"as_user"`
+
+	// Command Executable or shell command to run.
+	Command string `json:"command"`
+
+	// Cwd Working directory (absolute path) to run the command in.
+	Cwd *string `json:"cwd"`
+
+	// Env Environment variables to set for the process.
+	Env *map[string]string `json:"env,omitempty"`
+
+	// Stream If true, stream output via SSE instead of returning complete buffers.
+	Stream *bool `json:"stream,omitempty"`
+
+	// TimeoutSec Maximum execution time in seconds.
+	TimeoutSec *int `json:"timeout_sec"`
+}
+
+// ProcessExecResult Result of a synchronous command execution.
+type ProcessExecResult struct {
+	// DurationMs Execution duration in milliseconds.
+	DurationMs *int `json:"duration_ms,omitempty"`
+
+	// ExitCode Process exit code.
+	ExitCode *int `json:"exit_code,omitempty"`
+
+	// StderrB64 Base64-encoded stderr buffer.
+	StderrB64 *string `json:"stderr_b64,omitempty"`
+
+	// StdoutB64 Base64-encoded stdout buffer.
+	StdoutB64 *string `json:"stdout_b64,omitempty"`
+}
+
+// ProcessKillRequest Signal to send to the process.
+type ProcessKillRequest struct {
+	// Signal Signal to send.
+	Signal ProcessKillRequestSignal `json:"signal"`
+}
+
+// ProcessKillRequestSignal Signal to send.
+type ProcessKillRequestSignal string
+
+// ProcessSpawnRequest defines model for ProcessSpawnRequest.
+type ProcessSpawnRequest struct {
+	// Args Command arguments.
+	Args *[]string `json:"args,omitempty"`
+
+	// AsRoot Run the process with root privileges.
+	AsRoot *bool `json:"as_root,omitempty"`
+
+	// AsUser Run the process as this user.
+	AsUser *string `json:"as_user"`
+
+	// Command Executable or shell command to run.
+	Command string `json:"command"`
+
+	// Cwd Working directory (absolute path) to run the command in.
+	Cwd *string `json:"cwd"`
+
+	// Env Environment variables to set for the process.
+	Env *map[string]string `json:"env,omitempty"`
+
+	// Stream Streaming is handled via the stdout/stream endpoint for spawned processes.
+	Stream *bool `json:"stream,omitempty"`
+
+	// TimeoutSec Maximum execution time in seconds.
+	TimeoutSec *int `json:"timeout_sec"`
+}
+
+// ProcessSpawnResult Information about a spawned process.
+type ProcessSpawnResult struct {
+	// Pid OS process ID.
+	Pid *int `json:"pid,omitempty"`
+
+	// ProcessId Server-assigned identifier for the process.
+	ProcessId *openapi_types.UUID `json:"process_id,omitempty"`
+
+	// StartedAt Timestamp when the process started.
+	StartedAt *time.Time `json:"started_at,omitempty"`
+}
+
+// ProcessStatus Current status of a process.
+type ProcessStatus struct {
+	// CpuPct Estimated CPU usage percentage.
+	CpuPct *float32 `json:"cpu_pct,omitempty"`
+
+	// ExitCode Exit code if the process has exited.
+	ExitCode *int `json:"exit_code"`
+
+	// MemBytes Estimated resident memory usage in bytes.
+	MemBytes *int `json:"mem_bytes,omitempty"`
+
+	// State Process state.
+	State *ProcessStatusState `json:"state,omitempty"`
+}
+
+// ProcessStatusState Process state.
+type ProcessStatusState string
+
+// ProcessStdinRequest Data to write to the process standard input.
+type ProcessStdinRequest struct {
+	// DataB64 Base64-encoded data to write.
+	DataB64 string `json:"data_b64"`
+}
+
+// ProcessStdinResult Result of writing to stdin.
+type ProcessStdinResult struct {
+	// WrittenBytes Number of bytes written.
+	WrittenBytes *int `json:"written_bytes,omitempty"`
+}
+
+// ProcessStreamEvent SSE payload representing process output or lifecycle events.
+type ProcessStreamEvent struct {
+	// DataB64 Base64-encoded data from the process stream.
+	DataB64 *string `json:"data_b64,omitempty"`
+
+	// Event Lifecycle event type.
+	Event *ProcessStreamEventEvent `json:"event,omitempty"`
+
+	// ExitCode Exit code when the event is "exit".
+	ExitCode *int `json:"exit_code,omitempty"`
+
+	// Stream Source stream of the data chunk.
+	Stream *ProcessStreamEventStream `json:"stream,omitempty"`
+}
+
+// ProcessStreamEventEvent Lifecycle event type.
+type ProcessStreamEventEvent string
+
+// ProcessStreamEventStream Source stream of the data chunk.
+type ProcessStreamEventStream string
 
 // RecorderInfo defines model for RecorderInfo.
 type RecorderInfo struct {
@@ -234,6 +423,12 @@ type InternalError = Error
 // NotFoundError defines model for NotFoundError.
 type NotFoundError = Error
 
+// DownloadDirZipParams defines parameters for DownloadDirZip.
+type DownloadDirZipParams struct {
+	// Path Absolute directory path to archive and download.
+	Path string `form:"path" json:"path"`
+}
+
 // FileInfoParams defines parameters for FileInfo.
 type FileInfoParams struct {
 	// Path Absolute path of the file or directory.
@@ -252,6 +447,22 @@ type ReadFileParams struct {
 	Path string `form:"path" json:"path"`
 }
 
+// UploadFilesMultipartBody defines parameters for UploadFiles.
+type UploadFilesMultipartBody struct {
+	Files []struct {
+		// DestPath Absolute destination path to write the file.
+		DestPath string             `json:"dest_path"`
+		File     openapi_types.File `json:"file"`
+	} `json:"files"`
+}
+
+// UploadZipMultipartBody defines parameters for UploadZip.
+type UploadZipMultipartBody struct {
+	// DestPath Absolute destination directory to extract the archive to.
+	DestPath string             `json:"dest_path"`
+	ZipFile  openapi_types.File `json:"zip_file"`
+}
+
 // WriteFileParams defines parameters for WriteFile.
 type WriteFileParams struct {
 	// Path Destination absolute file path.
@@ -260,6 +471,21 @@ type WriteFileParams struct {
 	// Mode Optional file mode (octal string, e.g. 644). Defaults to 644.
 	Mode *string `form:"mode,omitempty" json:"mode,omitempty"`
 }
+
+// LogsStreamParams defines parameters for LogsStream.
+type LogsStreamParams struct {
+	Source LogsStreamParamsSource `form:"source" json:"source"`
+	Follow *bool                  `form:"follow,omitempty" json:"follow,omitempty"`
+
+	// Path only required if source is path
+	Path *string `form:"path,omitempty" json:"path,omitempty"`
+
+	// SupervisorProcess only required if source is supervisor
+	SupervisorProcess *string `form:"supervisor_process,omitempty" json:"supervisor_process,omitempty"`
+}
+
+// LogsStreamParamsSource defines parameters for LogsStream.
+type LogsStreamParamsSource string
 
 // DownloadRecordingParams defines parameters for DownloadRecording.
 type DownloadRecordingParams struct {
@@ -288,8 +514,26 @@ type MovePathJSONRequestBody = MovePathRequest
 // SetFilePermissionsJSONRequestBody defines body for SetFilePermissions for application/json ContentType.
 type SetFilePermissionsJSONRequestBody = SetFilePermissionsRequest
 
+// UploadFilesMultipartRequestBody defines body for UploadFiles for multipart/form-data ContentType.
+type UploadFilesMultipartRequestBody UploadFilesMultipartBody
+
+// UploadZipMultipartRequestBody defines body for UploadZip for multipart/form-data ContentType.
+type UploadZipMultipartRequestBody UploadZipMultipartBody
+
 // StartFsWatchJSONRequestBody defines body for StartFsWatch for application/json ContentType.
 type StartFsWatchJSONRequestBody = StartFsWatchRequest
+
+// ProcessExecJSONRequestBody defines body for ProcessExec for application/json ContentType.
+type ProcessExecJSONRequestBody = ProcessExecRequest
+
+// ProcessSpawnJSONRequestBody defines body for ProcessSpawn for application/json ContentType.
+type ProcessSpawnJSONRequestBody = ProcessSpawnRequest
+
+// ProcessKillJSONRequestBody defines body for ProcessKill for application/json ContentType.
+type ProcessKillJSONRequestBody = ProcessKillRequest
+
+// ProcessStdinJSONRequestBody defines body for ProcessStdin for application/json ContentType.
+type ProcessStdinJSONRequestBody = ProcessStdinRequest
 
 // DeleteRecordingJSONRequestBody defines body for DeleteRecording for application/json ContentType.
 type DeleteRecordingJSONRequestBody = DeleteRecordingRequest
@@ -398,6 +642,9 @@ type ClientInterface interface {
 
 	DeleteFile(ctx context.Context, body DeleteFileJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// DownloadDirZip request
+	DownloadDirZip(ctx context.Context, params *DownloadDirZipParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// FileInfo request
 	FileInfo(ctx context.Context, params *FileInfoParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -417,6 +664,12 @@ type ClientInterface interface {
 
 	SetFilePermissions(ctx context.Context, body SetFilePermissionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// UploadFilesWithBody request with any body
+	UploadFilesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UploadZipWithBody request with any body
+	UploadZipWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// StartFsWatchWithBody request with any body
 	StartFsWatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -430,6 +683,35 @@ type ClientInterface interface {
 
 	// WriteFileWithBody request with any body
 	WriteFileWithBody(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// LogsStream request
+	LogsStream(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProcessExecWithBody request with any body
+	ProcessExecWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ProcessExec(ctx context.Context, body ProcessExecJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProcessSpawnWithBody request with any body
+	ProcessSpawnWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ProcessSpawn(ctx context.Context, body ProcessSpawnJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProcessKillWithBody request with any body
+	ProcessKillWithBody(ctx context.Context, processId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ProcessKill(ctx context.Context, processId openapi_types.UUID, body ProcessKillJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProcessStatus request
+	ProcessStatus(ctx context.Context, processId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProcessStdinWithBody request with any body
+	ProcessStdinWithBody(ctx context.Context, processId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ProcessStdin(ctx context.Context, processId openapi_types.UUID, body ProcessStdinJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ProcessStdoutStream request
+	ProcessStdoutStream(ctx context.Context, processId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteRecordingWithBody request with any body
 	DeleteRecordingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -573,6 +855,18 @@ func (c *Client) DeleteFile(ctx context.Context, body DeleteFileJSONRequestBody,
 	return c.Client.Do(req)
 }
 
+func (c *Client) DownloadDirZip(ctx context.Context, params *DownloadDirZipParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDownloadDirZipRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) FileInfo(ctx context.Context, params *FileInfoParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewFileInfoRequest(c.Server, params)
 	if err != nil {
@@ -657,6 +951,30 @@ func (c *Client) SetFilePermissions(ctx context.Context, body SetFilePermissions
 	return c.Client.Do(req)
 }
 
+func (c *Client) UploadFilesWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUploadFilesRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) UploadZipWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUploadZipRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) StartFsWatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStartFsWatchRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -707,6 +1025,138 @@ func (c *Client) StreamFsEvents(ctx context.Context, watchId string, reqEditors 
 
 func (c *Client) WriteFileWithBody(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewWriteFileRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) LogsStream(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewLogsStreamRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessExecWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessExecRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessExec(ctx context.Context, body ProcessExecJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessExecRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessSpawnWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessSpawnRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessSpawn(ctx context.Context, body ProcessSpawnJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessSpawnRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessKillWithBody(ctx context.Context, processId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessKillRequestWithBody(c.Server, processId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessKill(ctx context.Context, processId openapi_types.UUID, body ProcessKillJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessKillRequest(c.Server, processId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessStatus(ctx context.Context, processId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessStatusRequest(c.Server, processId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessStdinWithBody(ctx context.Context, processId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessStdinRequestWithBody(c.Server, processId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessStdin(ctx context.Context, processId openapi_types.UUID, body ProcessStdinJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessStdinRequest(c.Server, processId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ProcessStdoutStream(ctx context.Context, processId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewProcessStdoutStreamRequest(c.Server, processId)
 	if err != nil {
 		return nil, err
 	}
@@ -1013,6 +1463,51 @@ func NewDeleteFileRequestWithBody(server string, contentType string, body io.Rea
 	return req, nil
 }
 
+// NewDownloadDirZipRequest generates requests for DownloadDirZip
+func NewDownloadDirZipRequest(server string, params *DownloadDirZipParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/download_dir_zip")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "path", runtime.ParamLocationQuery, params.Path); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewFileInfoRequest generates requests for FileInfo
 func NewFileInfoRequest(server string, params *FileInfoParams) (*http.Request, error) {
 	var err error
@@ -1228,6 +1723,64 @@ func NewSetFilePermissionsRequestWithBody(server string, contentType string, bod
 	return req, nil
 }
 
+// NewUploadFilesRequestWithBody generates requests for UploadFiles with any type of body
+func NewUploadFilesRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/upload")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewUploadZipRequestWithBody generates requests for UploadZip with any type of body
+func NewUploadZipRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/fs/upload_zip")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewStartFsWatchRequest calls the generic StartFsWatch builder with application/json body
 func NewStartFsWatchRequest(server string, body StartFsWatchJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -1395,6 +1948,341 @@ func NewWriteFileRequestWithBody(server string, params *WriteFileParams, content
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewLogsStreamRequest generates requests for LogsStream
+func NewLogsStreamRequest(server string, params *LogsStreamParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/logs/stream")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		queryValues := queryURL.Query()
+
+		if queryFrag, err := runtime.StyleParamWithLocation("form", true, "source", runtime.ParamLocationQuery, params.Source); err != nil {
+			return nil, err
+		} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+			return nil, err
+		} else {
+			for k, v := range parsed {
+				for _, v2 := range v {
+					queryValues.Add(k, v2)
+				}
+			}
+		}
+
+		if params.Follow != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "follow", runtime.ParamLocationQuery, *params.Follow); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.Path != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "path", runtime.ParamLocationQuery, *params.Path); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		if params.SupervisorProcess != nil {
+
+			if queryFrag, err := runtime.StyleParamWithLocation("form", true, "supervisor_process", runtime.ParamLocationQuery, *params.SupervisorProcess); err != nil {
+				return nil, err
+			} else if parsed, err := url.ParseQuery(queryFrag); err != nil {
+				return nil, err
+			} else {
+				for k, v := range parsed {
+					for _, v2 := range v {
+						queryValues.Add(k, v2)
+					}
+				}
+			}
+
+		}
+
+		queryURL.RawQuery = queryValues.Encode()
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewProcessExecRequest calls the generic ProcessExec builder with application/json body
+func NewProcessExecRequest(server string, body ProcessExecJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewProcessExecRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewProcessExecRequestWithBody generates requests for ProcessExec with any type of body
+func NewProcessExecRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/process/exec")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewProcessSpawnRequest calls the generic ProcessSpawn builder with application/json body
+func NewProcessSpawnRequest(server string, body ProcessSpawnJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewProcessSpawnRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewProcessSpawnRequestWithBody generates requests for ProcessSpawn with any type of body
+func NewProcessSpawnRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/process/spawn")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewProcessKillRequest calls the generic ProcessKill builder with application/json body
+func NewProcessKillRequest(server string, processId openapi_types.UUID, body ProcessKillJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewProcessKillRequestWithBody(server, processId, "application/json", bodyReader)
+}
+
+// NewProcessKillRequestWithBody generates requests for ProcessKill with any type of body
+func NewProcessKillRequestWithBody(server string, processId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "process_id", runtime.ParamLocationPath, processId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/process/%s/kill", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewProcessStatusRequest generates requests for ProcessStatus
+func NewProcessStatusRequest(server string, processId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "process_id", runtime.ParamLocationPath, processId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/process/%s/status", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewProcessStdinRequest calls the generic ProcessStdin builder with application/json body
+func NewProcessStdinRequest(server string, processId openapi_types.UUID, body ProcessStdinJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewProcessStdinRequestWithBody(server, processId, "application/json", bodyReader)
+}
+
+// NewProcessStdinRequestWithBody generates requests for ProcessStdin with any type of body
+func NewProcessStdinRequestWithBody(server string, processId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "process_id", runtime.ParamLocationPath, processId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/process/%s/stdin", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewProcessStdoutStreamRequest generates requests for ProcessStdoutStream
+func NewProcessStdoutStreamRequest(server string, processId openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithLocation("simple", false, "process_id", runtime.ParamLocationPath, processId)
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/process/%s/stdout/stream", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -1663,6 +2551,9 @@ type ClientWithResponsesInterface interface {
 
 	DeleteFileWithResponse(ctx context.Context, body DeleteFileJSONRequestBody, reqEditors ...RequestEditorFn) (*DeleteFileResponse, error)
 
+	// DownloadDirZipWithResponse request
+	DownloadDirZipWithResponse(ctx context.Context, params *DownloadDirZipParams, reqEditors ...RequestEditorFn) (*DownloadDirZipResponse, error)
+
 	// FileInfoWithResponse request
 	FileInfoWithResponse(ctx context.Context, params *FileInfoParams, reqEditors ...RequestEditorFn) (*FileInfoResponse, error)
 
@@ -1682,6 +2573,12 @@ type ClientWithResponsesInterface interface {
 
 	SetFilePermissionsWithResponse(ctx context.Context, body SetFilePermissionsJSONRequestBody, reqEditors ...RequestEditorFn) (*SetFilePermissionsResponse, error)
 
+	// UploadFilesWithBodyWithResponse request with any body
+	UploadFilesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UploadFilesResponse, error)
+
+	// UploadZipWithBodyWithResponse request with any body
+	UploadZipWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UploadZipResponse, error)
+
 	// StartFsWatchWithBodyWithResponse request with any body
 	StartFsWatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartFsWatchResponse, error)
 
@@ -1695,6 +2592,35 @@ type ClientWithResponsesInterface interface {
 
 	// WriteFileWithBodyWithResponse request with any body
 	WriteFileWithBodyWithResponse(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*WriteFileResponse, error)
+
+	// LogsStreamWithResponse request
+	LogsStreamWithResponse(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*LogsStreamResponse, error)
+
+	// ProcessExecWithBodyWithResponse request with any body
+	ProcessExecWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProcessExecResponse, error)
+
+	ProcessExecWithResponse(ctx context.Context, body ProcessExecJSONRequestBody, reqEditors ...RequestEditorFn) (*ProcessExecResponse, error)
+
+	// ProcessSpawnWithBodyWithResponse request with any body
+	ProcessSpawnWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProcessSpawnResponse, error)
+
+	ProcessSpawnWithResponse(ctx context.Context, body ProcessSpawnJSONRequestBody, reqEditors ...RequestEditorFn) (*ProcessSpawnResponse, error)
+
+	// ProcessKillWithBodyWithResponse request with any body
+	ProcessKillWithBodyWithResponse(ctx context.Context, processId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProcessKillResponse, error)
+
+	ProcessKillWithResponse(ctx context.Context, processId openapi_types.UUID, body ProcessKillJSONRequestBody, reqEditors ...RequestEditorFn) (*ProcessKillResponse, error)
+
+	// ProcessStatusWithResponse request
+	ProcessStatusWithResponse(ctx context.Context, processId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ProcessStatusResponse, error)
+
+	// ProcessStdinWithBodyWithResponse request with any body
+	ProcessStdinWithBodyWithResponse(ctx context.Context, processId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProcessStdinResponse, error)
+
+	ProcessStdinWithResponse(ctx context.Context, processId openapi_types.UUID, body ProcessStdinJSONRequestBody, reqEditors ...RequestEditorFn) (*ProcessStdinResponse, error)
+
+	// ProcessStdoutStreamWithResponse request
+	ProcessStdoutStreamWithResponse(ctx context.Context, processId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ProcessStdoutStreamResponse, error)
 
 	// DeleteRecordingWithBodyWithResponse request with any body
 	DeleteRecordingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DeleteRecordingResponse, error)
@@ -1835,6 +2761,30 @@ func (r DeleteFileResponse) StatusCode() int {
 	return 0
 }
 
+type DownloadDirZipResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r DownloadDirZipResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DownloadDirZipResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type FileInfoResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -1957,6 +2907,54 @@ func (r SetFilePermissionsResponse) StatusCode() int {
 	return 0
 }
 
+type UploadFilesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r UploadFilesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UploadFilesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type UploadZipResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r UploadZipResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UploadZipResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type StartFsWatchResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -2051,6 +3049,174 @@ func (r WriteFileResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r WriteFileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type LogsStreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+}
+
+// Status returns HTTPResponse.Status
+func (r LogsStreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r LogsStreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ProcessExecResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ProcessExecResult
+	JSON400      *BadRequestError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ProcessExecResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProcessExecResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ProcessSpawnResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ProcessSpawnResult
+	JSON400      *BadRequestError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ProcessSpawnResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProcessSpawnResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ProcessKillResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *OkResponse
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ProcessKillResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProcessKillResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ProcessStatusResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ProcessStatus
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ProcessStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProcessStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ProcessStdinResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *ProcessStdinResult
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ProcessStdinResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProcessStdinResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ProcessStdoutStreamResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ProcessStdoutStreamResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ProcessStdoutStreamResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -2260,6 +3426,15 @@ func (c *ClientWithResponses) DeleteFileWithResponse(ctx context.Context, body D
 	return ParseDeleteFileResponse(rsp)
 }
 
+// DownloadDirZipWithResponse request returning *DownloadDirZipResponse
+func (c *ClientWithResponses) DownloadDirZipWithResponse(ctx context.Context, params *DownloadDirZipParams, reqEditors ...RequestEditorFn) (*DownloadDirZipResponse, error) {
+	rsp, err := c.DownloadDirZip(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDownloadDirZipResponse(rsp)
+}
+
 // FileInfoWithResponse request returning *FileInfoResponse
 func (c *ClientWithResponses) FileInfoWithResponse(ctx context.Context, params *FileInfoParams, reqEditors ...RequestEditorFn) (*FileInfoResponse, error) {
 	rsp, err := c.FileInfo(ctx, params, reqEditors...)
@@ -2321,6 +3496,24 @@ func (c *ClientWithResponses) SetFilePermissionsWithResponse(ctx context.Context
 	return ParseSetFilePermissionsResponse(rsp)
 }
 
+// UploadFilesWithBodyWithResponse request with arbitrary body returning *UploadFilesResponse
+func (c *ClientWithResponses) UploadFilesWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UploadFilesResponse, error) {
+	rsp, err := c.UploadFilesWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUploadFilesResponse(rsp)
+}
+
+// UploadZipWithBodyWithResponse request with arbitrary body returning *UploadZipResponse
+func (c *ClientWithResponses) UploadZipWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UploadZipResponse, error) {
+	rsp, err := c.UploadZipWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUploadZipResponse(rsp)
+}
+
 // StartFsWatchWithBodyWithResponse request with arbitrary body returning *StartFsWatchResponse
 func (c *ClientWithResponses) StartFsWatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StartFsWatchResponse, error) {
 	rsp, err := c.StartFsWatchWithBody(ctx, contentType, body, reqEditors...)
@@ -2363,6 +3556,101 @@ func (c *ClientWithResponses) WriteFileWithBodyWithResponse(ctx context.Context,
 		return nil, err
 	}
 	return ParseWriteFileResponse(rsp)
+}
+
+// LogsStreamWithResponse request returning *LogsStreamResponse
+func (c *ClientWithResponses) LogsStreamWithResponse(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*LogsStreamResponse, error) {
+	rsp, err := c.LogsStream(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseLogsStreamResponse(rsp)
+}
+
+// ProcessExecWithBodyWithResponse request with arbitrary body returning *ProcessExecResponse
+func (c *ClientWithResponses) ProcessExecWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProcessExecResponse, error) {
+	rsp, err := c.ProcessExecWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessExecResponse(rsp)
+}
+
+func (c *ClientWithResponses) ProcessExecWithResponse(ctx context.Context, body ProcessExecJSONRequestBody, reqEditors ...RequestEditorFn) (*ProcessExecResponse, error) {
+	rsp, err := c.ProcessExec(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessExecResponse(rsp)
+}
+
+// ProcessSpawnWithBodyWithResponse request with arbitrary body returning *ProcessSpawnResponse
+func (c *ClientWithResponses) ProcessSpawnWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProcessSpawnResponse, error) {
+	rsp, err := c.ProcessSpawnWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessSpawnResponse(rsp)
+}
+
+func (c *ClientWithResponses) ProcessSpawnWithResponse(ctx context.Context, body ProcessSpawnJSONRequestBody, reqEditors ...RequestEditorFn) (*ProcessSpawnResponse, error) {
+	rsp, err := c.ProcessSpawn(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessSpawnResponse(rsp)
+}
+
+// ProcessKillWithBodyWithResponse request with arbitrary body returning *ProcessKillResponse
+func (c *ClientWithResponses) ProcessKillWithBodyWithResponse(ctx context.Context, processId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProcessKillResponse, error) {
+	rsp, err := c.ProcessKillWithBody(ctx, processId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessKillResponse(rsp)
+}
+
+func (c *ClientWithResponses) ProcessKillWithResponse(ctx context.Context, processId openapi_types.UUID, body ProcessKillJSONRequestBody, reqEditors ...RequestEditorFn) (*ProcessKillResponse, error) {
+	rsp, err := c.ProcessKill(ctx, processId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessKillResponse(rsp)
+}
+
+// ProcessStatusWithResponse request returning *ProcessStatusResponse
+func (c *ClientWithResponses) ProcessStatusWithResponse(ctx context.Context, processId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ProcessStatusResponse, error) {
+	rsp, err := c.ProcessStatus(ctx, processId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessStatusResponse(rsp)
+}
+
+// ProcessStdinWithBodyWithResponse request with arbitrary body returning *ProcessStdinResponse
+func (c *ClientWithResponses) ProcessStdinWithBodyWithResponse(ctx context.Context, processId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ProcessStdinResponse, error) {
+	rsp, err := c.ProcessStdinWithBody(ctx, processId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessStdinResponse(rsp)
+}
+
+func (c *ClientWithResponses) ProcessStdinWithResponse(ctx context.Context, processId openapi_types.UUID, body ProcessStdinJSONRequestBody, reqEditors ...RequestEditorFn) (*ProcessStdinResponse, error) {
+	rsp, err := c.ProcessStdin(ctx, processId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessStdinResponse(rsp)
+}
+
+// ProcessStdoutStreamWithResponse request returning *ProcessStdoutStreamResponse
+func (c *ClientWithResponses) ProcessStdoutStreamWithResponse(ctx context.Context, processId openapi_types.UUID, reqEditors ...RequestEditorFn) (*ProcessStdoutStreamResponse, error) {
+	rsp, err := c.ProcessStdoutStream(ctx, processId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseProcessStdoutStreamResponse(rsp)
 }
 
 // DeleteRecordingWithBodyWithResponse request with arbitrary body returning *DeleteRecordingResponse
@@ -2613,6 +3901,46 @@ func ParseDeleteFileResponse(rsp *http.Response) (*DeleteFileResponse, error) {
 	return response, nil
 }
 
+// ParseDownloadDirZipResponse parses an HTTP response from a DownloadDirZipWithResponse call
+func ParseDownloadDirZipResponse(rsp *http.Response) (*DownloadDirZipResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DownloadDirZipResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseFileInfoResponse parses an HTTP response from a FileInfoWithResponse call
 func ParseFileInfoResponse(rsp *http.Response) (*FileInfoResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2827,6 +4155,86 @@ func ParseSetFilePermissionsResponse(rsp *http.Response) (*SetFilePermissionsRes
 	return response, nil
 }
 
+// ParseUploadFilesResponse parses an HTTP response from a UploadFilesWithResponse call
+func ParseUploadFilesResponse(rsp *http.Response) (*UploadFilesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UploadFilesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUploadZipResponse parses an HTTP response from a UploadZipWithResponse call
+func ParseUploadZipResponse(rsp *http.Response) (*UploadZipResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UploadZipResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseStartFsWatchResponse parses an HTTP response from a StartFsWatchWithResponse call
 func ParseStartFsWatchResponse(rsp *http.Response) (*StartFsWatchResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -2966,6 +4374,283 @@ func ParseWriteFileResponse(rsp *http.Response) (*WriteFileResponse, error) {
 	}
 
 	response := &WriteFileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseLogsStreamResponse parses an HTTP response from a LogsStreamWithResponse call
+func ParseLogsStreamResponse(rsp *http.Response) (*LogsStreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &LogsStreamResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	return response, nil
+}
+
+// ParseProcessExecResponse parses an HTTP response from a ProcessExecWithResponse call
+func ParseProcessExecResponse(rsp *http.Response) (*ProcessExecResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProcessExecResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProcessExecResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProcessSpawnResponse parses an HTTP response from a ProcessSpawnWithResponse call
+func ParseProcessSpawnResponse(rsp *http.Response) (*ProcessSpawnResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProcessSpawnResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProcessSpawnResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProcessKillResponse parses an HTTP response from a ProcessKillWithResponse call
+func ParseProcessKillResponse(rsp *http.Response) (*ProcessKillResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProcessKillResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OkResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProcessStatusResponse parses an HTTP response from a ProcessStatusWithResponse call
+func ParseProcessStatusResponse(rsp *http.Response) (*ProcessStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProcessStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProcessStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProcessStdinResponse parses an HTTP response from a ProcessStdinWithResponse call
+func ParseProcessStdinResponse(rsp *http.Response) (*ProcessStdinResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProcessStdinResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ProcessStdinResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseProcessStdoutStreamResponse parses an HTTP response from a ProcessStdoutStreamWithResponse call
+func ParseProcessStdoutStreamResponse(rsp *http.Response) (*ProcessStdoutStreamResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ProcessStdoutStreamResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -3200,6 +4885,9 @@ type ServerInterface interface {
 	// Delete a file
 	// (PUT /fs/delete_file)
 	DeleteFile(w http.ResponseWriter, r *http.Request)
+	// Download a directory as a ZIP archive
+	// (GET /fs/download_dir_zip)
+	DownloadDirZip(w http.ResponseWriter, r *http.Request, params DownloadDirZipParams)
 	// Get information about a file or directory
 	// (GET /fs/file_info)
 	FileInfo(w http.ResponseWriter, r *http.Request, params FileInfoParams)
@@ -3215,6 +4903,12 @@ type ServerInterface interface {
 	// Set file or directory permissions/ownership
 	// (PUT /fs/set_file_permissions)
 	SetFilePermissions(w http.ResponseWriter, r *http.Request)
+	// Upload one or more files
+	// (POST /fs/upload)
+	UploadFiles(w http.ResponseWriter, r *http.Request)
+	// Upload a zip archive and extract it
+	// (POST /fs/upload_zip)
+	UploadZip(w http.ResponseWriter, r *http.Request)
 	// Watch a directory for changes
 	// (POST /fs/watch)
 	StartFsWatch(w http.ResponseWriter, r *http.Request)
@@ -3227,6 +4921,27 @@ type ServerInterface interface {
 	// Write or create a file
 	// (PUT /fs/write_file)
 	WriteFile(w http.ResponseWriter, r *http.Request, params WriteFileParams)
+	// Subscribe to logs via SSE
+	// (GET /logs/stream)
+	LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams)
+	// Execute a command synchronously (optional streaming)
+	// (POST /process/exec)
+	ProcessExec(w http.ResponseWriter, r *http.Request)
+	// Execute a command asynchronously
+	// (POST /process/spawn)
+	ProcessSpawn(w http.ResponseWriter, r *http.Request)
+	// Send signal to process
+	// (POST /process/{process_id}/kill)
+	ProcessKill(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID)
+	// Get process status
+	// (GET /process/{process_id}/status)
+	ProcessStatus(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID)
+	// Write to process stdin
+	// (POST /process/{process_id}/stdin)
+	ProcessStdin(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID)
+	// Stream process stdout/stderr (SSE)
+	// (GET /process/{process_id}/stdout/stream)
+	ProcessStdoutStream(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID)
 	// Delete a previously recorded video file
 	// (POST /recording/delete)
 	DeleteRecording(w http.ResponseWriter, r *http.Request)
@@ -3278,6 +4993,12 @@ func (_ Unimplemented) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Download a directory as a ZIP archive
+// (GET /fs/download_dir_zip)
+func (_ Unimplemented) DownloadDirZip(w http.ResponseWriter, r *http.Request, params DownloadDirZipParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Get information about a file or directory
 // (GET /fs/file_info)
 func (_ Unimplemented) FileInfo(w http.ResponseWriter, r *http.Request, params FileInfoParams) {
@@ -3308,6 +5029,18 @@ func (_ Unimplemented) SetFilePermissions(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Upload one or more files
+// (POST /fs/upload)
+func (_ Unimplemented) UploadFiles(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Upload a zip archive and extract it
+// (POST /fs/upload_zip)
+func (_ Unimplemented) UploadZip(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Watch a directory for changes
 // (POST /fs/watch)
 func (_ Unimplemented) StartFsWatch(w http.ResponseWriter, r *http.Request) {
@@ -3329,6 +5062,48 @@ func (_ Unimplemented) StreamFsEvents(w http.ResponseWriter, r *http.Request, wa
 // Write or create a file
 // (PUT /fs/write_file)
 func (_ Unimplemented) WriteFile(w http.ResponseWriter, r *http.Request, params WriteFileParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Subscribe to logs via SSE
+// (GET /logs/stream)
+func (_ Unimplemented) LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Execute a command synchronously (optional streaming)
+// (POST /process/exec)
+func (_ Unimplemented) ProcessExec(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Execute a command asynchronously
+// (POST /process/spawn)
+func (_ Unimplemented) ProcessSpawn(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Send signal to process
+// (POST /process/{process_id}/kill)
+func (_ Unimplemented) ProcessKill(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get process status
+// (GET /process/{process_id}/status)
+func (_ Unimplemented) ProcessStatus(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Write to process stdin
+// (POST /process/{process_id}/stdin)
+func (_ Unimplemented) ProcessStdin(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Stream process stdout/stderr (SSE)
+// (GET /process/{process_id}/stdout/stream)
+func (_ Unimplemented) ProcessStdoutStream(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -3432,6 +5207,40 @@ func (siw *ServerInterfaceWrapper) DeleteFile(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteFile(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DownloadDirZip operation middleware
+func (siw *ServerInterfaceWrapper) DownloadDirZip(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DownloadDirZipParams
+
+	// ------------- Required query parameter "path" -------------
+
+	if paramValue := r.URL.Query().Get("path"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "path"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "path", r.URL.Query(), &params.Path)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DownloadDirZip(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3571,6 +5380,34 @@ func (siw *ServerInterfaceWrapper) SetFilePermissions(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
+// UploadFiles operation middleware
+func (siw *ServerInterfaceWrapper) UploadFiles(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UploadFiles(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UploadZip operation middleware
+func (siw *ServerInterfaceWrapper) UploadZip(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UploadZip(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // StartFsWatch operation middleware
 func (siw *ServerInterfaceWrapper) StartFsWatch(w http.ResponseWriter, r *http.Request) {
 
@@ -3668,6 +5505,192 @@ func (siw *ServerInterfaceWrapper) WriteFile(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.WriteFile(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LogsStream operation middleware
+func (siw *ServerInterfaceWrapper) LogsStream(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params LogsStreamParams
+
+	// ------------- Required query parameter "source" -------------
+
+	if paramValue := r.URL.Query().Get("source"); paramValue != "" {
+
+	} else {
+		siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "source"})
+		return
+	}
+
+	err = runtime.BindQueryParameter("form", true, true, "source", r.URL.Query(), &params.Source)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "source", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "follow" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "follow", r.URL.Query(), &params.Follow)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "follow", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "path" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "path", r.URL.Query(), &params.Path)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "path", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "supervisor_process" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "supervisor_process", r.URL.Query(), &params.SupervisorProcess)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "supervisor_process", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LogsStream(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProcessExec operation middleware
+func (siw *ServerInterfaceWrapper) ProcessExec(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProcessExec(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProcessSpawn operation middleware
+func (siw *ServerInterfaceWrapper) ProcessSpawn(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProcessSpawn(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProcessKill operation middleware
+func (siw *ServerInterfaceWrapper) ProcessKill(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "process_id" -------------
+	var processId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "process_id", chi.URLParam(r, "process_id"), &processId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "process_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProcessKill(w, r, processId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProcessStatus operation middleware
+func (siw *ServerInterfaceWrapper) ProcessStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "process_id" -------------
+	var processId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "process_id", chi.URLParam(r, "process_id"), &processId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "process_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProcessStatus(w, r, processId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProcessStdin operation middleware
+func (siw *ServerInterfaceWrapper) ProcessStdin(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "process_id" -------------
+	var processId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "process_id", chi.URLParam(r, "process_id"), &processId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "process_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProcessStdin(w, r, processId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ProcessStdoutStream operation middleware
+func (siw *ServerInterfaceWrapper) ProcessStdoutStream(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "process_id" -------------
+	var processId openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "process_id", chi.URLParam(r, "process_id"), &processId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "process_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ProcessStdoutStream(w, r, processId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3889,6 +5912,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/fs/delete_file", wrapper.DeleteFile)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/fs/download_dir_zip", wrapper.DownloadDirZip)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/fs/file_info", wrapper.FileInfo)
 	})
 	r.Group(func(r chi.Router) {
@@ -3904,6 +5930,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/fs/set_file_permissions", wrapper.SetFilePermissions)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/fs/upload", wrapper.UploadFiles)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/fs/upload_zip", wrapper.UploadZip)
+	})
+	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/fs/watch", wrapper.StartFsWatch)
 	})
 	r.Group(func(r chi.Router) {
@@ -3914,6 +5946,27 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/fs/write_file", wrapper.WriteFile)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/logs/stream", wrapper.LogsStream)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/process/exec", wrapper.ProcessExec)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/process/spawn", wrapper.ProcessSpawn)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/process/{process_id}/kill", wrapper.ProcessKill)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/process/{process_id}/status", wrapper.ProcessStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/process/{process_id}/stdin", wrapper.ProcessStdin)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/process/{process_id}/stdout/stream", wrapper.ProcessStdoutStream)
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/recording/delete", wrapper.DeleteRecording)
@@ -4124,6 +6177,60 @@ func (response DeleteFile404JSONResponse) VisitDeleteFileResponse(w http.Respons
 type DeleteFile500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response DeleteFile500JSONResponse) VisitDeleteFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DownloadDirZipRequestObject struct {
+	Params DownloadDirZipParams
+}
+
+type DownloadDirZipResponseObject interface {
+	VisitDownloadDirZipResponse(w http.ResponseWriter) error
+}
+
+type DownloadDirZip200ApplicationzipResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response DownloadDirZip200ApplicationzipResponse) VisitDownloadDirZipResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/zip")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type DownloadDirZip400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response DownloadDirZip400JSONResponse) VisitDownloadDirZipResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DownloadDirZip404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response DownloadDirZip404JSONResponse) VisitDownloadDirZipResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type DownloadDirZip500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DownloadDirZip500JSONResponse) VisitDownloadDirZipResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 
@@ -4358,6 +6465,92 @@ func (response SetFilePermissions500JSONResponse) VisitSetFilePermissionsRespons
 	return json.NewEncoder(w).Encode(response)
 }
 
+type UploadFilesRequestObject struct {
+	Body *multipart.Reader
+}
+
+type UploadFilesResponseObject interface {
+	VisitUploadFilesResponse(w http.ResponseWriter) error
+}
+
+type UploadFiles201Response struct {
+}
+
+func (response UploadFiles201Response) VisitUploadFilesResponse(w http.ResponseWriter) error {
+	w.WriteHeader(201)
+	return nil
+}
+
+type UploadFiles400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response UploadFiles400JSONResponse) VisitUploadFilesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UploadFiles404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response UploadFiles404JSONResponse) VisitUploadFilesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UploadFiles500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UploadFiles500JSONResponse) VisitUploadFilesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UploadZipRequestObject struct {
+	Body *multipart.Reader
+}
+
+type UploadZipResponseObject interface {
+	VisitUploadZipResponse(w http.ResponseWriter) error
+}
+
+type UploadZip201Response struct {
+}
+
+func (response UploadZip201Response) VisitUploadZipResponse(w http.ResponseWriter) error {
+	w.WriteHeader(201)
+	return nil
+}
+
+type UploadZip400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response UploadZip400JSONResponse) VisitUploadZipResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UploadZip404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response UploadZip404JSONResponse) VisitUploadZipResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type UploadZip500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UploadZip500JSONResponse) VisitUploadZipResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type StartFsWatchRequestObject struct {
 	Body *StartFsWatchJSONRequestBody
 }
@@ -4568,6 +6761,347 @@ func (response WriteFile404JSONResponse) VisitWriteFileResponse(w http.ResponseW
 type WriteFile500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response WriteFile500JSONResponse) VisitWriteFileResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LogsStreamRequestObject struct {
+	Params LogsStreamParams
+}
+
+type LogsStreamResponseObject interface {
+	VisitLogsStreamResponse(w http.ResponseWriter) error
+}
+
+type LogsStream200ResponseHeaders struct {
+	XSSEContentType string
+}
+
+type LogsStream200TexteventStreamResponse struct {
+	Body          io.Reader
+	Headers       LogsStream200ResponseHeaders
+	ContentLength int64
+}
+
+func (response LogsStream200TexteventStreamResponse) VisitLogsStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("X-SSE-Content-Type", fmt.Sprint(response.Headers.XSSEContentType))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, might as well use io.Copy
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+
+	// Use a buffer for efficient copying and flushing
+	buf := make([]byte, 4096) // text/event-stream are usually very small messages
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return werr
+			}
+			flusher.Flush() // Flush after each write
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil // End of file, no error
+			}
+			return err
+		}
+	}
+}
+
+type ProcessExecRequestObject struct {
+	Body *ProcessExecJSONRequestBody
+}
+
+type ProcessExecResponseObject interface {
+	VisitProcessExecResponse(w http.ResponseWriter) error
+}
+
+type ProcessExec200JSONResponse ProcessExecResult
+
+func (response ProcessExec200JSONResponse) VisitProcessExecResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessExec400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ProcessExec400JSONResponse) VisitProcessExecResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessExec500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ProcessExec500JSONResponse) VisitProcessExecResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessSpawnRequestObject struct {
+	Body *ProcessSpawnJSONRequestBody
+}
+
+type ProcessSpawnResponseObject interface {
+	VisitProcessSpawnResponse(w http.ResponseWriter) error
+}
+
+type ProcessSpawn200JSONResponse ProcessSpawnResult
+
+func (response ProcessSpawn200JSONResponse) VisitProcessSpawnResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessSpawn400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ProcessSpawn400JSONResponse) VisitProcessSpawnResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessSpawn500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ProcessSpawn500JSONResponse) VisitProcessSpawnResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessKillRequestObject struct {
+	ProcessId openapi_types.UUID `json:"process_id"`
+	Body      *ProcessKillJSONRequestBody
+}
+
+type ProcessKillResponseObject interface {
+	VisitProcessKillResponse(w http.ResponseWriter) error
+}
+
+type ProcessKill200JSONResponse OkResponse
+
+func (response ProcessKill200JSONResponse) VisitProcessKillResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessKill400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ProcessKill400JSONResponse) VisitProcessKillResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessKill404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response ProcessKill404JSONResponse) VisitProcessKillResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessKill500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ProcessKill500JSONResponse) VisitProcessKillResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStatusRequestObject struct {
+	ProcessId openapi_types.UUID `json:"process_id"`
+}
+
+type ProcessStatusResponseObject interface {
+	VisitProcessStatusResponse(w http.ResponseWriter) error
+}
+
+type ProcessStatus200JSONResponse ProcessStatus
+
+func (response ProcessStatus200JSONResponse) VisitProcessStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStatus400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ProcessStatus400JSONResponse) VisitProcessStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStatus404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response ProcessStatus404JSONResponse) VisitProcessStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStatus500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ProcessStatus500JSONResponse) VisitProcessStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStdinRequestObject struct {
+	ProcessId openapi_types.UUID `json:"process_id"`
+	Body      *ProcessStdinJSONRequestBody
+}
+
+type ProcessStdinResponseObject interface {
+	VisitProcessStdinResponse(w http.ResponseWriter) error
+}
+
+type ProcessStdin200JSONResponse ProcessStdinResult
+
+func (response ProcessStdin200JSONResponse) VisitProcessStdinResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStdin400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ProcessStdin400JSONResponse) VisitProcessStdinResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStdin404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response ProcessStdin404JSONResponse) VisitProcessStdinResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStdin500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ProcessStdin500JSONResponse) VisitProcessStdinResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStdoutStreamRequestObject struct {
+	ProcessId openapi_types.UUID `json:"process_id"`
+}
+
+type ProcessStdoutStreamResponseObject interface {
+	VisitProcessStdoutStreamResponse(w http.ResponseWriter) error
+}
+
+type ProcessStdoutStream200ResponseHeaders struct {
+	XSSEContentType string
+}
+
+type ProcessStdoutStream200TexteventStreamResponse struct {
+	Body          io.Reader
+	Headers       ProcessStdoutStream200ResponseHeaders
+	ContentLength int64
+}
+
+func (response ProcessStdoutStream200TexteventStreamResponse) VisitProcessStdoutStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "text/event-stream")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.Header().Set("X-SSE-Content-Type", fmt.Sprint(response.Headers.XSSEContentType))
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		// If w doesn't support flushing, might as well use io.Copy
+		_, err := io.Copy(w, response.Body)
+		return err
+	}
+
+	// Use a buffer for efficient copying and flushing
+	buf := make([]byte, 4096) // text/event-stream are usually very small messages
+	for {
+		n, err := response.Body.Read(buf)
+		if n > 0 {
+			if _, werr := w.Write(buf[:n]); werr != nil {
+				return werr
+			}
+			flusher.Flush() // Flush after each write
+		}
+		if err != nil {
+			if err == io.EOF {
+				return nil // End of file, no error
+			}
+			return err
+		}
+	}
+}
+
+type ProcessStdoutStream400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ProcessStdoutStream400JSONResponse) VisitProcessStdoutStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStdoutStream404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response ProcessStdoutStream404JSONResponse) VisitProcessStdoutStreamResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ProcessStdoutStream500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ProcessStdoutStream500JSONResponse) VisitProcessStdoutStreamResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 
@@ -4812,6 +7346,9 @@ type StrictServerInterface interface {
 	// Delete a file
 	// (PUT /fs/delete_file)
 	DeleteFile(ctx context.Context, request DeleteFileRequestObject) (DeleteFileResponseObject, error)
+	// Download a directory as a ZIP archive
+	// (GET /fs/download_dir_zip)
+	DownloadDirZip(ctx context.Context, request DownloadDirZipRequestObject) (DownloadDirZipResponseObject, error)
 	// Get information about a file or directory
 	// (GET /fs/file_info)
 	FileInfo(ctx context.Context, request FileInfoRequestObject) (FileInfoResponseObject, error)
@@ -4827,6 +7364,12 @@ type StrictServerInterface interface {
 	// Set file or directory permissions/ownership
 	// (PUT /fs/set_file_permissions)
 	SetFilePermissions(ctx context.Context, request SetFilePermissionsRequestObject) (SetFilePermissionsResponseObject, error)
+	// Upload one or more files
+	// (POST /fs/upload)
+	UploadFiles(ctx context.Context, request UploadFilesRequestObject) (UploadFilesResponseObject, error)
+	// Upload a zip archive and extract it
+	// (POST /fs/upload_zip)
+	UploadZip(ctx context.Context, request UploadZipRequestObject) (UploadZipResponseObject, error)
 	// Watch a directory for changes
 	// (POST /fs/watch)
 	StartFsWatch(ctx context.Context, request StartFsWatchRequestObject) (StartFsWatchResponseObject, error)
@@ -4839,6 +7382,27 @@ type StrictServerInterface interface {
 	// Write or create a file
 	// (PUT /fs/write_file)
 	WriteFile(ctx context.Context, request WriteFileRequestObject) (WriteFileResponseObject, error)
+	// Subscribe to logs via SSE
+	// (GET /logs/stream)
+	LogsStream(ctx context.Context, request LogsStreamRequestObject) (LogsStreamResponseObject, error)
+	// Execute a command synchronously (optional streaming)
+	// (POST /process/exec)
+	ProcessExec(ctx context.Context, request ProcessExecRequestObject) (ProcessExecResponseObject, error)
+	// Execute a command asynchronously
+	// (POST /process/spawn)
+	ProcessSpawn(ctx context.Context, request ProcessSpawnRequestObject) (ProcessSpawnResponseObject, error)
+	// Send signal to process
+	// (POST /process/{process_id}/kill)
+	ProcessKill(ctx context.Context, request ProcessKillRequestObject) (ProcessKillResponseObject, error)
+	// Get process status
+	// (GET /process/{process_id}/status)
+	ProcessStatus(ctx context.Context, request ProcessStatusRequestObject) (ProcessStatusResponseObject, error)
+	// Write to process stdin
+	// (POST /process/{process_id}/stdin)
+	ProcessStdin(ctx context.Context, request ProcessStdinRequestObject) (ProcessStdinResponseObject, error)
+	// Stream process stdout/stderr (SSE)
+	// (GET /process/{process_id}/stdout/stream)
+	ProcessStdoutStream(ctx context.Context, request ProcessStdoutStreamRequestObject) (ProcessStdoutStreamResponseObject, error)
 	// Delete a previously recorded video file
 	// (POST /recording/delete)
 	DeleteRecording(ctx context.Context, request DeleteRecordingRequestObject) (DeleteRecordingResponseObject, error)
@@ -5040,6 +7604,32 @@ func (sh *strictHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// DownloadDirZip operation middleware
+func (sh *strictHandler) DownloadDirZip(w http.ResponseWriter, r *http.Request, params DownloadDirZipParams) {
+	var request DownloadDirZipRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DownloadDirZip(ctx, request.(DownloadDirZipRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DownloadDirZip")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DownloadDirZipResponseObject); ok {
+		if err := validResponse.VisitDownloadDirZipResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // FileInfo operation middleware
 func (sh *strictHandler) FileInfo(w http.ResponseWriter, r *http.Request, params FileInfoParams) {
 	var request FileInfoRequestObject
@@ -5180,6 +7770,68 @@ func (sh *strictHandler) SetFilePermissions(w http.ResponseWriter, r *http.Reque
 	}
 }
 
+// UploadFiles operation middleware
+func (sh *strictHandler) UploadFiles(w http.ResponseWriter, r *http.Request) {
+	var request UploadFilesRequestObject
+
+	if reader, err := r.MultipartReader(); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode multipart body: %w", err))
+		return
+	} else {
+		request.Body = reader
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UploadFiles(ctx, request.(UploadFilesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UploadFiles")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UploadFilesResponseObject); ok {
+		if err := validResponse.VisitUploadFilesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UploadZip operation middleware
+func (sh *strictHandler) UploadZip(w http.ResponseWriter, r *http.Request) {
+	var request UploadZipRequestObject
+
+	if reader, err := r.MultipartReader(); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode multipart body: %w", err))
+		return
+	} else {
+		request.Body = reader
+	}
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UploadZip(ctx, request.(UploadZipRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UploadZip")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UploadZipResponseObject); ok {
+		if err := validResponse.VisitUploadZipResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // StartFsWatch operation middleware
 func (sh *strictHandler) StartFsWatch(w http.ResponseWriter, r *http.Request) {
 	var request StartFsWatchRequestObject
@@ -5284,6 +7936,212 @@ func (sh *strictHandler) WriteFile(w http.ResponseWriter, r *http.Request, param
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(WriteFileResponseObject); ok {
 		if err := validResponse.VisitWriteFileResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LogsStream operation middleware
+func (sh *strictHandler) LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams) {
+	var request LogsStreamRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.LogsStream(ctx, request.(LogsStreamRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LogsStream")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LogsStreamResponseObject); ok {
+		if err := validResponse.VisitLogsStreamResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProcessExec operation middleware
+func (sh *strictHandler) ProcessExec(w http.ResponseWriter, r *http.Request) {
+	var request ProcessExecRequestObject
+
+	var body ProcessExecJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProcessExec(ctx, request.(ProcessExecRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProcessExec")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProcessExecResponseObject); ok {
+		if err := validResponse.VisitProcessExecResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProcessSpawn operation middleware
+func (sh *strictHandler) ProcessSpawn(w http.ResponseWriter, r *http.Request) {
+	var request ProcessSpawnRequestObject
+
+	var body ProcessSpawnJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProcessSpawn(ctx, request.(ProcessSpawnRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProcessSpawn")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProcessSpawnResponseObject); ok {
+		if err := validResponse.VisitProcessSpawnResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProcessKill operation middleware
+func (sh *strictHandler) ProcessKill(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID) {
+	var request ProcessKillRequestObject
+
+	request.ProcessId = processId
+
+	var body ProcessKillJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProcessKill(ctx, request.(ProcessKillRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProcessKill")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProcessKillResponseObject); ok {
+		if err := validResponse.VisitProcessKillResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProcessStatus operation middleware
+func (sh *strictHandler) ProcessStatus(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID) {
+	var request ProcessStatusRequestObject
+
+	request.ProcessId = processId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProcessStatus(ctx, request.(ProcessStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProcessStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProcessStatusResponseObject); ok {
+		if err := validResponse.VisitProcessStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProcessStdin operation middleware
+func (sh *strictHandler) ProcessStdin(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID) {
+	var request ProcessStdinRequestObject
+
+	request.ProcessId = processId
+
+	var body ProcessStdinJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProcessStdin(ctx, request.(ProcessStdinRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProcessStdin")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProcessStdinResponseObject); ok {
+		if err := validResponse.VisitProcessStdinResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ProcessStdoutStream operation middleware
+func (sh *strictHandler) ProcessStdoutStream(w http.ResponseWriter, r *http.Request, processId openapi_types.UUID) {
+	var request ProcessStdoutStreamRequestObject
+
+	request.ProcessId = processId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ProcessStdoutStream(ctx, request.(ProcessStdoutStreamRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ProcessStdoutStream")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ProcessStdoutStreamResponseObject); ok {
+		if err := validResponse.VisitProcessStdoutStreamResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -5437,54 +8295,82 @@ func (sh *strictHandler) StopRecording(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"//+ThhMPQj4AAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

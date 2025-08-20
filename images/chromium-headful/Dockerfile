@@ -1,9 +1,24 @@
+FROM docker.io/golang:1.25.0 AS server-builder
+WORKDIR /workspace/server
+
+ARG TARGETOS
+ARG TARGETARCH
+ENV CGO_ENABLED=0
+
+COPY server/go.mod ./
+COPY server/go.sum ./
+RUN go mod download
+
+COPY server/ .
+RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -ldflags="-s -w" -o /out/kernel-images-api ./cmd/api
+
 # webrtc client
 FROM node:22-bullseye-slim AS client
 WORKDIR /src
-COPY client/package*.json ./
+COPY images/chromium-headful/client/package*.json ./
 RUN npm install
-COPY client/ .
+COPY images/chromium-headful/client/ .
 RUN npm run build
 
 # xorg dependencies
@@ -15,7 +30,7 @@ RUN set -eux; \
     apt-get install -y \
     git gcc pkgconf autoconf automake libtool make xorg-dev xutils-dev \
     && rm -rf /var/lib/apt/lists/*;
-COPY xorg-deps/ /xorg/
+COPY images/chromium-headful/xorg-deps/ /xorg/
 # build xf86-video-dummy v0.3.8 with RandR support
 RUN set -eux; \
     cd xf86-video-dummy/v0.3.8; \
@@ -50,7 +65,6 @@ RUN apt-get update && \
     imagemagick \
     sudo \
     mutter \
-    x11vnc \
     # Python/pyenv reqs
     build-essential \
     libssl-dev  \
@@ -137,14 +151,9 @@ RUN set -eux; \
     apt-get clean -y; \
     rm -rf /var/lib/apt/lists/* /var/cache/apt/
 
-# install chromium & ncat for proxying the remote debugging port
+# install chromium and sqlite3 for debugging the cookies file
 RUN add-apt-repository -y ppa:xtradeb/apps
-RUN apt update -y && apt install -y chromium ncat
-
-# Install noVNC
-RUN git clone --branch v1.5.0 https://github.com/novnc/noVNC.git /opt/noVNC && \
-    git clone --branch v0.12.0 https://github.com/novnc/websockify /opt/noVNC/utils/websockify && \
-    ln -s /opt/noVNC/vnc.html /opt/noVNC/index.html
+RUN apt update -y && apt install -y chromium sqlite3
 
 # setup desktop env & app
 ENV DISPLAY_NUM=1
@@ -152,22 +161,24 @@ ENV HEIGHT=768
 ENV WIDTH=1024
 ENV WITHDOCKER=true
 
-COPY xorg.conf /etc/neko/xorg.conf
-COPY neko.yaml /etc/neko/neko.yaml
+COPY images/chromium-headful/xorg.conf /etc/neko/xorg.conf
+COPY images/chromium-headful/neko.yaml /etc/neko/neko.yaml
 COPY --from=neko /usr/bin/neko /usr/bin/neko
 COPY --from=client /src/dist/ /var/www
 COPY --from=xorg-deps /usr/local/lib/xorg/modules/drivers/dummy_drv.so /usr/lib/xorg/modules/drivers/dummy_drv.so
 COPY --from=xorg-deps /usr/local/lib/xorg/modules/input/neko_drv.so /usr/lib/xorg/modules/input/neko_drv.so
 
-COPY image-chromium/ /
-COPY ./wrapper.sh /wrapper.sh
+COPY images/chromium-headful/image-chromium/ /
+COPY images/chromium-headful/start-chromium.sh /images/chromium-headful/start-chromium.sh
+RUN chmod +x /images/chromium-headful/start-chromium.sh
+COPY images/chromium-headful/wrapper.sh /wrapper.sh
+COPY images/chromium-headful/supervisord.conf /etc/supervisor/supervisord.conf
+COPY images/chromium-headful/supervisor/services/ /etc/supervisor/conf.d/services/
 
-# copy the kernel-images API binary built externally
-COPY bin/kernel-images-api /usr/local/bin/kernel-images-api
+# copy the kernel-images API binary built in the builder stage
+COPY --from=server-builder /out/kernel-images-api /usr/local/bin/kernel-images-api
 ENV WITH_KERNEL_IMAGES_API=false
 
 RUN useradd -m -s /bin/bash kernel
-RUN cp -r ./user-data /home/kernel/user-data
 
 ENTRYPOINT [ "/wrapper.sh" ]
-
