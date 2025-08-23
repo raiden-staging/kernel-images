@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -146,32 +148,74 @@ func (s *ApiService) SetScreenResolution(ctx context.Context, request SetScreenR
 	// Get the WebSocket URL from the request
 	wsURL := request.WSURL
 
-	// Attempt multiple URLs if the first one fails
+	// Prepare multiple fallback URLs for different environments
+	fallbackURLs := []string{
+		// Internal container URL (direct to the WS service)
+		"ws://127.0.0.1:8080/ws?password=admin&username=kernel",
+		// Docker service name URL (for container networking)
+		"ws://browser:8080/ws?password=admin&username=kernel",
+		// Local development fallback
+		"ws://localhost:8080/ws?password=admin&username=kernel",
+	}
+
+	// Check if it's a host-based URL from production
+	isProduction := !strings.Contains(wsURL, "localhost") && !strings.Contains(wsURL, "127.0.0.1")
+
+	// For production URLs, ensure we're using the format from the Vue client logs
+	if isProduction {
+		// Parse and fix the URL if needed
+		if parsedURL, err := url.Parse(wsURL); err == nil {
+			// Remove port from host if present
+			host := parsedURL.Host
+			if hostParts := strings.Split(host, ":"); len(hostParts) > 1 {
+				parsedURL.Host = hostParts[0]
+				// Update the wsURL without the port
+				wsURL = parsedURL.String()
+				log.Info("fixed production WebSocket URL by removing port", "url", wsURL)
+			}
+		}
+	}
+
+	// Try all possible URLs
 	var conn *websocket.Conn
 	var dialErr error
 
-	// Try the provided URL first
-	log.Info("trying primary websocket URL", "url", wsURL)
+	// Create a dialer with appropriate timeouts
 	dialer := websocket.Dialer{
-		HandshakeTimeout: 5 * time.Second,
+		HandshakeTimeout: 3 * time.Second,
 	}
 
+	// First try the primary URL
+	log.Info("trying primary websocket URL", "url", wsURL)
 	conn, _, dialErr = dialer.Dial(wsURL, nil)
 
-	// If the primary URL fails, try alternate URLs
-	if dialErr != nil {
+	// If successful, use this connection
+	if dialErr == nil {
+		log.Info("successfully connected to primary WebSocket URL", "url", wsURL)
+	} else {
 		log.Warn("primary websocket URL failed", "url", wsURL, "err", dialErr)
 
-		// Try the local development URL as fallback
-		fallbackURL := "ws://localhost:8080/ws?password=admin&username=kernel"
-		if wsURL != fallbackURL {
+		// Try each fallback URL
+		for _, fallbackURL := range fallbackURLs {
+			// Don't retry the same URL
+			if fallbackURL == wsURL {
+				continue
+			}
+
 			log.Info("trying fallback websocket URL", "url", fallbackURL)
 			conn, _, dialErr = dialer.Dial(fallbackURL, nil)
+
+			if dialErr == nil {
+				log.Info("successfully connected to fallback WebSocket URL", "url", fallbackURL)
+				break
+			} else {
+				log.Warn("fallback websocket URL failed", "url", fallbackURL, "err", dialErr)
+			}
 		}
 
-		// If both attempts failed
+		// If all attempts failed
 		if dialErr != nil {
-			log.Error("all websocket connection attempts failed", "err", dialErr)
+			log.Error("all websocket connection attempts failed")
 			return SetScreenResolution500JSONResponse{
 				Message: "failed to connect to websocket server after multiple attempts",
 			}, nil
