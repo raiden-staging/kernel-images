@@ -143,27 +143,43 @@ func (s *ApiService) SetScreenResolution(ctx context.Context, request SetScreenR
 		}, nil
 	}
 
-	// Get the WebSocket URL from the request or use default
+	// Get the WebSocket URL from the request
 	wsURL := request.WSURL
-	// Fallback to default local URL if not provided
-	if wsURL == "" {
-		wsURL = "ws://localhost:8080/ws?password=admin&username=kernel"
-	}
 
-	log.Info("using websocket URL", "url", wsURL)
+	// Attempt multiple URLs if the first one fails
+	var conn *websocket.Conn
+	var dialErr error
 
+	// Try the provided URL first
+	log.Info("trying primary websocket URL", "url", wsURL)
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 5 * time.Second,
 	}
 
-	conn, _, err := dialer.Dial(wsURL, nil)
-	if err != nil {
-		log.Error("failed to connect to websocket", "err", err)
-		return SetScreenResolution500JSONResponse{
-			Message: "failed to connect to websocket server",
-		}, nil
+	conn, _, dialErr = dialer.Dial(wsURL, nil)
+
+	// If the primary URL fails, try alternate URLs
+	if dialErr != nil {
+		log.Warn("primary websocket URL failed", "url", wsURL, "err", dialErr)
+
+		// Try the local development URL as fallback
+		fallbackURL := "ws://localhost:8080/ws?password=admin&username=kernel"
+		if wsURL != fallbackURL {
+			log.Info("trying fallback websocket URL", "url", fallbackURL)
+			conn, _, dialErr = dialer.Dial(fallbackURL, nil)
+		}
+
+		// If both attempts failed
+		if dialErr != nil {
+			log.Error("all websocket connection attempts failed", "err", dialErr)
+			return SetScreenResolution500JSONResponse{
+				Message: "failed to connect to websocket server after multiple attempts",
+			}, nil
+		}
 	}
+
 	defer conn.Close()
+	log.Info("successfully connected to websocket", "url", wsURL)
 
 	// Prepare message
 	message := map[string]interface{}{
