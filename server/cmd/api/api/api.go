@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
@@ -36,17 +40,65 @@ var _ oapi.StrictServerInterface = (*ApiService)(nil)
 
 // SetScreenResolution endpoint
 // (GET /screen/resolution)
+// IsWebSocketAvailable checks if a WebSocket connection can be established to the given URL
+func isWebSocketAvailable(wsURL string) bool {
+	// First check if we can establish a TCP connection by parsing the URL
+	u, err := url.Parse(wsURL)
+	if err != nil {
+		return false
+	}
+
+	// Get host and port
+	host := u.Host
+	if !strings.Contains(host, ":") {
+		// Add default port based on scheme
+		if u.Scheme == "ws" {
+			host = host + ":80"
+		} else if u.Scheme == "wss" {
+			host = host + ":443"
+		}
+	}
+
+	// Try TCP connection
+	conn, err := net.DialTimeout("tcp", host, 200*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+
+	// Try WebSocket connection
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 200 * time.Millisecond,
+	}
+
+	wsConn, _, err := dialer.Dial(wsURL, nil)
+	if err != nil {
+		return false
+	}
+	defer wsConn.Close()
+
+	return true
+}
+
 // GetWebSocketURL determines the appropriate WebSocket URL from an HTTP request
 // It can be used in tests
 func getWebSocketURL(r *http.Request) string {
-	// Default fallback URL for local development
-	fallbackURL := "ws://localhost:8080/ws?password=admin&username=kernel"
+	// Default fallback URL for local development with auth parameters
+	localURL := "ws://localhost:8080/ws?password=admin&username=kernel"
 
+	// In tests or other cases where request is nil
 	if r == nil {
-		return fallbackURL
+		return localURL
 	}
 
-	// Try to build the WebSocket URL from the current request (similar to Vue client logic)
+	// Try the local URL first
+	if isWebSocketAvailable(localURL) {
+		log := logger.FromContext(r.Context())
+		log.Info("using local WebSocket URL", "url", localURL)
+		return localURL
+	}
+
+	// Local URL not available, build URL from request
 	scheme := "ws"
 	if r.TLS != nil {
 		scheme = "wss"
@@ -55,24 +107,24 @@ func getWebSocketURL(r *http.Request) string {
 	// Get host from request header
 	host := r.Host
 	if host == "" {
-		return fallbackURL
+		return localURL // Fall back to local if host is missing
 	}
 
-	// Get base path from the request URL
+	// Determine the base path by removing screen/resolution if present
 	basePath := r.URL.Path
-
-	// Remove trailing slashes from path
 	for len(basePath) > 0 && basePath[len(basePath)-1] == '/' {
 		basePath = basePath[:len(basePath)-1]
 	}
 
-	// Remove /screen/resolution from the path to get the base path
 	if len(basePath) >= 18 && basePath[len(basePath)-18:] == "/screen/resolution" {
 		basePath = basePath[:len(basePath)-18]
 	}
 
-	// Construct WebSocket URL - always use admin credentials
+	// Construct WebSocket URL with auth parameters
 	wsURL := fmt.Sprintf("%s://%s%s/ws?password=admin&username=kernel", scheme, host, basePath)
+
+	log := logger.FromContext(r.Context())
+	log.Info("using host-based WebSocket URL", "url", wsURL)
 
 	return wsURL
 }
