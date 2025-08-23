@@ -178,7 +178,18 @@ func (s *ApiService) SetScreenResolution(ctx context.Context, request SetScreenR
 		}
 	}
 
-	defer conn.Close()
+	// Ensure connection is closed when we're done, like wscat -c '...' -x '...' would do
+	defer func() {
+		log.Info("closing websocket connection")
+		// Send close message for clean shutdown
+		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
+		err := conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
+		if err != nil {
+			log.Warn("failed to send close message", "err", err)
+		}
+		conn.Close()
+	}()
+
 	log.Info("successfully connected to websocket", "url", wsURL)
 
 	// Prepare message
@@ -210,8 +221,8 @@ func (s *ApiService) SetScreenResolution(ctx context.Context, request SetScreenR
 		}, nil
 	}
 
-	// Wait for response (optional, but might be good to ensure it worked)
-	conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	// Wait for response with short timeout
+	conn.SetReadDeadline(time.Now().Add(1 * time.Second))
 	_, response, err := conn.ReadMessage()
 	if err != nil {
 		log.Warn("did not receive websocket response, but proceeding", "err", err)
