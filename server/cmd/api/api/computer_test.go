@@ -1,6 +1,9 @@
 package api
 
 import (
+	"crypto/tls"
+	"net/http"
+	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -108,4 +111,69 @@ func TestScreenResolutionParameterValidation(t *testing.T) {
 // Helper function to create int pointer
 func intPtr(i int) *int {
 	return &i
+}
+
+func TestGetWebSocketURL(t *testing.T) {
+	testCases := []struct {
+		name        string
+		request     *http.Request
+		expectedURL string
+	}{
+		{
+			name:        "nil request",
+			request:     nil,
+			expectedURL: "ws://localhost:8080/ws?password=admin&username=kernel",
+		},
+		{
+			name: "standard http request",
+			request: &http.Request{
+				Host: "example.com",
+				URL: &url.URL{
+					Path: "/screen/resolution",
+				},
+				TLS: nil,
+			},
+			expectedURL: "ws://example.com/ws?password=admin&username=kernel",
+		},
+		{
+			name: "https request",
+			request: &http.Request{
+				Host: "example.com",
+				URL: &url.URL{
+					Path: "/screen/resolution",
+				},
+				TLS: &tls.ConnectionState{},
+			},
+			expectedURL: "wss://example.com/ws?password=admin&username=kernel",
+		},
+		{
+			name: "request with path prefix",
+			request: &http.Request{
+				Host: "example.com",
+				URL: &url.URL{
+					Path: "/api/v1/screen/resolution",
+				},
+				TLS: nil,
+			},
+			expectedURL: "ws://example.com/api/v1/ws?password=admin&username=kernel",
+		},
+		{
+			name: "request with trailing slash",
+			request: &http.Request{
+				Host: "example.com",
+				URL: &url.URL{
+					Path: "/api/v1/screen/resolution/",
+				},
+				TLS: nil,
+			},
+			expectedURL: "ws://example.com/api/v1/ws?password=admin&username=kernel",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			url := getWebSocketURL(tc.request)
+			assert.Equal(t, tc.expectedURL, url)
+		})
+	}
 }
