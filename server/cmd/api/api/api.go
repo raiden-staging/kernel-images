@@ -83,31 +83,42 @@ func isWebSocketAvailable(wsURL string) bool {
 // GetWebSocketURL determines the appropriate WebSocket URL from an HTTP request
 // It can be used in tests
 func getWebSocketURL(r *http.Request) string {
-	// Default fallback URL for local development with auth parameters
-	localURL := "ws://localhost:8080/ws?password=admin&username=kernel"
+	// Auth parameters for WS connection
+	authParams := "?password=admin&username=kernel"
+
+	// Default local development URL - will try only in local dev
+	localDevURL := "ws://localhost:8080/ws" + authParams
 
 	// In tests or other cases where request is nil
 	if r == nil {
-		return localURL
+		return localDevURL
 	}
 
-	// Try the local URL first
-	if isWebSocketAvailable(localURL) {
-		log := logger.FromContext(r.Context())
-		log.Info("using local WebSocket URL", "url", localURL)
-		return localURL
-	}
+	log := logger.FromContext(r.Context())
 
-	// Local URL not available, build URL from request
+	// Get URL components from the request
 	scheme := "ws"
-	if r.TLS != nil {
+	if r.TLS != nil || strings.HasPrefix(r.Proto, "HTTPS") || r.Header.Get("X-Forwarded-Proto") == "https" {
 		scheme = "wss"
 	}
 
-	// Get host from request header
+	// Get host from request header, strip the port if present
+	// This is crucial for production where we don't want ports in WS URLs
 	host := r.Host
 	if host == "" {
-		return localURL // Fall back to local if host is missing
+		log.Warn("empty host in request, using fallback mechanisms")
+
+		// Try the internal WebSocket endpoint
+		internalURL := "ws://127.0.0.1:8080/ws" + authParams
+		log.Info("trying internal WebSocket URL", "url", internalURL)
+
+		// If it fails, return the URL anyway since we need to return something
+		return internalURL
+	}
+
+	// Remove port from host if present (critical for production)
+	if hostParts := strings.Split(host, ":"); len(hostParts) > 1 {
+		host = hostParts[0]
 	}
 
 	// Determine the base path by removing screen/resolution if present
@@ -120,12 +131,18 @@ func getWebSocketURL(r *http.Request) string {
 		basePath = basePath[:len(basePath)-18]
 	}
 
-	// Construct WebSocket URL with auth parameters
-	wsURL := fmt.Sprintf("%s://%s%s/ws?password=admin&username=kernel", scheme, host, basePath)
+	// Construct WebSocket URL with auth parameters, but NO PORT
+	wsURL := fmt.Sprintf("%s://%s%s/ws%s", scheme, host, basePath, authParams)
 
-	log := logger.FromContext(r.Context())
+	// For localhost requests in development, default to the known working port
+	if strings.Contains(host, "localhost") {
+		// In development, we use a specific port for WebSocket
+		wsURL = fmt.Sprintf("ws://localhost:8080/ws%s", authParams)
+		log.Info("localhost detected, using development WebSocket URL", "url", wsURL)
+		return wsURL
+	}
+
 	log.Info("using host-based WebSocket URL", "url", wsURL)
-
 	return wsURL
 }
 
