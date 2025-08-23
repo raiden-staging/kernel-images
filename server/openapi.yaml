@@ -748,16 +748,16 @@ paths:
           required: true
           schema:
             type: integer
-            minimum: 200
-            maximum: 8000
+            minimum: 640
+            maximum: 7680
           description: Screen width in pixels
         - name: height
           in: query
           required: true
           schema:
             type: integer
-            minimum: 200
-            maximum: 8000
+            minimum: 480
+            maximum: 4320
           description: Screen height in pixels
         - name: rate
           in: query

@@ -36,55 +36,11 @@ var _ oapi.StrictServerInterface = (*ApiService)(nil)
 
 // SetScreenResolution endpoint
 // (GET /screen/resolution)
-// GetWebSocketURL determines the appropriate WebSocket URL from an HTTP request
-// It can be used in tests
-func getWebSocketURL(r *http.Request) string {
-	// Default fallback URL for local development
-	fallbackURL := "ws://localhost:8080/ws?password=admin&username=kernel"
-
-	if r == nil {
-		return fallbackURL
-	}
-
-	// Try to build the WebSocket URL from the current request (similar to Vue client logic)
-	scheme := "ws"
-	if r.TLS != nil {
-		scheme = "wss"
-	}
-
-	// Get host from request header
-	host := r.Host
-	if host == "" {
-		return fallbackURL
-	}
-
-	// Get base path from the request URL
-	basePath := r.URL.Path
-
-	// Remove trailing slashes from path
-	for len(basePath) > 0 && basePath[len(basePath)-1] == '/' {
-		basePath = basePath[:len(basePath)-1]
-	}
-
-	// Remove /screen/resolution from the path to get the base path
-	if len(basePath) >= 18 && basePath[len(basePath)-18:] == "/screen/resolution" {
-		basePath = basePath[:len(basePath)-18]
-	}
-
-	// Construct WebSocket URL - always use admin credentials
-	wsURL := fmt.Sprintf("%s://%s%s/ws?password=admin&username=kernel", scheme, host, basePath)
-
-	return wsURL
-}
-
 func (s *ApiService) SetScreenResolutionHandler(w http.ResponseWriter, r *http.Request) {
 	// Parse query parameters
 	width := 0
 	height := 0
 	var rate *int
-
-	// Calculate the WebSocket URL from the request
-	wsURL := getWebSocketURL(r)
 
 	// Parse width
 	widthStr := r.URL.Query().Get("width")
@@ -127,7 +83,6 @@ func (s *ApiService) SetScreenResolutionHandler(w http.ResponseWriter, r *http.R
 		Width:  width,
 		Height: height,
 		Rate:   rate,
-		WSURL:  wsURL,
 	}
 
 	// Call the actual implementation

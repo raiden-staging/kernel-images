@@ -1,9 +1,6 @@
 package api
 
 import (
-	"crypto/tls"
-	"net/http"
-	"net/url"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -39,7 +36,7 @@ func TestScreenResolutionParameterValidation(t *testing.T) {
 			height:      1080,
 			rate:        nil,
 			expectError: true,
-			errorMsg:    "width must be between 200 and 8000",
+			errorMsg:    "width must be between 640 and 7680",
 		},
 		{
 			name:        "width too large",
@@ -47,7 +44,7 @@ func TestScreenResolutionParameterValidation(t *testing.T) {
 			height:      1080,
 			rate:        nil,
 			expectError: true,
-			errorMsg:    "width must be between 200 and 8000",
+			errorMsg:    "width must be between 640 and 7680",
 		},
 		{
 			name:        "height too small",
@@ -55,7 +52,7 @@ func TestScreenResolutionParameterValidation(t *testing.T) {
 			height:      100,
 			rate:        nil,
 			expectError: true,
-			errorMsg:    "height must be between 200 and 8000",
+			errorMsg:    "height must be between 480 and 4320",
 		},
 		{
 			name:        "height too large",
@@ -63,7 +60,7 @@ func TestScreenResolutionParameterValidation(t *testing.T) {
 			height:      9000,
 			rate:        nil,
 			expectError: true,
-			errorMsg:    "height must be between 200 and 8000",
+			errorMsg:    "height must be between 480 and 4320",
 		},
 		{
 			name:        "rate too small",
@@ -93,11 +90,11 @@ func TestScreenResolutionParameterValidation(t *testing.T) {
 			}
 
 			// Just test the validation part
-			if req.Width < 200 || req.Width > 8000 {
+			if req.Width < 640 || req.Width > 7680 {
 				assert.True(t, tc.expectError, "Expected validation error for width")
 			}
 
-			if req.Height < 200 || req.Height > 8000 {
+			if req.Height < 480 || req.Height > 4320 {
 				assert.True(t, tc.expectError, "Expected validation error for height")
 			}
 
@@ -111,69 +108,4 @@ func TestScreenResolutionParameterValidation(t *testing.T) {
 // Helper function to create int pointer
 func intPtr(i int) *int {
 	return &i
-}
-
-func TestGetWebSocketURL(t *testing.T) {
-	testCases := []struct {
-		name        string
-		request     *http.Request
-		expectedURL string
-	}{
-		{
-			name:        "nil request",
-			request:     nil,
-			expectedURL: "ws://localhost:8080/ws?password=admin&username=kernel",
-		},
-		{
-			name: "standard http request",
-			request: &http.Request{
-				Host: "example.com",
-				URL: &url.URL{
-					Path: "/screen/resolution",
-				},
-				TLS: nil,
-			},
-			expectedURL: "ws://example.com/ws?password=admin&username=kernel",
-		},
-		{
-			name: "https request",
-			request: &http.Request{
-				Host: "example.com",
-				URL: &url.URL{
-					Path: "/screen/resolution",
-				},
-				TLS: &tls.ConnectionState{},
-			},
-			expectedURL: "wss://example.com/ws?password=admin&username=kernel",
-		},
-		{
-			name: "request with path prefix",
-			request: &http.Request{
-				Host: "example.com",
-				URL: &url.URL{
-					Path: "/api/v1/screen/resolution",
-				},
-				TLS: nil,
-			},
-			expectedURL: "ws://example.com/api/v1/ws?password=admin&username=kernel",
-		},
-		{
-			name: "request with trailing slash",
-			request: &http.Request{
-				Host: "example.com",
-				URL: &url.URL{
-					Path: "/api/v1/screen/resolution/",
-				},
-				TLS: nil,
-			},
-			expectedURL: "ws://example.com/api/v1/ws?password=admin&username=kernel",
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			url := getWebSocketURL(tc.request)
-			assert.Equal(t, tc.expectedURL, url)
-		})
-	}
 }
