@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -28,7 +31,89 @@ type ApiService struct {
 	procs  map[string]*processHandle
 }
 
+// We're extending the StrictServerInterface to include our new endpoint
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
+
+// SetScreenResolution endpoint
+// (GET /screen/resolution)
+func (s *ApiService) SetScreenResolutionHandler(w http.ResponseWriter, r *http.Request) {
+	// Parse query parameters
+	width := 0
+	height := 0
+	var rate *int
+
+	// Parse width
+	widthStr := r.URL.Query().Get("width")
+	if widthStr == "" {
+		http.Error(w, "missing required query parameter: width", http.StatusBadRequest)
+		return
+	}
+	var err error
+	width, err = strconv.Atoi(widthStr)
+	if err != nil {
+		http.Error(w, "invalid width parameter: must be an integer", http.StatusBadRequest)
+		return
+	}
+
+	// Parse height
+	heightStr := r.URL.Query().Get("height")
+	if heightStr == "" {
+		http.Error(w, "missing required query parameter: height", http.StatusBadRequest)
+		return
+	}
+	height, err = strconv.Atoi(heightStr)
+	if err != nil {
+		http.Error(w, "invalid height parameter: must be an integer", http.StatusBadRequest)
+		return
+	}
+
+	// Parse optional rate parameter
+	rateStr := r.URL.Query().Get("rate")
+	if rateStr != "" {
+		rateVal, err := strconv.Atoi(rateStr)
+		if err != nil {
+			http.Error(w, "invalid rate parameter: must be an integer", http.StatusBadRequest)
+			return
+		}
+		rate = &rateVal
+	}
+
+	// Create request object
+	reqObj := SetScreenResolutionRequestObject{
+		Width:  width,
+		Height: height,
+		Rate:   rate,
+	}
+
+	// Call the actual implementation
+	resp, err := s.SetScreenResolution(r.Context(), reqObj)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// Handle different response types
+	switch r := resp.(type) {
+	case SetScreenResolution200JSONResponse:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(r)
+	case SetScreenResolution400JSONResponse:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(r)
+	case SetScreenResolution409JSONResponse:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusConflict)
+		json.NewEncoder(w).Encode(r)
+	case SetScreenResolution500JSONResponse:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(r)
+	default:
+		http.Error(w, "unexpected response type", http.StatusInternalServerError)
+	}
+}
 
 func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory) (*ApiService, error) {
 	switch {
