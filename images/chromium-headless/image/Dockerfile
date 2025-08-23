@@ -1,3 +1,21 @@
+FROM docker.io/golang:1.25.0 AS server-builder
+WORKDIR /workspace/server
+
+# Allow cross-compilation when building with BuildKit platforms
+ARG TARGETOS
+ARG TARGETARCH
+ENV CGO_ENABLED=0
+
+# Go module dependencies first for better layer caching
+COPY server/go.mod ./
+COPY server/go.sum ./
+RUN go mod download
+
+# Copy the rest of the server source and build the binary
+COPY server/ .
+RUN GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
+    go build -ldflags="-s -w" -o /out/kernel-images-api ./cmd/api
+
 FROM docker.io/ubuntu:22.04
 
 RUN set -xe; \
@@ -29,10 +47,12 @@ RUN set -xe; \
     dbus-x11 \
     xvfb \
     x11-utils \
-    software-properties-common;
+    software-properties-common \
+    supervisor;
 
+# install chromium and sqlite3 for debugging the cookies file
 RUN add-apt-repository -y ppa:xtradeb/apps
-RUN apt update -y && apt install -y chromium ncat
+RUN apt update -y && apt install -y chromium sqlite3
 
 # Install FFmpeg (latest static build) for the recording server
 RUN set -eux; \
@@ -50,11 +70,20 @@ RUN apt-get -yqq purge upower || true && rm -rf /var/lib/apt/lists/*
 # Create a non-root user with a home directory
 RUN useradd -m -s /bin/bash kernel
 
-COPY ./xvfb_startup.sh /usr/bin/xvfb_startup.sh
+# Xvfb helper and supervisor-managed start scripts
+COPY images/chromium-headless/image/start-chromium.sh /images/chromium-headless/image/start-chromium.sh
+COPY images/chromium-headless/image/start-xvfb.sh /images/chromium-headless/image/start-xvfb.sh
+RUN chmod +x /images/chromium-headless/image/start-chromium.sh /images/chromium-headless/image/start-xvfb.sh
 
 # Wrapper script set environment
-COPY ./wrapper.sh /usr/bin/wrapper.sh
+COPY images/chromium-headless/image/wrapper.sh /usr/bin/wrapper.sh
 
-# Copy the kernel-images API binary built during the build process
-COPY bin/kernel-images-api /usr/local/bin/kernel-images-api
+# Supervisord configuration
+COPY images/chromium-headless/image/supervisord.conf /etc/supervisor/supervisord.conf
+COPY images/chromium-headless/image/supervisor/services/ /etc/supervisor/conf.d/services/
+
+# Copy the kernel-images API binary built in the builder stage
+COPY --from=server-builder /out/kernel-images-api /usr/local/bin/kernel-images-api
 ENV WITH_KERNEL_IMAGES_API=false
+
+ENTRYPOINT [ "/usr/bin/wrapper.sh" ]
