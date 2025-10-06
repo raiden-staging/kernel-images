@@ -8,9 +8,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/onkernel/kernel-images/server/lib/devtoolsproxy"
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
+	"github.com/onkernel/kernel-images/server/lib/scaletozero"
 )
 
 type ApiService struct {
@@ -26,16 +28,23 @@ type ApiService struct {
 	// Process management
 	procMu sync.RWMutex
 	procs  map[string]*processHandle
+
+	// DevTools upstream manager (Chromium supervisord log tailer)
+	upstreamMgr *devtoolsproxy.UpstreamManager
+
+	stz scaletozero.Controller
 }
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
 
-func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory) (*ApiService, error) {
+func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller) (*ApiService, error) {
 	switch {
 	case recordManager == nil:
 		return nil, fmt.Errorf("recordManager cannot be nil")
 	case factory == nil:
 		return nil, fmt.Errorf("factory cannot be nil")
+	case upstreamMgr == nil:
+		return nil, fmt.Errorf("upstreamMgr cannot be nil")
 	}
 
 	return &ApiService{
@@ -44,6 +53,8 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		defaultRecorderID: "default",
 		watches:           make(map[string]*fsWatch),
 		procs:             make(map[string]*processHandle),
+		upstreamMgr:       upstreamMgr,
+		stz:               stz,
 	}, nil
 }
 
