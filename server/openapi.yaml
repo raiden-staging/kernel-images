@@ -310,6 +310,45 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /computer/screenshot:
+    post:
+      summary: Capture a screenshot of the host computer
+      operationId: takeScreenshot
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScreenshotRequest"
+      responses:
+        "200":
+          description: Screenshot image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /computer/type:
+    post:
+      summary: Type text on the host computer
+      operationId: typeText
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TypeTextRequest"
+      responses:
+        "200":
+          description: Text typed successfully
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /logs/stream:
     get:
       summary: Stream logs over SSE
@@ -932,6 +971,47 @@ components:
           description: Modifier keys to hold during the move
           items:
             type: string
+      additionalProperties: false
+    ScreenshotRegion:
+      type: object
+      required:
+        - x
+        - y
+        - width
+        - height
+      properties:
+        x:
+          type: integer
+          description: X coordinate of the region's top-left corner
+        y:
+          type: integer
+          description: Y coordinate of the region's top-left corner
+        width:
+          type: integer
+          description: Width of the region in pixels
+        height:
+          type: integer
+          description: Height of the region in pixels
+      additionalProperties: false
+    ScreenshotRequest:
+      type: object
+      properties:
+        region:
+          $ref: "#/components/schemas/ScreenshotRegion"
+      additionalProperties: false
+    TypeTextRequest:
+      type: object
+      required:
+        - text
+      properties:
+        text:
+          type: string
+          description: Text to type on the host computer
+        delay:
+          type: integer
+          description: Delay in milliseconds between keystrokes
+          minimum: 0
+          default: 0
       additionalProperties: false
     StartFsWatchRequest:
       type: object

@@ -377,6 +377,26 @@ type RecorderInfo struct {
 	StartedAt *time.Time `json:"started_at"`
 }
 
+// ScreenshotRegion defines model for ScreenshotRegion.
+type ScreenshotRegion struct {
+	// Height Height of the region in pixels
+	Height int `json:"height"`
+
+	// Width Width of the region in pixels
+	Width int `json:"width"`
+
+	// X X coordinate of the region's top-left corner
+	X int `json:"x"`
+
+	// Y Y coordinate of the region's top-left corner
+	Y int `json:"y"`
+}
+
+// ScreenshotRequest defines model for ScreenshotRequest.
+type ScreenshotRequest struct {
+	Region *ScreenshotRegion `json:"region,omitempty"`
+}
+
 // SetFilePermissionsRequest defines model for SetFilePermissionsRequest.
 type SetFilePermissionsRequest struct {
 	// Group New group name or GID.
@@ -423,6 +443,15 @@ type StopRecordingRequest struct {
 
 	// Id Identifier of the recorder to stop. Alphanumeric or hyphen.
 	Id *string `json:"id,omitempty"`
+}
+
+// TypeTextRequest defines model for TypeTextRequest.
+type TypeTextRequest struct {
+	// Delay Delay in milliseconds between keystrokes
+	Delay *int `json:"delay,omitempty"`
+
+	// Text Text to type on the host computer
+	Text string `json:"text"`
 }
 
 // BadRequestError defines model for BadRequestError.
@@ -536,6 +565,12 @@ type ClickMouseJSONRequestBody = ClickMouseRequest
 
 // MoveMouseJSONRequestBody defines body for MoveMouse for application/json ContentType.
 type MoveMouseJSONRequestBody = MoveMouseRequest
+
+// TakeScreenshotJSONRequestBody defines body for TakeScreenshot for application/json ContentType.
+type TakeScreenshotJSONRequestBody = ScreenshotRequest
+
+// TypeTextJSONRequestBody defines body for TypeText for application/json ContentType.
+type TypeTextJSONRequestBody = TypeTextRequest
 
 // PatchDisplayJSONRequestBody defines body for PatchDisplay for application/json ContentType.
 type PatchDisplayJSONRequestBody = PatchDisplayRequest
@@ -675,6 +710,16 @@ type ClientInterface interface {
 	MoveMouseWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	MoveMouse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TakeScreenshotWithBody request with any body
+	TakeScreenshotWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	TakeScreenshot(ctx context.Context, body TakeScreenshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TypeTextWithBody request with any body
+	TypeTextWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	TypeText(ctx context.Context, body TypeTextJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PatchDisplayWithBody request with any body
 	PatchDisplayWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -863,6 +908,54 @@ func (c *Client) MoveMouseWithBody(ctx context.Context, contentType string, body
 
 func (c *Client) MoveMouse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewMoveMouseRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) TakeScreenshotWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTakeScreenshotRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) TakeScreenshot(ctx context.Context, body TakeScreenshotJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTakeScreenshotRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) TypeTextWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTypeTextRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) TypeText(ctx context.Context, body TypeTextJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTypeTextRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1507,6 +1600,86 @@ func NewMoveMouseRequestWithBody(server string, contentType string, body io.Read
 	}
 
 	operationPath := fmt.Sprintf("/computer/move_mouse")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewTakeScreenshotRequest calls the generic TakeScreenshot builder with application/json body
+func NewTakeScreenshotRequest(server string, body TakeScreenshotJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewTakeScreenshotRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewTakeScreenshotRequestWithBody generates requests for TakeScreenshot with any type of body
+func NewTakeScreenshotRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/screenshot")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewTypeTextRequest calls the generic TypeText builder with application/json body
+func NewTypeTextRequest(server string, body TypeTextJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewTypeTextRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewTypeTextRequestWithBody generates requests for TypeText with any type of body
+func NewTypeTextRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/computer/type")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -2767,6 +2940,16 @@ type ClientWithResponsesInterface interface {
 
 	MoveMouseWithResponse(ctx context.Context, body MoveMouseJSONRequestBody, reqEditors ...RequestEditorFn) (*MoveMouseResponse, error)
 
+	// TakeScreenshotWithBodyWithResponse request with any body
+	TakeScreenshotWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TakeScreenshotResponse, error)
+
+	TakeScreenshotWithResponse(ctx context.Context, body TakeScreenshotJSONRequestBody, reqEditors ...RequestEditorFn) (*TakeScreenshotResponse, error)
+
+	// TypeTextWithBodyWithResponse request with any body
+	TypeTextWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TypeTextResponse, error)
+
+	TypeTextWithResponse(ctx context.Context, body TypeTextJSONRequestBody, reqEditors ...RequestEditorFn) (*TypeTextResponse, error)
+
 	// PatchDisplayWithBodyWithResponse request with any body
 	PatchDisplayWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchDisplayResponse, error)
 
@@ -2966,6 +3149,52 @@ func (r MoveMouseResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r MoveMouseResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type TakeScreenshotResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r TakeScreenshotResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r TakeScreenshotResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type TypeTextResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON400      *BadRequestError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r TypeTextResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r TypeTextResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -3708,6 +3937,40 @@ func (c *ClientWithResponses) MoveMouseWithResponse(ctx context.Context, body Mo
 	return ParseMoveMouseResponse(rsp)
 }
 
+// TakeScreenshotWithBodyWithResponse request with arbitrary body returning *TakeScreenshotResponse
+func (c *ClientWithResponses) TakeScreenshotWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TakeScreenshotResponse, error) {
+	rsp, err := c.TakeScreenshotWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTakeScreenshotResponse(rsp)
+}
+
+func (c *ClientWithResponses) TakeScreenshotWithResponse(ctx context.Context, body TakeScreenshotJSONRequestBody, reqEditors ...RequestEditorFn) (*TakeScreenshotResponse, error) {
+	rsp, err := c.TakeScreenshot(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTakeScreenshotResponse(rsp)
+}
+
+// TypeTextWithBodyWithResponse request with arbitrary body returning *TypeTextResponse
+func (c *ClientWithResponses) TypeTextWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TypeTextResponse, error) {
+	rsp, err := c.TypeTextWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTypeTextResponse(rsp)
+}
+
+func (c *ClientWithResponses) TypeTextWithResponse(ctx context.Context, body TypeTextJSONRequestBody, reqEditors ...RequestEditorFn) (*TypeTextResponse, error) {
+	rsp, err := c.TypeText(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTypeTextResponse(rsp)
+}
+
 // PatchDisplayWithBodyWithResponse request with arbitrary body returning *PatchDisplayResponse
 func (c *ClientWithResponses) PatchDisplayWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchDisplayResponse, error) {
 	rsp, err := c.PatchDisplayWithBody(ctx, contentType, body, reqEditors...)
@@ -4180,6 +4443,72 @@ func ParseMoveMouseResponse(rsp *http.Response) (*MoveMouseResponse, error) {
 	}
 
 	response := &MoveMouseResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseTakeScreenshotResponse parses an HTTP response from a TakeScreenshotWithResponse call
+func ParseTakeScreenshotResponse(rsp *http.Response) (*TakeScreenshotResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &TakeScreenshotResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseTypeTextResponse parses an HTTP response from a TypeTextWithResponse call
+func ParseTypeTextResponse(rsp *http.Response) (*TypeTextResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &TypeTextResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -5345,6 +5674,12 @@ type ServerInterface interface {
 	// Move the mouse cursor to the specified coordinates on the host computer
 	// (POST /computer/move_mouse)
 	MoveMouse(w http.ResponseWriter, r *http.Request)
+	// Capture a screenshot of the host computer
+	// (POST /computer/screenshot)
+	TakeScreenshot(w http.ResponseWriter, r *http.Request)
+	// Type text on the host computer
+	// (POST /computer/type)
+	TypeText(w http.ResponseWriter, r *http.Request)
 	// Update display configuration
 	// (PATCH /display)
 	PatchDisplay(w http.ResponseWriter, r *http.Request)
@@ -5456,6 +5791,18 @@ func (_ Unimplemented) ClickMouse(w http.ResponseWriter, r *http.Request) {
 // Move the mouse cursor to the specified coordinates on the host computer
 // (POST /computer/move_mouse)
 func (_ Unimplemented) MoveMouse(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Capture a screenshot of the host computer
+// (POST /computer/screenshot)
+func (_ Unimplemented) TakeScreenshot(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Type text on the host computer
+// (POST /computer/type)
+func (_ Unimplemented) TypeText(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -5683,6 +6030,34 @@ func (siw *ServerInterfaceWrapper) MoveMouse(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.MoveMouse(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TakeScreenshot operation middleware
+func (siw *ServerInterfaceWrapper) TakeScreenshot(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TakeScreenshot(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// TypeText operation middleware
+func (siw *ServerInterfaceWrapper) TypeText(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.TypeText(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -6441,6 +6816,12 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/computer/move_mouse", wrapper.MoveMouse)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/computer/screenshot", wrapper.TakeScreenshot)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/computer/type", wrapper.TypeText)
+	})
+	r.Group(func(r chi.Router) {
 		r.Patch(options.BaseURL+"/display", wrapper.PatchDisplay)
 	})
 	r.Group(func(r chi.Router) {
@@ -6666,6 +7047,85 @@ func (response MoveMouse400JSONResponse) VisitMoveMouseResponse(w http.ResponseW
 type MoveMouse500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response MoveMouse500JSONResponse) VisitMoveMouseResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type TakeScreenshotRequestObject struct {
+	Body *TakeScreenshotJSONRequestBody
+}
+
+type TakeScreenshotResponseObject interface {
+	VisitTakeScreenshotResponse(w http.ResponseWriter) error
+}
+
+type TakeScreenshot200ImagepngResponse struct {
+	Body          io.Reader
+	ContentLength int64
+}
+
+func (response TakeScreenshot200ImagepngResponse) VisitTakeScreenshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "image/png")
+	if response.ContentLength != 0 {
+		w.Header().Set("Content-Length", fmt.Sprint(response.ContentLength))
+	}
+	w.WriteHeader(200)
+
+	if closer, ok := response.Body.(io.ReadCloser); ok {
+		defer closer.Close()
+	}
+	_, err := io.Copy(w, response.Body)
+	return err
+}
+
+type TakeScreenshot400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response TakeScreenshot400JSONResponse) VisitTakeScreenshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type TakeScreenshot500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response TakeScreenshot500JSONResponse) VisitTakeScreenshotResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type TypeTextRequestObject struct {
+	Body *TypeTextJSONRequestBody
+}
+
+type TypeTextResponseObject interface {
+	VisitTypeTextResponse(w http.ResponseWriter) error
+}
+
+type TypeText200Response struct {
+}
+
+func (response TypeText200Response) VisitTypeTextResponse(w http.ResponseWriter) error {
+	w.WriteHeader(200)
+	return nil
+}
+
+type TypeText400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response TypeText400JSONResponse) VisitTypeTextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type TypeText500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response TypeText500JSONResponse) VisitTypeTextResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(500)
 
@@ -7996,6 +8456,12 @@ type StrictServerInterface interface {
 	// Move the mouse cursor to the specified coordinates on the host computer
 	// (POST /computer/move_mouse)
 	MoveMouse(ctx context.Context, request MoveMouseRequestObject) (MoveMouseResponseObject, error)
+	// Capture a screenshot of the host computer
+	// (POST /computer/screenshot)
+	TakeScreenshot(ctx context.Context, request TakeScreenshotRequestObject) (TakeScreenshotResponseObject, error)
+	// Type text on the host computer
+	// (POST /computer/type)
+	TypeText(ctx context.Context, request TypeTextRequestObject) (TypeTextResponseObject, error)
 	// Update display configuration
 	// (PATCH /display)
 	PatchDisplay(ctx context.Context, request PatchDisplayRequestObject) (PatchDisplayResponseObject, error)
@@ -8228,6 +8694,68 @@ func (sh *strictHandler) MoveMouse(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(MoveMouseResponseObject); ok {
 		if err := validResponse.VisitMoveMouseResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TakeScreenshot operation middleware
+func (sh *strictHandler) TakeScreenshot(w http.ResponseWriter, r *http.Request) {
+	var request TakeScreenshotRequestObject
+
+	var body TakeScreenshotJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TakeScreenshot(ctx, request.(TakeScreenshotRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TakeScreenshot")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TakeScreenshotResponseObject); ok {
+		if err := validResponse.VisitTakeScreenshotResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// TypeText operation middleware
+func (sh *strictHandler) TypeText(w http.ResponseWriter, r *http.Request) {
+	var request TypeTextRequestObject
+
+	var body TypeTextJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.TypeText(ctx, request.(TypeTextRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "TypeText")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TypeTextResponseObject); ok {
+		if err := validResponse.VisitTypeTextResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -9050,94 +9578,98 @@ func (sh *strictHandler) StopRecording(w http.ResponseWriter, r *http.Request) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"K5t42D4EWmRN82MO8r8BAAD//4AAg97bdQAA",
+	"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",
+	"efyYjfxfAAAA///E79iFinwAAA==",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
