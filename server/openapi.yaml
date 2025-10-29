@@ -3,6 +3,39 @@ info:
   title: Kernel Images API
   version: 0.1.0
 paths:
+  /dev/benchmark:
+    get:
+      summary: Run performance benchmarks
+      description: |
+        Execute performance benchmarks on specified components and return detailed metrics.
+        Benchmarks run internally within the image and collect real-time performance data.
+      operationId: runBenchmark
+      parameters:
+        - name: components
+          in: query
+          description: Comma-separated list of components to benchmark (cdp,webrtc,recording,all)
+          schema:
+            type: string
+            default: "all"
+        - name: duration
+          in: query
+          description: Benchmark duration in seconds
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 60
+            default: 10
+      responses:
+        "200":
+          description: Benchmark results
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BenchmarkResults"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /recording/start:
     post:
       summary: Start a screen recording. Only one recording per ID can be registered at a time.
@@ -1511,6 +1544,149 @@ components:
           type: boolean
           description: Indicates success.
           default: true
+      additionalProperties: false
+    BenchmarkResults:
+      type: object
+      description: Performance benchmark results
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+          description: When the benchmark was run
+        duration_seconds:
+          type: integer
+          description: Duration of the benchmark in seconds
+        system:
+          $ref: "#/components/schemas/SystemInfo"
+        results:
+          $ref: "#/components/schemas/ComponentResults"
+        errors:
+          type: array
+          items:
+            type: string
+          description: Any errors encountered during benchmarking
+      additionalProperties: false
+    SystemInfo:
+      type: object
+      properties:
+        cpu_count:
+          type: integer
+        memory_total_mb:
+          type: integer
+        os:
+          type: string
+        arch:
+          type: string
+      additionalProperties: false
+    ComponentResults:
+      type: object
+      properties:
+        cdp_proxy:
+          $ref: "#/components/schemas/CDPProxyResults"
+        webrtc_live_view:
+          $ref: "#/components/schemas/WebRTCLiveViewResults"
+        recording:
+          $ref: "#/components/schemas/RecordingResults"
+      additionalProperties: false
+    CDPProxyResults:
+      type: object
+      properties:
+        throughput_msgs_per_sec:
+          type: number
+        latency_ms:
+          $ref: "#/components/schemas/LatencyMetrics"
+        concurrent_connections:
+          type: integer
+        memory_mb:
+          $ref: "#/components/schemas/MemoryMetrics"
+        message_size_bytes:
+          $ref: "#/components/schemas/MessageSizeMetrics"
+      additionalProperties: false
+    WebRTCLiveViewResults:
+      type: object
+      properties:
+        frame_rate_fps:
+          $ref: "#/components/schemas/FrameRateMetrics"
+        frame_latency_ms:
+          $ref: "#/components/schemas/LatencyMetrics"
+        bitrate_kbps:
+          $ref: "#/components/schemas/BitrateMetrics"
+        connection_setup_ms:
+          type: number
+        concurrent_viewers:
+          type: integer
+        cpu_usage_percent:
+          type: number
+        memory_mb:
+          $ref: "#/components/schemas/MemoryMetrics"
+      additionalProperties: false
+    RecordingResults:
+      type: object
+      properties:
+        cpu_overhead_percent:
+          type: number
+        memory_overhead_mb:
+          type: number
+        frames_captured:
+          type: integer
+        frames_dropped:
+          type: integer
+        avg_encoding_lag_ms:
+          type: number
+        disk_write_mbps:
+          type: number
+        concurrent_recordings:
+          type: integer
+      additionalProperties: false
+    LatencyMetrics:
+      type: object
+      properties:
+        p50:
+          type: number
+        p95:
+          type: number
+        p99:
+          type: number
+      additionalProperties: false
+    FrameRateMetrics:
+      type: object
+      properties:
+        target:
+          type: number
+        achieved:
+          type: number
+        min:
+          type: number
+        max:
+          type: number
+      additionalProperties: false
+    BitrateMetrics:
+      type: object
+      properties:
+        target:
+          type: number
+        actual:
+          type: number
+      additionalProperties: false
+    MemoryMetrics:
+      type: object
+      properties:
+        baseline:
+          type: number
+        per_connection:
+          type: number
+        per_viewer:
+          type: number
+      additionalProperties: false
+    MessageSizeMetrics:
+      type: object
+      properties:
+        min:
+          type: integer
+        max:
+          type: integer
+        avg:
+          type: integer
       additionalProperties: false
     ExecutePlaywrightRequest:
       type: object
