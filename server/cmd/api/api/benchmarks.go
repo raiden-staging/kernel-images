@@ -13,37 +13,36 @@ import (
 )
 
 // RunBenchmark implements the benchmark endpoint
+// Each benchmark component runs for its own fixed duration and reports actual elapsed time
 func (s *ApiService) RunBenchmark(ctx context.Context, request oapi.RunBenchmarkRequestObject) (oapi.RunBenchmarkResponseObject, error) {
 	log := logger.FromContext(ctx)
 	log.Info("starting benchmark run")
 
 	// Parse parameters
 	components := parseComponents(request.Params.Components)
-	duration := parseDuration(request.Params.Duration)
 
-	// Initialize results
+	// Initialize results (duration will be calculated from actual elapsed time)
 	startTime := time.Now()
 	results := &benchmarks.BenchmarkResults{
-		Timestamp:       startTime,
-		DurationSeconds: int(duration.Seconds()),
-		System:          getSystemInfo(),
-		Results:         benchmarks.ComponentResults{},
-		Errors:          []string{},
+		Timestamp: startTime,
+		System:    getSystemInfo(),
+		Results:   benchmarks.ComponentResults{},
+		Errors:    []string{},
 	}
 
-	// Run requested benchmarks
+	// Run requested benchmarks (each uses its own internal fixed duration)
 	for _, component := range components {
 		switch component {
 		case benchmarks.ComponentCDP:
-			if cdpResults, err := s.runCDPBenchmark(ctx, duration); err != nil {
+			if cdpResults, err := s.runCDPBenchmark(ctx); err != nil {
 				log.Error("CDP benchmark failed", "err", err)
 				results.Errors = append(results.Errors, fmt.Sprintf("CDP: %v", err))
 			} else {
-				results.Results.CDPProxy = cdpResults
+				results.Results.CDP = cdpResults
 			}
 
 		case benchmarks.ComponentWebRTC:
-			if webrtcResults, err := s.runWebRTCBenchmark(ctx, duration); err != nil {
+			if webrtcResults, err := s.runWebRTCBenchmark(ctx); err != nil {
 				log.Error("WebRTC benchmark failed", "err", err)
 				results.Errors = append(results.Errors, fmt.Sprintf("WebRTC: %v", err))
 			} else {
@@ -51,7 +50,7 @@ func (s *ApiService) RunBenchmark(ctx context.Context, request oapi.RunBenchmark
 			}
 
 		case benchmarks.ComponentRecording:
-			if recordingResults, err := s.runRecordingBenchmark(ctx, duration); err != nil {
+			if recordingResults, err := s.runRecordingBenchmark(ctx); err != nil {
 				log.Error("Recording benchmark failed", "err", err)
 				results.Errors = append(results.Errors, fmt.Sprintf("Recording: %v", err))
 			} else {
@@ -59,7 +58,7 @@ func (s *ApiService) RunBenchmark(ctx context.Context, request oapi.RunBenchmark
 			}
 
 		case benchmarks.ComponentScreenshot:
-			if screenshotResults, err := s.runScreenshotBenchmark(ctx, duration); err != nil {
+			if screenshotResults, err := s.runScreenshotBenchmark(ctx); err != nil {
 				log.Error("Screenshot benchmark failed", "err", err)
 				results.Errors = append(results.Errors, fmt.Sprintf("Screenshot: %v", err))
 			} else {
@@ -68,7 +67,11 @@ func (s *ApiService) RunBenchmark(ctx context.Context, request oapi.RunBenchmark
 		}
 	}
 
-	log.Info("benchmark run completed", "duration", time.Since(startTime))
+	// Calculate actual elapsed time
+	elapsed := time.Since(startTime)
+	results.ElapsedSeconds = elapsed.Seconds()
+
+	log.Info("benchmark run completed", "elapsed_seconds", results.ElapsedSeconds)
 
 	// Add container startup timing if available
 	if containerTiming, err := benchmarks.GetContainerStartupTiming(); err == nil && containerTiming != nil {
@@ -81,12 +84,13 @@ func (s *ApiService) RunBenchmark(ctx context.Context, request oapi.RunBenchmark
 
 // convertToOAPIBenchmarkResults converts benchmarks.BenchmarkResults to oapi.BenchmarkResults
 func convertToOAPIBenchmarkResults(results *benchmarks.BenchmarkResults) oapi.BenchmarkResults {
+	elapsedSecs := float32(results.ElapsedSeconds)
 	resp := oapi.BenchmarkResults{
-		Timestamp:       &results.Timestamp,
-		DurationSeconds: &results.DurationSeconds,
-		System:          convertSystemInfo(results.System),
-		Results:         convertComponentResults(results.Results),
-		Errors:          &results.Errors,
+		Timestamp:      &results.Timestamp,
+		ElapsedSeconds: &elapsedSecs,
+		System:         convertSystemInfo(results.System),
+		Results:        convertComponentResults(results.Results),
+		Errors:         &results.Errors,
 	}
 
 	if results.StartupTiming != nil {
@@ -109,8 +113,8 @@ func convertSystemInfo(info benchmarks.SystemInfo) *oapi.SystemInfo {
 func convertComponentResults(results benchmarks.ComponentResults) *oapi.ComponentResults {
 	resp := &oapi.ComponentResults{}
 
-	if results.CDPProxy != nil {
-		resp.CdpProxy = convertCDPProxyResults(results.CDPProxy)
+	if results.CDP != nil {
+		resp.Cdp = convertCDPProxyResults(results.CDP)
 	}
 
 	if results.WebRTCLiveView != nil {
@@ -353,7 +357,7 @@ func convertStartupTimingResults(timing *benchmarks.StartupTimingResults) *oapi.
 	return result
 }
 
-func (s *ApiService) runCDPBenchmark(ctx context.Context, duration time.Duration) (*benchmarks.CDPProxyResults, error) {
+func (s *ApiService) runCDPBenchmark(ctx context.Context) (*benchmarks.CDPProxyResults, error) {
 	log := logger.FromContext(ctx)
 	log.Info("running CDP benchmark")
 
@@ -362,10 +366,10 @@ func (s *ApiService) runCDPBenchmark(ctx context.Context, duration time.Duration
 	concurrency := 5 // Number of concurrent connections to test
 
 	benchmark := benchmarks.NewCDPRuntimeBenchmark(log, cdpProxyURL, concurrency)
-	return benchmark.Run(ctx, duration)
+	return benchmark.Run(ctx, 0) // Duration parameter ignored, uses internal 5s
 }
 
-func (s *ApiService) runWebRTCBenchmark(ctx context.Context, duration time.Duration) (*benchmarks.WebRTCLiveViewResults, error) {
+func (s *ApiService) runWebRTCBenchmark(ctx context.Context) (*benchmarks.WebRTCLiveViewResults, error) {
 	log := logger.FromContext(ctx)
 	log.Info("running WebRTC benchmark")
 
@@ -373,25 +377,25 @@ func (s *ApiService) runWebRTCBenchmark(ctx context.Context, duration time.Durat
 	nekoBaseURL := "http://127.0.0.1:8080"
 
 	benchmark := benchmarks.NewWebRTCBenchmark(log, nekoBaseURL)
-	return benchmark.Run(ctx, duration)
+	return benchmark.Run(ctx, 0) // Duration parameter ignored, uses internal 10s
 }
 
-func (s *ApiService) runRecordingBenchmark(ctx context.Context, duration time.Duration) (*benchmarks.RecordingResults, error) {
+func (s *ApiService) runRecordingBenchmark(ctx context.Context) (*benchmarks.RecordingResults, error) {
 	log := logger.FromContext(ctx)
 	log.Info("running Recording benchmark")
 
 	profiler := benchmarks.NewRecordingProfiler(log, s.recordManager, s.factory)
-	return profiler.Run(ctx, duration)
+	return profiler.Run(ctx, 0) // Duration parameter ignored, uses internal 10s
 }
 
-func (s *ApiService) runScreenshotBenchmark(ctx context.Context, duration time.Duration) (*benchmarks.ScreenshotLatencyResults, error) {
+func (s *ApiService) runScreenshotBenchmark(ctx context.Context) (*benchmarks.ScreenshotLatencyResults, error) {
 	log := logger.FromContext(ctx)
 	log.Info("running Screenshot latency benchmark")
 
 	// API should be available on localhost
 	apiBaseURL := "http://localhost:10001"
 	benchmark := benchmarks.NewScreenshotLatencyBenchmark(log, apiBaseURL)
-	return benchmark.Run(ctx, duration)
+	return benchmark.Run(ctx, 0) // Duration parameter ignored, uses internal fixed count
 }
 
 func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {

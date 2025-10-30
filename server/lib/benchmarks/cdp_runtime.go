@@ -34,10 +34,12 @@ func NewCDPRuntimeBenchmark(logger *slog.Logger, proxyURL string, concurrency in
 	}
 }
 
-// Run executes the CDP benchmark for the specified duration
+// Run executes the CDP benchmark for a fixed 5-second duration
 // Tests both proxied (9222) and direct (9223) CDP endpoints
 func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (*CDPProxyResults, error) {
-	b.logger.Info("starting CDP benchmark (proxied + direct)", "duration", duration, "concurrency", b.concurrency)
+	// Fixed 5-second duration for CDP benchmarks (measures req/sec throughput)
+	const cdpDuration = 5 * time.Second
+	b.logger.Info("starting CDP benchmark (proxied + direct)", "duration", cdpDuration, "concurrency", b.concurrency)
 
 	// Get baseline memory
 	var memStatsBefore runtime.MemStats
@@ -62,11 +64,11 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 
 	// Benchmark proxied endpoint (kernel-images proxy on port 9222)
 	b.logger.Info("benchmarking proxied CDP endpoint", "url", proxiedURL)
-	proxiedResults := b.runWorkers(ctx, proxiedWSURL, duration)
+	proxiedResults := b.runWorkers(ctx, proxiedWSURL, cdpDuration)
 
 	// Benchmark direct endpoint (Chrome CDP on port 9223)
 	b.logger.Info("benchmarking direct CDP endpoint", "url", directURL)
-	directResults := b.runWorkers(ctx, directWSURL, duration)
+	directResults := b.runWorkers(ctx, directWSURL, cdpDuration)
 
 	// Get final memory
 	var memStatsAfter runtime.MemStats

@@ -38,15 +38,17 @@ func NewWebRTCBenchmark(logger *slog.Logger, nekoBaseURL string) *WebRTCBenchmar
 
 // Run executes the WebRTC benchmark
 func (b *WebRTCBenchmark) Run(ctx context.Context, duration time.Duration) (*WebRTCLiveViewResults, error) {
-	b.logger.Info("starting WebRTC benchmark", "duration", duration)
+	// Fixed 10-second collection duration for WebRTC benchmarks
+	const webrtcDuration = 10 * time.Second
+	b.logger.Info("starting WebRTC benchmark", "duration", webrtcDuration)
 
 	// Try to trigger neko benchmark collection (if available)
-	if err := b.triggerNekoBenchmark(ctx, duration); err != nil {
+	if err := b.triggerNekoBenchmark(ctx, webrtcDuration); err != nil {
 		b.logger.Warn("failed to trigger neko benchmark via API, will try alternatives", "err", err)
 	}
 
 	// Wait for collection duration + buffer
-	time.Sleep(duration + 2*time.Second)
+	time.Sleep(webrtcDuration + 2*time.Second)
 
 	// Try to read stats from neko export file
 	stats, err := b.readNekoStats(ctx)

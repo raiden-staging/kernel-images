@@ -19,18 +19,11 @@ paths:
       parameters:
         - name: components
           in: query
-          description: Comma-separated list of components to benchmark (cdp,webrtc,recording,all)
+          description: Comma-separated list of components to benchmark (cdp,webrtc,recording,screenshot,all). Defaults to all components.
+          required: false
           schema:
             type: string
             default: "all"
-        - name: duration
-          in: query
-          description: Benchmark duration in seconds
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 60
-            default: 10
       responses:
         "200":
           description: Benchmark results
@@ -1561,9 +1554,9 @@ components:
           type: string
           format: date-time
           description: When the benchmark was run
-        duration_seconds:
-          type: integer
-          description: Duration of the benchmark in seconds
+        elapsed_seconds:
+          type: number
+          description: Actual elapsed time in seconds for all benchmarks to complete
         system:
           $ref: "#/components/schemas/SystemInfo"
         results:
@@ -1597,7 +1590,7 @@ components:
         Missing fields indicate that component was not requested or failed to run.
         Check the 'errors' array in BenchmarkResults for failure details.
       properties:
-        cdp_proxy:
+        cdp:
           $ref: "#/components/schemas/CDPProxyResults"
         webrtc_live_view:
           $ref: "#/components/schemas/WebRTCLiveViewResults"
