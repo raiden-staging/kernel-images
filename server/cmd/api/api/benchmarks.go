@@ -57,10 +57,23 @@ func (s *ApiService) RunBenchmark(ctx context.Context, request oapi.RunBenchmark
 			} else {
 				results.Results.Recording = recordingResults
 			}
+
+		case benchmarks.ComponentScreenshot:
+			if screenshotResults, err := s.runScreenshotBenchmark(ctx, duration); err != nil {
+				log.Error("Screenshot benchmark failed", "err", err)
+				results.Errors = append(results.Errors, fmt.Sprintf("Screenshot: %v", err))
+			} else {
+				results.Results.ScreenshotLatency = screenshotResults
+			}
 		}
 	}
 
 	log.Info("benchmark run completed", "duration", time.Since(startTime))
+
+	// Add container startup timing if available
+	if containerTiming, err := benchmarks.GetContainerStartupTiming(); err == nil && containerTiming != nil {
+		results.StartupTiming = containerTiming
+	}
 
 	// Convert to oapi response type
 	return oapi.RunBenchmark200JSONResponse(convertToOAPIBenchmarkResults(results)), nil
@@ -75,6 +88,11 @@ func convertToOAPIBenchmarkResults(results *benchmarks.BenchmarkResults) oapi.Be
 		Results:         convertComponentResults(results.Results),
 		Errors:          &results.Errors,
 	}
+
+	if results.StartupTiming != nil {
+		resp.StartupTiming = convertStartupTimingResults(results.StartupTiming)
+	}
+
 	return resp
 }
 
@@ -103,18 +121,87 @@ func convertComponentResults(results benchmarks.ComponentResults) *oapi.Componen
 		resp.Recording = convertRecordingResults(results.Recording)
 	}
 
+	if results.ScreenshotLatency != nil {
+		resp.ScreenshotLatency = convertScreenshotResults(results.ScreenshotLatency)
+	}
+
 	return resp
 }
 
 func convertCDPProxyResults(cdp *benchmarks.CDPProxyResults) *oapi.CDPProxyResults {
 	throughput := float32(cdp.ThroughputMsgsPerSec)
-	return &oapi.CDPProxyResults{
+	proxyOverhead := float32(cdp.ProxyOverheadPercent)
+	result := &oapi.CDPProxyResults{
 		ThroughputMsgsPerSec:  &throughput,
 		LatencyMs:             convertLatencyMetrics(cdp.LatencyMS),
 		ConcurrentConnections: &cdp.ConcurrentConnections,
 		MemoryMb:              convertMemoryMetrics(cdp.MemoryMB),
 		MessageSizeBytes:      convertMessageSizeMetrics(cdp.MessageSizeBytes),
+		ProxyOverheadPercent:  &proxyOverhead,
 	}
+
+	// Convert scenarios if present
+	if len(cdp.Scenarios) > 0 {
+		scenarios := make([]oapi.CDPScenarioResult, len(cdp.Scenarios))
+		for i, scenario := range cdp.Scenarios {
+			opCount := int(scenario.OperationCount)
+			throughputOps := float32(scenario.ThroughputOpsPerSec)
+			successRate := float32(scenario.SuccessRate)
+			scenarios[i] = oapi.CDPScenarioResult{
+				Name:                &scenario.Name,
+				Description:         &scenario.Description,
+				Category:            &scenario.Category,
+				OperationCount:      &opCount,
+				ThroughputOpsPerSec: &throughputOps,
+				LatencyMs:           convertLatencyMetrics(scenario.LatencyMS),
+				SuccessRate:         &successRate,
+			}
+		}
+		result.Scenarios = &scenarios
+	}
+
+	// Convert proxied endpoint results
+	if cdp.ProxiedEndpoint != nil {
+		result.ProxiedEndpoint = convertCDPEndpointResults(cdp.ProxiedEndpoint)
+	}
+
+	// Convert direct endpoint results
+	if cdp.DirectEndpoint != nil {
+		result.DirectEndpoint = convertCDPEndpointResults(cdp.DirectEndpoint)
+	}
+
+	return result
+}
+
+func convertCDPEndpointResults(endpoint *benchmarks.CDPEndpointResults) *oapi.CDPEndpointResults {
+	throughput := float32(endpoint.ThroughputMsgsPerSec)
+	result := &oapi.CDPEndpointResults{
+		EndpointUrl:          &endpoint.EndpointURL,
+		ThroughputMsgsPerSec: &throughput,
+		LatencyMs:            convertLatencyMetrics(endpoint.LatencyMS),
+	}
+
+	// Convert scenarios if present
+	if len(endpoint.Scenarios) > 0 {
+		scenarios := make([]oapi.CDPScenarioResult, len(endpoint.Scenarios))
+		for i, scenario := range endpoint.Scenarios {
+			opCount := int(scenario.OperationCount)
+			throughputOps := float32(scenario.ThroughputOpsPerSec)
+			successRate := float32(scenario.SuccessRate)
+			scenarios[i] = oapi.CDPScenarioResult{
+				Name:                &scenario.Name,
+				Description:         &scenario.Description,
+				Category:            &scenario.Category,
+				OperationCount:      &opCount,
+				ThroughputOpsPerSec: &throughputOps,
+				LatencyMs:           convertLatencyMetrics(scenario.LatencyMS),
+				SuccessRate:         &successRate,
+			}
+		}
+		result.Scenarios = &scenarios
+	}
+
+	return result
 }
 
 func convertWebRTCResults(webrtc *benchmarks.WebRTCLiveViewResults) *oapi.WebRTCLiveViewResults {
@@ -138,7 +225,8 @@ func convertRecordingResults(rec *benchmarks.RecordingResults) *oapi.RecordingRe
 	framesDropped := int(rec.FramesDropped)
 	encodingLag := float32(rec.AvgEncodingLagMS)
 	diskWrite := float32(rec.DiskWriteMBPS)
-	return &oapi.RecordingResults{
+
+	result := &oapi.RecordingResults{
 		CpuOverheadPercent:   &cpuOverhead,
 		MemoryOverheadMb:     &memOverhead,
 		FramesCaptured:       &framesCaptured,
@@ -146,6 +234,34 @@ func convertRecordingResults(rec *benchmarks.RecordingResults) *oapi.RecordingRe
 		AvgEncodingLagMs:     &encodingLag,
 		DiskWriteMbps:        &diskWrite,
 		ConcurrentRecordings: &rec.ConcurrentRecordings,
+	}
+
+	if rec.FrameRateImpact != nil {
+		beforeFPS := float32(rec.FrameRateImpact.BeforeRecordingFPS)
+		duringFPS := float32(rec.FrameRateImpact.DuringRecordingFPS)
+		impactPct := float32(rec.FrameRateImpact.ImpactPercent)
+		result.FrameRateImpact = &oapi.RecordingFrameRateImpact{
+			BeforeRecordingFps: &beforeFPS,
+			DuringRecordingFps: &duringFPS,
+			ImpactPercent:      &impactPct,
+		}
+	}
+
+	return result
+}
+
+func convertScreenshotResults(screenshot *benchmarks.ScreenshotLatencyResults) *oapi.ScreenshotLatencyResults {
+	successRate := float32(screenshot.SuccessRate)
+	throughput := float32(screenshot.ThroughputPerSec)
+	avgImageSize := int(screenshot.AvgImageSizeBytes)
+	return &oapi.ScreenshotLatencyResults{
+		TotalScreenshots:    &screenshot.TotalScreenshots,
+		SuccessfulCaptures:  &screenshot.SuccessfulCaptures,
+		FailedCaptures:      &screenshot.FailedCaptures,
+		SuccessRate:         &successRate,
+		LatencyMs:           convertLatencyMetrics(screenshot.LatencyMS),
+		AvgImageSizeBytes:   &avgImageSize,
+		ThroughputPerSec:    &throughput,
 	}
 }
 
@@ -206,6 +322,37 @@ func convertMessageSizeMetrics(msg benchmarks.MessageSizeMetrics) *oapi.MessageS
 	}
 }
 
+func convertStartupTimingResults(timing *benchmarks.StartupTimingResults) *oapi.StartupTimingResults {
+	totalMs := float32(timing.TotalStartupTimeMS)
+	phases := make([]oapi.PhaseResult, len(timing.Phases))
+
+	for i, phase := range timing.Phases {
+		durationMs := float32(phase.DurationMS)
+		percentage := float32(phase.Percentage)
+		phases[i] = oapi.PhaseResult{
+			Name:       &phase.Name,
+			DurationMs: &durationMs,
+			Percentage: &percentage,
+		}
+	}
+
+	fastestMs := float32(timing.PhaseSummary.FastestMS)
+	slowestMs := float32(timing.PhaseSummary.SlowestMS)
+
+	result := &oapi.StartupTimingResults{
+		TotalStartupTimeMs: &totalMs,
+		Phases:             &phases,
+		PhaseSummary: &oapi.PhaseSummary{
+			FastestPhase: &timing.PhaseSummary.FastestPhase,
+			SlowestPhase: &timing.PhaseSummary.SlowestPhase,
+			FastestMs:    &fastestMs,
+			SlowestMs:    &slowestMs,
+		},
+	}
+
+	return result
+}
+
 func (s *ApiService) runCDPBenchmark(ctx context.Context, duration time.Duration) (*benchmarks.CDPProxyResults, error) {
 	log := logger.FromContext(ctx)
 	log.Info("running CDP benchmark")
@@ -237,6 +384,16 @@ func (s *ApiService) runRecordingBenchmark(ctx context.Context, duration time.Du
 	return profiler.Run(ctx, duration)
 }
 
+func (s *ApiService) runScreenshotBenchmark(ctx context.Context, duration time.Duration) (*benchmarks.ScreenshotLatencyResults, error) {
+	log := logger.FromContext(ctx)
+	log.Info("running Screenshot latency benchmark")
+
+	// API should be available on localhost
+	apiBaseURL := "http://localhost:10001"
+	benchmark := benchmarks.NewScreenshotLatencyBenchmark(log, apiBaseURL)
+	return benchmark.Run(ctx, duration)
+}
+
 func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {
 	if componentsParam == nil {
 		return []benchmarks.BenchmarkComponent{benchmarks.ComponentAll}
@@ -248,6 +405,7 @@ func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {
 			benchmarks.ComponentCDP,
 			benchmarks.ComponentWebRTC,
 			benchmarks.ComponentRecording,
+			benchmarks.ComponentScreenshot,
 		}
 	}
 
@@ -264,11 +422,14 @@ func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {
 			components = append(components, benchmarks.ComponentWebRTC)
 		case "recording":
 			components = append(components, benchmarks.ComponentRecording)
+		case "screenshot":
+			components = append(components, benchmarks.ComponentScreenshot)
 		case "all":
 			return []benchmarks.BenchmarkComponent{
 				benchmarks.ComponentCDP,
 				benchmarks.ComponentWebRTC,
 				benchmarks.ComponentRecording,
+				benchmarks.ComponentScreenshot,
 			}
 		}
 	}
@@ -279,6 +440,7 @@ func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {
 			benchmarks.ComponentCDP,
 			benchmarks.ComponentWebRTC,
 			benchmarks.ComponentRecording,
+			benchmarks.ComponentScreenshot,
 		}
 	}
 
