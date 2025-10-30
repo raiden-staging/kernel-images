@@ -3,8 +3,10 @@ package benchmarks
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
 	"runtime"
 	"strconv"
@@ -44,6 +46,11 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 	const recordingDuration = 10 * time.Second
 	p.logger.Info("starting recording benchmark", "duration", recordingDuration)
 
+	// Measure FPS before recording starts
+	p.logger.Info("measuring baseline FPS before recording")
+	fpsBeforeRecording := p.measureCurrentFPS()
+	p.logger.Info("baseline FPS measured", "fps", fpsBeforeRecording)
+
 	// Capture baseline metrics
 	var memStatsBefore runtime.MemStats
 	runtime.ReadMemStats(&memStatsBefore)
@@ -71,8 +78,8 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 		return nil, fmt.Errorf("failed to start recording: %w", err)
 	}
 
-	// Capture metrics after recording starts
-	time.Sleep(2 * time.Second) // Let recording stabilize
+	// Let recording stabilize and measure CPU/memory after recording starts
+	time.Sleep(2 * time.Second)
 
 	var memStatsAfter runtime.MemStats
 	runtime.ReadMemStats(&memStatsAfter)
@@ -80,6 +87,11 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 
 	// Let recording run for the specified duration
 	time.Sleep(recordingDuration)
+
+	// Measure FPS during recording (near the end)
+	p.logger.Info("measuring FPS during recording")
+	fpsDuringRecording := p.measureCurrentFPS()
+	p.logger.Info("FPS during recording measured", "fps", fpsDuringRecording)
 
 	// Stop recording
 	if err := testRecorder.Stop(ctx); err != nil {
@@ -129,6 +141,21 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 	}
 	p.recorderMgr.DeregisterRecorder(ctx, testRecorder)
 
+	// Calculate FPS impact
+	var frameRateImpact *RecordingFrameRateImpact
+	if fpsBeforeRecording > 0 && fpsDuringRecording > 0 {
+		impactPercent := ((fpsBeforeRecording - fpsDuringRecording) / fpsBeforeRecording) * 100.0
+		frameRateImpact = &RecordingFrameRateImpact{
+			BeforeRecordingFPS: fpsBeforeRecording,
+			DuringRecordingFPS: fpsDuringRecording,
+			ImpactPercent:      impactPercent,
+		}
+		p.logger.Info("FPS impact calculated",
+			"before_fps", fpsBeforeRecording,
+			"during_fps", fpsDuringRecording,
+			"impact_percent", impactPercent)
+	}
+
 	results := &RecordingResults{
 		CPUOverheadPercent:   cpuOverhead,
 		MemoryOverheadMB:     memOverheadMB,
@@ -137,7 +164,7 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 		AvgEncodingLagMS:     avgEncodingLag,
 		DiskWriteMBPS:        diskWriteMBPS,
 		ConcurrentRecordings: 1,
-		FrameRateImpact:      nil, // FPS measurement requires active WebRTC connections
+		FrameRateImpact:      frameRateImpact,
 	}
 
 	p.logger.Info("recording benchmark completed",
@@ -264,5 +291,31 @@ func parseFfmpegStats(output string) (framesCaptured, framesDropped int64, fps, 
 	}
 
 	return
+}
+
+// measureCurrentFPS reads the current FPS from neko's WebRTC stats file
+func (p *RecordingProfiler) measureCurrentFPS() float64 {
+	const nekoStatsPath = "/tmp/neko_webrtc_benchmark.json"
+
+	// Try to read the neko stats file
+	data, err := os.ReadFile(nekoStatsPath)
+	if err != nil {
+		p.logger.Warn("failed to read neko stats file for FPS measurement", "err", err)
+		return 0.0
+	}
+
+	// Parse the stats
+	var stats struct {
+		FrameRateFPS struct {
+			Achieved float64 `json:"achieved"`
+		} `json:"frame_rate_fps"`
+	}
+
+	if err := json.Unmarshal(data, &stats); err != nil {
+		p.logger.Warn("failed to parse neko stats for FPS measurement", "err", err)
+		return 0.0
+	}
+
+	return stats.FrameRateFPS.Achieved
 }
 
