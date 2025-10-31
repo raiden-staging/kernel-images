@@ -62,8 +62,13 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private,id=ubuntu2204-aptca
     xvfb \
     x11-utils \
     xdotool \
+    fontconfig \
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
+    fonts-nanum \
     software-properties-common \
-    supervisor;
+    supervisor; \
+    fc-cache -f
 
 # install chromium and sqlite3 for debugging the cookies file
 RUN --mount=type=cache,target=/var/cache/apt,sharing=private,id=ubuntu2204-aptcache \
@@ -74,6 +79,10 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private,id=ubuntu2204-aptca
     apt-get update -y && \
     apt-get -y install chromium && \
     apt-get --no-install-recommends -y install sqlite3;
+
+# Copy Chromium policy configuration
+RUN mkdir -p /etc/chromium/policies/managed
+COPY shared/chromium-policies/managed/policy.json /etc/chromium/policies/managed/policy.json
 
 # Install FFmpeg (latest static build) for the recording server
 RUN --mount=type=cache,target=/tmp/cache/ffmpeg,id=ffmpeg \
