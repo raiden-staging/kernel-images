@@ -197,16 +197,22 @@ func convertCDPEndpointResults(endpoint *benchmarks.CDPEndpointResults) *oapi.CD
 }
 
 func convertWebRTCResults(webrtc *benchmarks.WebRTCLiveViewResults) *oapi.WebRTCLiveViewResults {
-	setupMs := float32(webrtc.ConnectionSetupMS)
 	cpuPct := float32(webrtc.CPUUsagePercent)
 	return &oapi.WebRTCLiveViewResults{
-		FrameRateFps:      convertFrameRateMetrics(webrtc.FrameRateFPS),
-		FrameLatencyMs:    convertLatencyMetrics(webrtc.FrameLatencyMS),
-		BitrateKbps:       convertBitrateMetrics(webrtc.BitrateKbps),
-		ConnectionSetupMs: &setupMs,
-		ConcurrentViewers: &webrtc.ConcurrentViewers,
-		CpuUsagePercent:   &cpuPct,
-		MemoryMb:          convertMemoryMetrics(webrtc.MemoryMB),
+		ConnectionState:    &webrtc.ConnectionState,
+		IceConnectionState: &webrtc.IceConnectionState,
+		FrameRateFps:       convertFrameRateMetrics(webrtc.FrameRateFPS),
+		FrameLatencyMs:     convertLatencyMetrics(webrtc.FrameLatencyMS),
+		BitrateKbps:        convertBitrateMetrics(webrtc.BitrateKbps),
+		Packets:            convertPacketMetrics(webrtc.Packets),
+		Frames:             convertFrameMetrics(webrtc.Frames),
+		JitterMs:           convertJitterMetrics(webrtc.JitterMS),
+		Network:            convertNetworkMetrics(webrtc.Network),
+		Codecs:             convertCodecMetrics(webrtc.Codecs),
+		Resolution:         convertResolutionMetrics(webrtc.Resolution),
+		ConcurrentViewers:  &webrtc.ConcurrentViewers,
+		CpuUsagePercent:    &cpuPct,
+		MemoryMb:           convertMemoryMetrics(webrtc.MemoryMB),
 	}
 }
 
@@ -267,11 +273,81 @@ func convertFrameRateMetrics(fr benchmarks.FrameRateMetrics) *oapi.FrameRateMetr
 }
 
 func convertBitrateMetrics(br benchmarks.BitrateMetrics) *oapi.BitrateMetrics {
-	target := float32(br.Target)
-	actual := float32(br.Actual)
+	video := float32(br.Video)
+	audio := float32(br.Audio)
+	total := float32(br.Total)
 	return &oapi.BitrateMetrics{
-		Target: &target,
-		Actual: &actual,
+		Video: &video,
+		Audio: &audio,
+		Total: &total,
+	}
+}
+
+func convertPacketMetrics(pm benchmarks.PacketMetrics) *oapi.PacketMetrics {
+	videoReceived := int(pm.VideoReceived)
+	videoLost := int(pm.VideoLost)
+	audioReceived := int(pm.AudioReceived)
+	audioLost := int(pm.AudioLost)
+	lossPercent := float32(pm.LossPercent)
+	return &oapi.PacketMetrics{
+		VideoReceived: &videoReceived,
+		VideoLost:     &videoLost,
+		AudioReceived: &audioReceived,
+		AudioLost:     &audioLost,
+		LossPercent:   &lossPercent,
+	}
+}
+
+func convertFrameMetrics(fm benchmarks.FrameMetrics) *oapi.FrameMetrics {
+	received := int(fm.Received)
+	dropped := int(fm.Dropped)
+	decoded := int(fm.Decoded)
+	corrupted := int(fm.Corrupted)
+	keyFramesDecoded := int(fm.KeyFramesDecoded)
+	return &oapi.FrameMetrics{
+		Received:         &received,
+		Dropped:          &dropped,
+		Decoded:          &decoded,
+		Corrupted:        &corrupted,
+		KeyFramesDecoded: &keyFramesDecoded,
+	}
+}
+
+func convertJitterMetrics(jm benchmarks.JitterMetrics) *oapi.JitterMetrics {
+	video := float32(jm.Video)
+	audio := float32(jm.Audio)
+	return &oapi.JitterMetrics{
+		Video: &video,
+		Audio: &audio,
+	}
+}
+
+func convertNetworkMetrics(nm benchmarks.NetworkMetrics) *oapi.NetworkMetrics {
+	rttMs := float32(nm.RTTMS)
+	availableBitrate := float32(nm.AvailableOutgoingBitrateKbps)
+	bytesReceived := int(nm.BytesReceived)
+	bytesSent := int(nm.BytesSent)
+	return &oapi.NetworkMetrics{
+		RttMs:                        &rttMs,
+		AvailableOutgoingBitrateKbps: &availableBitrate,
+		BytesReceived:                &bytesReceived,
+		BytesSent:                    &bytesSent,
+	}
+}
+
+func convertCodecMetrics(cm benchmarks.CodecMetrics) *oapi.CodecMetrics {
+	return &oapi.CodecMetrics{
+		Video: &cm.Video,
+		Audio: &cm.Audio,
+	}
+}
+
+func convertResolutionMetrics(rm benchmarks.ResolutionMetrics) *oapi.ResolutionMetrics {
+	width := rm.Width
+	height := rm.Height
+	return &oapi.ResolutionMetrics{
+		Width:  &width,
+		Height: &height,
 	}
 }
 

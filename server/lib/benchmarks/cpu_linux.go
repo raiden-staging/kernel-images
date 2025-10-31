@@ -107,3 +107,47 @@ func CalculateCPUPercent(before, after *CPUStats) float64 {
 
 	return (float64(deltaTotal) / 100.0) // Convert clock ticks to percentage
 }
+
+// GetProcessMemoryMB returns the current memory usage of the process in MB (heap)
+func GetProcessMemoryMB() float64 {
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0.0
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "VmSize:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				if kb, err := strconv.ParseFloat(fields[1], 64); err == nil {
+					return kb / 1024.0 // Convert KB to MB
+				}
+			}
+		}
+	}
+	return 0.0
+}
+
+// GetProcessRSSMemoryMB returns the RSS (Resident Set Size) memory usage in MB
+func GetProcessRSSMemoryMB() (float64, error) {
+	data, err := os.ReadFile("/proc/self/status")
+	if err != nil {
+		return 0.0, err
+	}
+
+	scanner := bufio.NewScanner(strings.NewReader(string(data)))
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "VmRSS:") {
+			fields := strings.Fields(line)
+			if len(fields) >= 2 {
+				if kb, err := strconv.ParseFloat(fields[1], 64); err == nil {
+					return kb / 1024.0, nil // Convert KB to MB
+				}
+			}
+		}
+	}
+	return 0.0, fmt.Errorf("VmRSS not found in /proc/self/status")
+}
