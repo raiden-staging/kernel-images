@@ -42,7 +42,7 @@ export abstract class BaseClient extends EventEmitter<BaseEvents> {
       if (this.connected) {
         this._ws!.send(JSON.stringify({
           event: EVENT.BENCHMARK.WEBRTC_STATS,
-          ...stats,
+          payload: stats,
         }))
       }
     })
