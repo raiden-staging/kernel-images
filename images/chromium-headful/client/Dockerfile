@@ -6,12 +6,12 @@ WORKDIR /src
 #
 # install dependencies
 COPY package*.json ./
-RUN --mount=type=cache,target=/root/.npm npm install
+RUN npm install
 
 #
 # build client
 COPY . .
-RUN --mount=type=cache,target=/root/.npm npm run build
+RUN npm run build
 
 #
 # artifacts from this stage
