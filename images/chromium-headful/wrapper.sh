@@ -137,12 +137,9 @@ cleanup () {
   # Re-enable scale-to-zero if the script terminates early
   enable_scale_to_zero
   supervisorctl -c /etc/supervisor/supervisord.conf stop chromium || true
+  supervisorctl -c /etc/supervisor/supervisord.conf stop pulseaudio || true
   supervisorctl -c /etc/supervisor/supervisord.conf stop kernel-images-api || true
   supervisorctl -c /etc/supervisor/supervisord.conf stop dbus || true
-  # Kill PulseAudio if it was started
-  if [[ -n "${pulse_pid:-}" ]]; then
-    kill -TERM "$pulse_pid" 2>/dev/null || true
-  fi
   # Stop log tailers
   if [[ -n "${tail_pids[*]:-}" ]]; then
     for tp in "${tail_pids[@]}"; do
@@ -202,41 +199,21 @@ done
 # autolaunch attempts that failed and spammed logs.
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
-# -----------------------------------------------------------------------------
-# PulseAudio setup ------------------------------------------------------------
-# -----------------------------------------------------------------------------
-if [[ "${RUN_AS_ROOT:-}" != "true" ]]; then
-  echo "[wrapper] Setting up PulseAudio permissions"
-  chown -R kernel:kernel /home/kernel/ /home/kernel/.config /etc/pulse 2>/dev/null || true
-  chmod 777 /home/kernel/.config /etc/pulse 2>/dev/null || true
-  chown -R kernel:kernel /tmp/runtime-kernel 2>/dev/null || true
-
-  echo "[wrapper] Starting PulseAudio daemon as kernel user"
-  runuser -u kernel -- env \
-    XDG_RUNTIME_DIR=/tmp/runtime-kernel \
-    XDG_CONFIG_HOME=/home/kernel/.config \
-    XDG_CACHE_HOME=/home/kernel/.cache \
-    pulseaudio --log-level=error \
-               --disallow-module-loading \
-               --disallow-exit \
-               --exit-idle-time=-1 &
-  pulse_pid=$!
-
-  echo "[wrapper] Waiting for PulseAudio server"
-  for i in $(seq 1 20); do
-    if runuser -u kernel -- pactl info >/dev/null 2>&1; then
-      echo "[wrapper] PulseAudio is ready"
-      break
-    fi
-    if [ "$i" -eq 20 ]; then
-      echo "[wrapper] ERROR: PulseAudio failed to start" >&2
-      exit 1
-    fi
-    sleep 0.5
-  done
-else
-  echo "[wrapper] Skipping PulseAudio setup when running as root"
-fi
+# Start PulseAudio via supervisord (matches the architecture of all other services)
+echo "[wrapper] Starting PulseAudio daemon via supervisord"
+supervisorctl -c /etc/supervisor/supervisord.conf start pulseaudio
+echo "[wrapper] Waiting for PulseAudio server..."
+for i in $(seq 1 20); do
+  if runuser -u kernel -- pactl info >/dev/null 2>&1; then
+    echo "[wrapper] PulseAudio is ready"
+    break
+  fi
+  if [ "$i" -eq 20 ]; then
+    echo "[wrapper] ERROR: PulseAudio failed to start" >&2
+    exit 1
+  fi
+  sleep 0.5
+done
 
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
 echo "[wrapper] Starting Chromium via supervisord on internal port $INTERNAL_PORT"
