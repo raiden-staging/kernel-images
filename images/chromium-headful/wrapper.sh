@@ -187,6 +187,25 @@ done
 # autolaunch attempts that failed and spammed logs.
 export DBUS_SESSION_BUS_ADDRESS="unix:path=/run/dbus/system_bus_socket"
 
+# -----------------------------------------------------------------------------
+# PulseAudio Setup ------------------------------------------------------------
+# -----------------------------------------------------------------------------
+echo "[wrapper] Starting PulseAudio daemon via supervisord"
+supervisorctl -c /etc/supervisor/supervisord.conf start pulseaudio
+
+echo "[wrapper] Waiting for PulseAudio server to be ready..."
+for i in {1..20}; do
+  if runuser -u kernel -- env XDG_RUNTIME_DIR=/tmp/runtime-kernel pactl info >/dev/null 2>&1; then
+    echo "[wrapper] PulseAudio is ready"
+    break
+  fi
+  if [ "$i" -eq 20 ]; then
+    echo "[wrapper] ERROR: PulseAudio failed to start" >&2
+    # Continue anyway, don't fail the whole container
+  fi
+  sleep 0.5
+done
+
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
 echo "[wrapper] Starting Chromium via supervisord on internal port $INTERNAL_PORT"
 supervisorctl -c /etc/supervisor/supervisord.conf start chromium
@@ -221,9 +240,6 @@ API_OUTPUT_DIR="${KERNEL_IMAGES_API_OUTPUT_DIR:-/recordings}"
 
 # Start via supervisord (env overrides are read by the service's command)
 supervisorctl -c /etc/supervisor/supervisord.conf start kernel-images-api
-
-echo "[wrapper] Starting PulseAudio daemon via supervisord"
-supervisorctl -c /etc/supervisor/supervisord.conf start pulseaudio
 
 # close the "--no-sandbox unsupported flag" warning when running as root
 # in the unikernel runtime we haven't been able to get chromium to launch as non-root without cryptic crashpad errors

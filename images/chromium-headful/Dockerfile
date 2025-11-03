@@ -162,7 +162,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private,id=ubuntu2204-aptca
     apt-get update; \
     apt-get --no-install-recommends -y install \
     wget ca-certificates python2 supervisor xclip xdotool \
-    pulseaudio dbus-x11 xserver-xorg-video-dummy \
+    pulseaudio dbus-x11 xserver-xorg-video-dummy rtkit \
     libcairo2 libxcb1 libxrandr2 libxv1 libopus0 libvpx7 \
     x11-xserver-utils \
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
@@ -180,12 +180,14 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private,id=ubuntu2204-aptca
     chmod 1777 /tmp/.X11-unix; \
     chown $USERNAME /tmp/.X11-unix/; \
     #
-    # make directories for neko
+    # make directories for neko and audio
     mkdir -p /etc/neko /var/www /var/log/neko \
     /tmp/runtime-$USERNAME \
+    /home/$USERNAME/.config \
     /home/$USERNAME/.config/pulse  \
     /home/$USERNAME/.local/share/xorg; \
     chmod 1777 /var/log/neko; \
+    chmod 777 /etc/pulse; \
     chown $USERNAME /var/log/neko/ /tmp/runtime-$USERNAME; \
     chown -R $USERNAME:$USERNAME /home/$USERNAME;
 
@@ -225,6 +227,10 @@ ENV WITHDOCKER=true
 
 COPY images/chromium-headful/xorg.conf /etc/neko/xorg.conf
 COPY images/chromium-headful/neko.yaml /etc/neko/neko.yaml
+COPY images/chromium-headful/default.pa /etc/pulse/default.pa
+COPY images/chromium-headful/daemon.conf /etc/pulse/daemon.conf
+COPY images/chromium-headful/dbus-pulseaudio.conf /etc/dbus-1/system.d/pulseaudio.conf
+COPY images/chromium-headful/dbus-mpris.conf /etc/dbus-1/system.d/mpris.conf
 COPY --from=neko /usr/bin/neko /usr/bin/neko
 COPY --from=client /src/dist/ /var/www
 COPY --from=xorg-deps /usr/local/lib/xorg/modules/drivers/dummy_drv.so /usr/lib/xorg/modules/drivers/dummy_drv.so
@@ -244,6 +250,17 @@ COPY --from=server-builder /out/chromium-launcher /usr/local/bin/chromium-launch
 # Copy the Playwright executor runtime
 COPY server/runtime/playwright-executor.ts /usr/local/lib/playwright-executor.ts
 
-RUN useradd -m -s /bin/bash kernel
+# Create kernel user with audio/video privileges
+RUN useradd -m -s /bin/bash kernel && \
+    for g in audio video pulse pulse-access; do \
+      groupadd -f "$g" && usermod -aG "$g" kernel; \
+    done
+
+# Audio environment variables
+ENV USER=kernel \
+    XDG_RUNTIME_DIR=/tmp/runtime-kernel \
+    PULSE_SERVER=unix:/tmp/runtime-kernel/pulse/native \
+    XDG_CONFIG_HOME=/tmp/.chromium \
+    XDG_CACHE_HOME=/tmp/.chromium
 
 ENTRYPOINT [ "/wrapper.sh" ]
