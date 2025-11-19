@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"runtime"
 	"sort"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -35,41 +34,31 @@ func NewCDPRuntimeBenchmark(logger *slog.Logger, proxyURL string, concurrency in
 	}
 }
 
-// Run executes the CDP benchmark for a fixed 5-second duration
-// Tests both proxied (9222) and direct (9223) CDP endpoints
+// Run executes the CDP benchmark
 func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (*CDPProxyResults, error) {
-	// Fixed 5-second duration for CDP benchmarks (measures req/sec throughput)
-	const cdpDuration = 5 * time.Second
-	b.logger.Info("starting CDP benchmark (proxied + direct)", "duration", cdpDuration, "concurrency", b.concurrency)
+	b.logger.Info("starting CDP benchmark", "concurrency", b.concurrency)
 
 	// Get baseline memory
 	var memStatsBefore runtime.MemStats
 	runtime.ReadMemStats(&memStatsBefore)
 
-	// Parse proxy URL and derive direct URL
-	proxiedURL := b.proxyURL
-	directURL := "http://localhost:9223" // Direct Chrome CDP endpoint
+	// Endpoints to test
+	proxiedURL := b.proxyURL         // http://localhost:9222
+	directURL := "http://localhost:9223" // Direct Chrome
 
-	// Fetch WebSocket URLs from /json/version endpoints
-	proxiedWSURL, err := fetchCDPWebSocketURL(proxiedURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get proxied CDP WebSocket URL: %w", err)
-	}
-	b.logger.Info("resolved proxied WebSocket URL", "url", proxiedWSURL)
-
-	directWSURL, err := fetchCDPWebSocketURL(directURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get direct CDP WebSocket URL: %w", err)
-	}
-	b.logger.Info("resolved direct WebSocket URL", "url", directWSURL)
-
-	// Benchmark proxied endpoint (kernel-images proxy on port 9222)
+	// Benchmark proxied endpoint
 	b.logger.Info("benchmarking proxied CDP endpoint", "url", proxiedURL)
-	proxiedResults := b.runWorkers(ctx, proxiedWSURL, cdpDuration)
+	proxiedResults, err := b.benchmarkEndpoint(ctx, proxiedURL)
+	if err != nil {
+		return nil, fmt.Errorf("proxied endpoint failed: %w", err)
+	}
 
-	// Benchmark direct endpoint (Chrome CDP on port 9223)
+	// Benchmark direct endpoint
 	b.logger.Info("benchmarking direct CDP endpoint", "url", directURL)
-	directResults := b.runWorkers(ctx, directWSURL, cdpDuration)
+	directResults, err := b.benchmarkEndpoint(ctx, directURL)
+	if err != nil {
+		return nil, fmt.Errorf("direct endpoint failed: %w", err)
+	}
 
 	// Get final memory
 	var memStatsAfter runtime.MemStats
@@ -82,41 +71,318 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 
 	// Calculate proxy overhead
 	proxyOverhead := 0.0
-	if directResults.ThroughputMsgsPerSec > 0 {
-		proxyOverhead = ((directResults.ThroughputMsgsPerSec - proxiedResults.ThroughputMsgsPerSec) / directResults.ThroughputMsgsPerSec) * 100.0
+	if directResults.TotalThroughputOpsPerSec > 0 {
+		proxyOverhead = ((directResults.TotalThroughputOpsPerSec - proxiedResults.TotalThroughputOpsPerSec) / directResults.TotalThroughputOpsPerSec) * 100.0
 	}
 
-	// Return results with both direct and proxied endpoint metrics
-	// Overall metrics use proxied results for backward compatibility
 	return &CDPProxyResults{
-		ThroughputMsgsPerSec:  proxiedResults.ThroughputMsgsPerSec,
-		LatencyMS:             proxiedResults.LatencyMS,
 		ConcurrentConnections: b.concurrency,
 		MemoryMB: MemoryMetrics{
 			Baseline:      baselineMemMB,
 			PerConnection: perConnectionMemMB,
 		},
-		MessageSizeBytes: proxiedResults.MessageSizeBytes,
-		// No root-level Scenarios - they're in ProxiedEndpoint and DirectEndpoint
-		ProxiedEndpoint: &CDPEndpointResults{
-			EndpointURL:          proxiedURL,
-			ThroughputMsgsPerSec: proxiedResults.ThroughputMsgsPerSec,
-			LatencyMS:            proxiedResults.LatencyMS,
-			Scenarios:            proxiedResults.Scenarios,
-		},
-		DirectEndpoint: &CDPEndpointResults{
-			EndpointURL:          directURL,
-			ThroughputMsgsPerSec: directResults.ThroughputMsgsPerSec,
-			LatencyMS:            directResults.LatencyMS,
-			Scenarios:            directResults.Scenarios,
-		},
+		ProxiedEndpoint:      proxiedResults,
+		DirectEndpoint:       directResults,
 		ProxyOverheadPercent: proxyOverhead,
 	}, nil
 }
 
-// fetchCDPWebSocketURL fetches the WebSocket debugger URL from a CDP endpoint
-// by querying the /json/version endpoint, following the standard CDP protocol
-func fetchCDPWebSocketURL(baseURL string) (string, error) {
+// benchmarkEndpoint benchmarks a single CDP endpoint
+func (b *CDPRuntimeBenchmark) benchmarkEndpoint(ctx context.Context, baseURL string) (*CDPEndpointResults, error) {
+	// Fetch WebSocket URL
+	wsURL, err := fetchBrowserWebSocketURL(baseURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get WebSocket URL: %w", err)
+	}
+	b.logger.Info("resolved WebSocket URL", "url", wsURL)
+
+	// Define scenarios to benchmark (run each independently for distinct metrics)
+	scenarios := []scenarioDef{
+		{
+			Name:        "Browser.getVersion",
+			Category:    "Browser",
+			Description: "Get browser version information (baseline latency)",
+			Method:      "Browser.getVersion",
+			Params:      nil,
+			Duration:    500 * time.Millisecond,
+			RequiresPage: false, // Browser-level command
+		},
+		{
+			Name:        "Runtime.evaluate-simple",
+			Category:    "Runtime",
+			Description: "Evaluate simple JavaScript expression",
+			Method:      "Runtime.evaluate",
+			Params:      map[string]interface{}{"expression": "1+1"},
+			Duration:    500 * time.Millisecond,
+			RequiresPage: true,
+		},
+		{
+			Name:        "Runtime.evaluate-complex",
+			Category:    "Runtime",
+			Description: "Evaluate complex JavaScript with DOM access",
+			Method:      "Runtime.evaluate",
+			Params:      map[string]interface{}{"expression": "document.querySelector('body').children.length"},
+			Duration:    500 * time.Millisecond,
+			RequiresPage: true,
+		},
+		{
+			Name:        "DOM.getDocument",
+			Category:    "DOM",
+			Description: "Retrieve the root DOM document structure",
+			Method:      "DOM.getDocument",
+			Params:      map[string]interface{}{"depth": 1},
+			Duration:    500 * time.Millisecond,
+			RequiresPage: true,
+		},
+		{
+			Name:        "Page.getNavigationHistory",
+			Category:    "Page",
+			Description: "Retrieve page navigation history",
+			Method:      "Page.getNavigationHistory",
+			Params:      nil,
+			Duration:    500 * time.Millisecond,
+			RequiresPage: true,
+		},
+		{
+			Name:        "Page.captureScreenshot",
+			Category:    "Page",
+			Description: "Capture page screenshot (heavy I/O operation)",
+			Method:      "Page.captureScreenshot",
+			Params:      map[string]interface{}{"format": "png", "quality": 80},
+			Duration:    500 * time.Millisecond,
+			RequiresPage: true,
+		},
+		{
+			Name:        "Network.getCookies",
+			Category:    "Network",
+			Description: "Retrieve browser cookies",
+			Method:      "Network.getCookies",
+			Params:      nil,
+			Duration:    500 * time.Millisecond,
+			RequiresPage: true,
+		},
+		{
+			Name:        "Performance.getMetrics",
+			Category:    "Performance",
+			Description: "Get runtime performance metrics",
+			Method:      "Performance.getMetrics",
+			Params:      nil,
+			Duration:    500 * time.Millisecond,
+			RequiresPage: true,
+		},
+	}
+
+	// Connect to browser WebSocket
+	conn, _, err := websocket.Dial(ctx, wsURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to dial: %w", err)
+	}
+	defer conn.Close(websocket.StatusNormalClosure, "")
+
+	// Get or create a page target and attach to it
+	sessionID, err := b.attachToPageTarget(ctx, conn)
+	if err != nil {
+		b.logger.Warn("failed to attach to page target, some scenarios may fail", "err", err)
+		sessionID = "" // Continue without session - browser-level commands will still work
+	} else {
+		b.logger.Info("attached to page target", "sessionId", sessionID)
+	}
+
+	// Run each scenario independently
+	scenarioResults := make([]CDPScenarioResult, 0, len(scenarios))
+	totalOps := int64(0)
+	totalDuration := 0.0
+
+	for _, scenario := range scenarios {
+		b.logger.Info("running scenario", "name", scenario.Name, "duration", scenario.Duration)
+
+		result := b.runScenarioIndependently(ctx, conn, sessionID, scenario)
+		scenarioResults = append(scenarioResults, result)
+		totalOps += result.OperationCount
+		totalDuration += scenario.Duration.Seconds()
+	}
+
+	// Calculate overall throughput
+	totalThroughput := float64(totalOps) / totalDuration
+
+	return &CDPEndpointResults{
+		EndpointURL:               baseURL,
+		TotalThroughputOpsPerSec:  totalThroughput,
+		Scenarios:                 scenarioResults,
+	}, nil
+}
+
+// scenarioDef defines a CDP scenario to benchmark
+type scenarioDef struct {
+	Name         string
+	Category     string
+	Description  string
+	Method       string
+	Params       map[string]interface{}
+	Duration     time.Duration
+	RequiresPage bool // If true, requires page target attachment
+}
+
+// attachToPageTarget finds a page target and attaches to it, returning the sessionId
+func (b *CDPRuntimeBenchmark) attachToPageTarget(ctx context.Context, conn *websocket.Conn) (string, error) {
+	// Get list of targets
+	response, err := sendCDPCommand(ctx, conn, "", 100000, "Target.getTargets", nil)
+	if err != nil {
+		return "", fmt.Errorf("Target.getTargets failed: %w", err)
+	}
+
+	// Find a page target
+	targetInfos, ok := response.Result["targetInfos"].([]interface{})
+	if !ok || len(targetInfos) == 0 {
+		return "", fmt.Errorf("no targets found")
+	}
+
+	var pageTargetID string
+	for _, info := range targetInfos {
+		targetInfo, ok := info.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		targetType, _ := targetInfo["type"].(string)
+		if targetType == "page" {
+			pageTargetID, _ = targetInfo["targetId"].(string)
+			break
+		}
+	}
+
+	if pageTargetID == "" {
+		return "", fmt.Errorf("no page target found")
+	}
+
+	// Attach to the page target
+	response, err = sendCDPCommand(ctx, conn, "", 100001, "Target.attachToTarget", map[string]interface{}{
+		"targetId": pageTargetID,
+		"flatten":  true, // Use flattened protocol
+	})
+	if err != nil {
+		return "", fmt.Errorf("Target.attachToTarget failed: %w", err)
+	}
+
+	sessionID, ok := response.Result["sessionId"].(string)
+	if !ok {
+		return "", fmt.Errorf("no sessionId in attach response")
+	}
+
+	// Enable required domains for the session
+	domains := []string{"Runtime", "DOM", "Page", "Network", "Performance"}
+	msgID := 100002
+	for _, domain := range domains {
+		_, err := sendCDPCommand(ctx, conn, sessionID, msgID, domain+".enable", nil)
+		if err != nil {
+			b.logger.Warn("failed to enable domain", "domain", domain, "err", err)
+		}
+		msgID++
+	}
+
+	return sessionID, nil
+}
+
+// runScenarioIndependently runs a single scenario independently and returns its metrics
+func (b *CDPRuntimeBenchmark) runScenarioIndependently(ctx context.Context, conn *websocket.Conn, sessionID string, scenario scenarioDef) CDPScenarioResult {
+	scenarioCtx, cancel := context.WithTimeout(ctx, scenario.Duration)
+	defer cancel()
+
+	var (
+		operations  atomic.Int64
+		failures    atomic.Int64
+		latencies   []float64
+		latenciesMu sync.Mutex
+		wg          sync.WaitGroup
+	)
+
+	startTime := time.Now()
+
+	// Run concurrent workers for this scenario
+	for i := 0; i < b.concurrency; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+
+			msgID := workerID * 1000000 // Unique message ID space per worker
+
+			for {
+				select {
+				case <-scenarioCtx.Done():
+					return
+				default:
+				}
+
+				msgID++
+				start := time.Now()
+
+				// If scenario requires page session but we don't have one, skip
+				effectiveSessionID := sessionID
+				if scenario.RequiresPage && sessionID == "" {
+					// Fail immediately
+					failures.Add(1)
+					operations.Add(1)
+					continue
+				}
+
+				response, err := sendCDPCommand(scenarioCtx, conn, effectiveSessionID, msgID, scenario.Method, scenario.Params)
+				latency := time.Since(start)
+				latencyMs := float64(latency.Microseconds()) / 1000.0
+
+				operations.Add(1)
+
+				if err != nil {
+					failures.Add(1)
+					if response == nil || response.Error == nil {
+						// Connection error, bail out
+						if scenarioCtx.Err() == nil {
+							b.logger.Error("connection error in scenario", "scenario", scenario.Name, "worker", workerID, "err", err)
+						}
+						return
+					}
+					// CDP error - log and continue
+					if response.Error != nil {
+						b.logger.Debug("CDP error", "scenario", scenario.Name, "code", response.Error.Code, "msg", response.Error.Message)
+					}
+				}
+
+				latenciesMu.Lock()
+				latencies = append(latencies, latencyMs)
+				latenciesMu.Unlock()
+			}
+		}(i)
+	}
+
+	wg.Wait()
+
+	elapsed := time.Since(startTime)
+	ops := operations.Load()
+	fails := failures.Load()
+
+	// Calculate success rate
+	successRate := 100.0
+	if ops > 0 {
+		successRate = (float64(ops-fails) / float64(ops)) * 100.0
+	}
+
+	// Calculate throughput
+	throughput := float64(ops) / elapsed.Seconds()
+
+	// Calculate latency percentiles (only from successful operations if possible)
+	latencyMetrics := calculatePercentiles(latencies)
+
+	return CDPScenarioResult{
+		Name:                scenario.Name,
+		Description:         scenario.Description,
+		Category:            scenario.Category,
+		OperationCount:      ops,
+		ThroughputOpsPerSec: throughput,
+		LatencyMS:           latencyMetrics,
+		SuccessRate:         successRate,
+	}
+}
+
+// fetchBrowserWebSocketURL fetches the browser WebSocket URL from /json/version
+func fetchBrowserWebSocketURL(baseURL string) (string, error) {
 	// Ensure baseURL has a scheme
 	if u, err := url.Parse(baseURL); err == nil && u.Scheme == "" {
 		baseURL = "http://" + baseURL
@@ -152,349 +418,47 @@ func fetchCDPWebSocketURL(baseURL string) (string, error) {
 	return versionInfo.WebSocketDebuggerURL, nil
 }
 
-type workerResults struct {
-	ThroughputMsgsPerSec float64
-	LatencyMS            LatencyMetrics
-	MessageSizeBytes     MessageSizeMetrics
-	Scenarios            []CDPScenarioResult
+// sendCDPCommand sends a CDP command and waits for the response
+// sessionID can be empty string for browser-level commands
+func sendCDPCommand(ctx context.Context, conn *websocket.Conn, sessionID string, id int, method string, params map[string]interface{}) (*CDPMessage, error) {
+	request := CDPMessage{
+		ID:     id,
+		Method: method,
+		Params: params,
+	}
+
+	// If sessionId is provided, add it to the request
+	if sessionID != "" {
+		request.SessionID = sessionID
+	}
+
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	if err := conn.Write(ctx, websocket.MessageText, requestBytes); err != nil {
+		return nil, fmt.Errorf("failed to write: %w", err)
+	}
+
+	_, responseBytes, err := conn.Read(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read: %w", err)
+	}
+
+	var response CDPMessage
+	if err := json.Unmarshal(responseBytes, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if response.Error != nil {
+		return &response, fmt.Errorf("CDP error: %s (code %d)", response.Error.Message, response.Error.Code)
+	}
+
+	return &response, nil
 }
 
-type scenarioStats struct {
-	Name        string
-	Description string
-	Category    string
-	Operations  atomic.Int64
-	Failures    atomic.Int64
-	Latencies   []float64
-	LatenciesMu sync.Mutex
-}
-
-func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, duration time.Duration) workerResults {
-	benchCtx, cancel := context.WithTimeout(ctx, duration)
-	defer cancel()
-
-	// Define test scenario generators that will use session context
-	type testScenarioGen struct {
-		Name        string
-		Description string
-		Category    string
-		GenFunc     func(*cdpSessionContext) (string, map[string]interface{}) // returns method, params
-	}
-
-	scenarioGens := []testScenarioGen{
-		// Runtime operations - JavaScript evaluation and object inspection
-		{
-			Name:        "Runtime.evaluate",
-			Description: "Evaluate simple JavaScript expression",
-			Category:    "Runtime",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Runtime.evaluate", map[string]interface{}{"expression": "1+1"}
-			},
-		},
-		{
-			Name:        "Runtime.evaluate-complex",
-			Description: "Evaluate complex JavaScript with DOM access",
-			Category:    "Runtime",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Runtime.evaluate", map[string]interface{}{"expression": "document.querySelector('body').children.length"}
-			},
-		},
-		{
-			Name:        "Runtime.getProperties",
-			Description: "Get runtime object properties",
-			Category:    "Runtime",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Runtime.getProperties", map[string]interface{}{"objectId": sess.objectID}
-			},
-		},
-		{
-			Name:        "Runtime.callFunctionOn",
-			Description: "Call function on remote object",
-			Category:    "Runtime",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Runtime.callFunctionOn", map[string]interface{}{
-					"objectId":            sess.objectID,
-					"functionDeclaration": "function(){return this;}",
-				}
-			},
-		},
-
-		// DOM operations - Document structure and element queries
-		{
-			Name:        "DOM.getDocument",
-			Description: "Retrieve the root DOM document structure",
-			Category:    "DOM",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "DOM.getDocument", map[string]interface{}{}
-			},
-		},
-		{
-			Name:        "DOM.querySelector",
-			Description: "Query DOM elements by CSS selector",
-			Category:    "DOM",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "DOM.querySelector", map[string]interface{}{
-					"nodeId":   sess.documentNode,
-					"selector": "body",
-				}
-			},
-		},
-		{
-			Name:        "DOM.getAttributes",
-			Description: "Get attributes of a DOM node",
-			Category:    "DOM",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "DOM.getAttributes", map[string]interface{}{"nodeId": sess.documentNode}
-			},
-		},
-		{
-			Name:        "DOM.getOuterHTML",
-			Description: "Get outer HTML of a node",
-			Category:    "DOM",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "DOM.getOuterHTML", map[string]interface{}{"nodeId": sess.documentNode}
-			},
-		},
-
-		// Page operations - Navigation, resources, and page state
-		{
-			Name:        "Page.getNavigationHistory",
-			Description: "Retrieve page navigation history",
-			Category:    "Page",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Page.getNavigationHistory", map[string]interface{}{}
-			},
-		},
-		{
-			Name:        "Page.getResourceTree",
-			Description: "Get page resource tree structure",
-			Category:    "Page",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Page.getResourceTree", map[string]interface{}{}
-			},
-		},
-		{
-			Name:        "Page.getFrameTree",
-			Description: "Get frame tree structure",
-			Category:    "Page",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Page.getFrameTree", map[string]interface{}{}
-			},
-		},
-		{
-			Name:        "Page.captureScreenshot",
-			Description: "Capture page screenshot via CDP",
-			Category:    "Page",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Page.captureScreenshot", map[string]interface{}{"format": "png"}
-			},
-		},
-
-		// Network operations - Request/response inspection
-		{
-			Name:        "Network.getCookies",
-			Description: "Retrieve browser cookies",
-			Category:    "Network",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Network.getCookies", map[string]interface{}{}
-			},
-		},
-		{
-			Name:        "Network.getAllCookies",
-			Description: "Get all cookies from all contexts",
-			Category:    "Network",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Network.getAllCookies", map[string]interface{}{}
-			},
-		},
-
-		// Performance operations - Metrics and profiling
-		{
-			Name:        "Performance.getMetrics",
-			Description: "Get runtime performance metrics",
-			Category:    "Performance",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Performance.getMetrics", map[string]interface{}{}
-			},
-		},
-
-		// Target operations - Tab and context management
-		{
-			Name:        "Target.getTargets",
-			Description: "List all available targets",
-			Category:    "Target",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Target.getTargets", map[string]interface{}{}
-			},
-		},
-		{
-			Name:        "Target.getTargetInfo",
-			Description: "Get information about specific target",
-			Category:    "Target",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				params := map[string]interface{}{}
-				if sess.targetID != "" {
-					params["targetId"] = sess.targetID
-				}
-				return "Target.getTargetInfo", params
-			},
-		},
-
-		// Browser operations - Browser-level information
-		{
-			Name:        "Browser.getVersion",
-			Description: "Get browser version information",
-			Category:    "Browser",
-			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
-				return "Browser.getVersion", map[string]interface{}{}
-			},
-		},
-	}
-
-	// Initialize scenario tracking
-	scenarioStatsMap := make([]*scenarioStats, len(scenarioGens))
-	for i, scenarioGen := range scenarioGens {
-		scenarioStatsMap[i] = &scenarioStats{
-			Name:        scenarioGen.Name,
-			Description: scenarioGen.Description,
-			Category:    scenarioGen.Category,
-			Latencies:   make([]float64, 0, 1000),
-		}
-	}
-
-	var (
-		totalOps     atomic.Int64
-		latencies    []float64
-		latenciesMu  sync.Mutex
-		wg           sync.WaitGroup
-	)
-
-	startTime := time.Now()
-
-	// Start workers
-	for i := 0; i < b.concurrency; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
-
-			conn, _, err := websocket.Dial(benchCtx, wsURL, nil)
-			if err != nil {
-				b.logger.Error("failed to dial proxy", "worker", workerID, "err", err)
-				return
-			}
-			defer conn.Close(websocket.StatusNormalClosure, "")
-
-			// Initialize CDP session with proper domains and context
-			sessionCtx, err := initializeCDPSession(benchCtx, conn, b.logger)
-			if err != nil {
-				b.logger.Error("failed to initialize CDP session", "worker", workerID, "err", err)
-				return
-			}
-
-			msgIdx := 0
-			for {
-				select {
-				case <-benchCtx.Done():
-					return
-				default:
-				}
-
-				scenarioIdx := msgIdx % len(scenarioGens)
-				scenarioGen := scenarioGens[scenarioIdx]
-				stats := scenarioStatsMap[scenarioIdx]
-				msgIdx++
-
-				// Generate method and params using session context
-				method, params := scenarioGen.GenFunc(sessionCtx)
-
-				// Use unique message ID based on worker and message index
-				msgID := workerID*1000000 + msgIdx
-
-				start := time.Now()
-				response, err := sendCDPCommand(benchCtx, conn, msgID, method, params)
-				latency := time.Since(start)
-				latencyMs := float64(latency.Microseconds()) / 1000.0
-
-				if err != nil {
-					// Check if it's a CDP error (response received but with error) vs connection error
-					if response != nil && response.Error != nil {
-						// CDP returned an error response - this is a failure
-						stats.Failures.Add(1)
-						if !strings.Contains(err.Error(), "Cannot find context") {
-							b.logger.Debug("CDP error", "worker", workerID, "scenario", stats.Name, "err", err)
-						}
-					} else {
-						// Connection error - bail out
-						if benchCtx.Err() != nil {
-							return
-						}
-						b.logger.Error("connection error", "worker", workerID, "scenario", stats.Name, "err", err)
-						return
-					}
-				}
-
-				// Track overall stats
-				totalOps.Add(1)
-				latenciesMu.Lock()
-				latencies = append(latencies, latencyMs)
-				latenciesMu.Unlock()
-
-				// Track scenario-specific stats
-				stats.Operations.Add(1)
-				stats.LatenciesMu.Lock()
-				stats.Latencies = append(stats.Latencies, latencyMs)
-				stats.LatenciesMu.Unlock()
-			}
-		}(i)
-	}
-
-	wg.Wait()
-
-	elapsed := time.Since(startTime)
-	ops := totalOps.Load()
-
-	// Calculate overall throughput
-	throughput := float64(ops) / elapsed.Seconds()
-
-	// Calculate overall latency percentiles
-	latencyMetrics := calculatePercentiles(latencies)
-
-	// Calculate per-scenario results
-	scenarioResults := make([]CDPScenarioResult, len(scenarioStatsMap))
-	for i, stats := range scenarioStatsMap {
-		operations := stats.Operations.Load()
-		failures := stats.Failures.Load()
-		successRate := 100.0
-		if operations > 0 {
-			successRate = (float64(operations-failures) / float64(operations)) * 100.0
-		}
-
-		scenarioResults[i] = CDPScenarioResult{
-			Name:                stats.Name,
-			Description:         stats.Description,
-			Category:            stats.Category,
-			OperationCount:      operations,
-			ThroughputOpsPerSec: float64(operations) / elapsed.Seconds(),
-			LatencyMS:           calculatePercentiles(stats.Latencies),
-			SuccessRate:         successRate,
-		}
-	}
-
-	// Message size metrics (approximate based on test messages)
-	messageSizes := MessageSizeMetrics{
-		Min: 50,
-		Max: 200,
-		Avg: 100,
-	}
-
-	return workerResults{
-		ThroughputMsgsPerSec: throughput,
-		LatencyMS:            latencyMetrics,
-		MessageSizeBytes:     messageSizes,
-		Scenarios:            scenarioResults,
-	}
-}
-
+// calculatePercentiles calculates latency percentiles from a slice of values
 func calculatePercentiles(values []float64) LatencyMetrics {
 	if len(values) == 0 {
 		return LatencyMetrics{}
@@ -525,132 +489,16 @@ func calculatePercentiles(values []float64) LatencyMetrics {
 
 // CDPMessage represents a generic CDP message
 type CDPMessage struct {
-	ID     int                    `json:"id"`
-	Method string                 `json:"method,omitempty"`
-	Params map[string]interface{} `json:"params,omitempty"`
-	Result map[string]interface{} `json:"result,omitempty"`
-	Error  *CDPError              `json:"error,omitempty"`
+	ID        int                    `json:"id"`
+	SessionID string                 `json:"sessionId,omitempty"`
+	Method    string                 `json:"method,omitempty"`
+	Params    map[string]interface{} `json:"params,omitempty"`
+	Result    map[string]interface{} `json:"result,omitempty"`
+	Error     *CDPError              `json:"error,omitempty"`
 }
 
 // CDPError represents a CDP error response
 type CDPError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-}
-
-// cdpSessionContext holds the initialized CDP session state
-type cdpSessionContext struct {
-	sessionID    string
-	targetID     string
-	documentNode int
-	objectID     string // A valid runtime object ID
-}
-
-// sendCDPCommand sends a CDP command and waits for the response
-func sendCDPCommand(ctx context.Context, conn *websocket.Conn, id int, method string, params map[string]interface{}) (*CDPMessage, error) {
-	request := CDPMessage{
-		ID:     id,
-		Method: method,
-		Params: params,
-	}
-
-	requestBytes, err := json.Marshal(request)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal request: %w", err)
-	}
-
-	if err := conn.Write(ctx, websocket.MessageText, requestBytes); err != nil {
-		return nil, fmt.Errorf("failed to write: %w", err)
-	}
-
-	_, responseBytes, err := conn.Read(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read: %w", err)
-	}
-
-	var response CDPMessage
-	if err := json.Unmarshal(responseBytes, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	if response.Error != nil {
-		return &response, fmt.Errorf("CDP error: %s (code %d)", response.Error.Message, response.Error.Code)
-	}
-
-	return &response, nil
-}
-
-// initializeCDPSession sets up a proper CDP session with enabled domains and context
-func initializeCDPSession(ctx context.Context, conn *websocket.Conn, logger *slog.Logger) (*cdpSessionContext, error) {
-	msgID := 1000000 // Use high IDs to avoid collision with benchmark messages
-
-	// Enable Runtime domain
-	if _, err := sendCDPCommand(ctx, conn, msgID, "Runtime.enable", nil); err != nil {
-		logger.Warn("Runtime.enable failed", "err", err)
-	}
-	msgID++
-
-	// Enable DOM domain
-	if _, err := sendCDPCommand(ctx, conn, msgID, "DOM.enable", nil); err != nil {
-		logger.Warn("DOM.enable failed", "err", err)
-	}
-	msgID++
-
-	// Enable Page domain
-	if _, err := sendCDPCommand(ctx, conn, msgID, "Page.enable", nil); err != nil {
-		logger.Warn("Page.enable failed", "err", err)
-	}
-	msgID++
-
-	// Enable Network domain
-	if _, err := sendCDPCommand(ctx, conn, msgID, "Network.enable", nil); err != nil {
-		logger.Warn("Network.enable failed", "err", err)
-	}
-	msgID++
-
-	// Get the current target ID
-	targetResp, err := sendCDPCommand(ctx, conn, msgID, "Target.getTargets", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get targets: %w", err)
-	}
-	msgID++
-
-	// Extract first page target
-	sessionCtx := &cdpSessionContext{}
-	if targetInfos, ok := targetResp.Result["targetInfos"].([]interface{}); ok && len(targetInfos) > 0 {
-		if targetInfo, ok := targetInfos[0].(map[string]interface{}); ok {
-			if targetID, ok := targetInfo["targetId"].(string); ok {
-				sessionCtx.targetID = targetID
-			}
-		}
-	}
-
-	// Get document node
-	docResp, err := sendCDPCommand(ctx, conn, msgID, "DOM.getDocument", nil)
-	if err != nil {
-		logger.Warn("DOM.getDocument failed during init", "err", err)
-	} else {
-		if root, ok := docResp.Result["root"].(map[string]interface{}); ok {
-			if nodeID, ok := root["nodeId"].(float64); ok {
-				sessionCtx.documentNode = int(nodeID)
-			}
-		}
-	}
-	msgID++
-
-	// Get a valid object ID by evaluating a simple expression
-	objResp, err := sendCDPCommand(ctx, conn, msgID, "Runtime.evaluate", map[string]interface{}{
-		"expression": "({test: 123})",
-	})
-	if err != nil {
-		logger.Warn("Runtime.evaluate failed during init", "err", err)
-	} else {
-		if result, ok := objResp.Result["result"].(map[string]interface{}); ok {
-			if objectID, ok := result["objectId"].(string); ok {
-				sessionCtx.objectID = objectID
-			}
-		}
-	}
-
-	return sessionCtx, nil
 }
