@@ -330,37 +330,42 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 	}
 }
 
-// fetchBrowserWebSocketURL fetches the browser WebSocket URL from /json/version
+// fetchBrowserWebSocketURL fetches a page WebSocket URL from /json
 func fetchBrowserWebSocketURL(baseURL string) (string, error) {
 	if u, err := url.Parse(baseURL); err == nil && u.Scheme == "" {
 		baseURL = "http://" + baseURL
 	}
 
-	versionURL := baseURL + "/json/version"
+	// Use /json to get list of pages (not /json/version which is browser-level)
+	jsonURL := baseURL + "/json"
 
-	resp, err := http.Get(versionURL)
+	resp, err := http.Get(jsonURL)
 	if err != nil {
-		return "", fmt.Errorf("failed to fetch %s: %w", versionURL, err)
+		return "", fmt.Errorf("failed to fetch %s: %w", jsonURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, versionURL, string(body))
+		return "", fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, jsonURL, string(body))
 	}
 
-	var versionInfo struct {
+	var pages []struct {
+		Type                 string `json:"type"`
 		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
-		return "", fmt.Errorf("failed to decode JSON from %s: %w", versionURL, err)
+	if err := json.NewDecoder(resp.Body).Decode(&pages); err != nil {
+		return "", fmt.Errorf("failed to decode JSON from %s: %w", jsonURL, err)
 	}
 
-	if versionInfo.WebSocketDebuggerURL == "" {
-		return "", fmt.Errorf("webSocketDebuggerUrl not found in response from %s", versionURL)
+	// Find a page target
+	for _, page := range pages {
+		if page.Type == "page" && page.WebSocketDebuggerURL != "" {
+			return page.WebSocketDebuggerURL, nil
+		}
 	}
 
-	return versionInfo.WebSocketDebuggerURL, nil
+	return "", fmt.Errorf("no page target found in %s", jsonURL)
 }
 
 // sendCDPCommandSimple sends a CDP command without sessionID
