@@ -128,19 +128,28 @@ func (b *CDPRuntimeBenchmark) benchmarkEndpoint(ctx context.Context, baseURL str
 	}
 	b.logger.Info("created page target", "targetId", targetID)
 
-	// Attach to the target
+	// Attach to the target (without flatten - proxy might not support it)
 	b.logger.Info("attaching to target")
 	attachResp, err := sendCDPCommand(ctx, conn, "", msgID, "Target.attachToTarget", map[string]interface{}{
 		"targetId": targetID,
-		"flatten":  true,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("Target.attachToTarget failed: %w", err)
 	}
 	msgID++
 
+	// Log the full response to see what we got
+	respJSON, _ := json.Marshal(attachResp.Result)
+	b.logger.Info("attachToTarget response", "result_json", string(respJSON))
+
 	sessionID, ok := attachResp.Result["sessionId"].(string)
 	if !ok || sessionID == "" {
+		// Try without type assertion to see what's there
+		if sid, exists := attachResp.Result["sessionId"]; exists {
+			b.logger.Error("sessionId exists but wrong type", "value", sid, "type", fmt.Sprintf("%T", sid))
+		} else {
+			b.logger.Error("sessionId not in result", "result_keys", getMapKeys(attachResp.Result))
+		}
 		return nil, fmt.Errorf("no sessionId in attachToTarget response")
 	}
 	b.logger.Info("attached to target", "sessionId", sessionID)
@@ -494,4 +503,13 @@ type CDPMessage struct {
 type CDPError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+// getMapKeys returns the keys of a map for debugging
+func getMapKeys(m map[string]interface{}) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
