@@ -104,30 +104,6 @@ func (b *CDPRuntimeBenchmark) benchmarkEndpoint(ctx context.Context, baseURL str
 	}
 	b.logger.Info("resolved WebSocket URL", "url", wsURL)
 
-	// Connect to browser WebSocket
-	conn, _, err := websocket.Dial(ctx, wsURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to dial: %w", err)
-	}
-	defer conn.Close(websocket.StatusNormalClosure, "")
-
-	msgID := 100000
-
-	// Just enable domains directly without creating/attaching to targets
-	// The browser WebSocket URL already points to a specific target
-	b.logger.Info("enabling CDP domains")
-	domains := []string{"Runtime", "DOM", "Page", "Network", "Performance"}
-	for _, domain := range domains {
-		method := domain + ".enable"
-		_, err := sendCDPCommandSimple(ctx, conn, msgID, method, nil)
-		if err != nil {
-			b.logger.Warn("failed to enable domain", "domain", domain, "err", err)
-		} else {
-			b.logger.Debug("enabled domain", "domain", domain)
-		}
-		msgID++
-	}
-
 	// Define scenarios to benchmark
 	scenarios := []scenarioDef{
 		{
@@ -182,7 +158,7 @@ func (b *CDPRuntimeBenchmark) benchmarkEndpoint(ctx context.Context, baseURL str
 	}
 
 	// Run mixed workload benchmark
-	results := b.runMixedWorkload(ctx, conn, scenarios, duration)
+	results := b.runMixedWorkload(ctx, wsURL, scenarios, duration)
 	results.EndpointURL = baseURL
 
 	return results, nil
@@ -200,8 +176,8 @@ type scenarioStats struct {
 	LatenciesMu sync.Mutex
 }
 
-// runMixedWorkload runs a mixed workload benchmark
-func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websocket.Conn, scenarios []scenarioDef, duration time.Duration) *CDPEndpointResults {
+// runMixedWorkload runs a mixed workload benchmark with separate connections per worker
+func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, wsURL string, scenarios []scenarioDef, duration time.Duration) *CDPEndpointResults {
 	benchCtx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
@@ -229,7 +205,26 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 		go func(workerID int) {
 			defer wg.Done()
 
+			// Each worker creates its own WebSocket connection
+			conn, _, err := websocket.Dial(benchCtx, wsURL, nil)
+			if err != nil {
+				b.logger.Error("worker failed to connect", "worker", workerID, "err", err)
+				return
+			}
+			defer conn.Close(websocket.StatusNormalClosure, "")
+
+			// Enable domains on this connection
 			msgID := (workerID + 1) * 1000000
+			domains := []string{"Runtime", "DOM", "Page", "Network", "Performance"}
+			for _, domain := range domains {
+				method := domain + ".enable"
+				_, err := sendCDPCommandSimple(benchCtx, conn, msgID, method, nil)
+				if err != nil && workerID == 0 {
+					b.logger.Warn("failed to enable domain", "domain", domain, "err", err)
+				}
+				msgID++
+			}
+
 			scenarioIdx := 0
 
 			for {
@@ -330,14 +325,13 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 	}
 }
 
-// fetchBrowserWebSocketURL fetches a page WebSocket URL from /json
+// fetchBrowserWebSocketURL fetches the browser WebSocket debugger URL
 func fetchBrowserWebSocketURL(baseURL string) (string, error) {
 	if u, err := url.Parse(baseURL); err == nil && u.Scheme == "" {
 		baseURL = "http://" + baseURL
 	}
 
-	// Use /json to get list of pages (not /json/version which is browser-level)
-	jsonURL := baseURL + "/json"
+	jsonURL := baseURL + "/json/version"
 
 	resp, err := http.Get(jsonURL)
 	if err != nil {
@@ -350,25 +344,21 @@ func fetchBrowserWebSocketURL(baseURL string) (string, error) {
 		return "", fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, jsonURL, string(body))
 	}
 
-	var pages []struct {
-		Type                 string `json:"type"`
+	var versionInfo struct {
 		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&pages); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
 		return "", fmt.Errorf("failed to decode JSON from %s: %w", jsonURL, err)
 	}
 
-	// Find a page target
-	for _, page := range pages {
-		if page.Type == "page" && page.WebSocketDebuggerURL != "" {
-			return page.WebSocketDebuggerURL, nil
-		}
+	if versionInfo.WebSocketDebuggerURL == "" {
+		return "", fmt.Errorf("no webSocketDebuggerUrl in response from %s", jsonURL)
 	}
 
-	return "", fmt.Errorf("no page target found in %s", jsonURL)
+	return versionInfo.WebSocketDebuggerURL, nil
 }
 
-// sendCDPCommandSimple sends a CDP command without sessionID
+// sendCDPCommandSimple sends a CDP command without sessionID and waits for matching response
 func sendCDPCommandSimple(ctx context.Context, conn *websocket.Conn, id int, method string, params map[string]interface{}) (*CDPMessage, error) {
 	request := CDPMessage{
 		ID:     id,
@@ -385,21 +375,33 @@ func sendCDPCommandSimple(ctx context.Context, conn *websocket.Conn, id int, met
 		return nil, fmt.Errorf("failed to write: %w", err)
 	}
 
-	_, responseBytes, err := conn.Read(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read: %w", err)
+	// Keep reading until we get a response with matching ID (skip events)
+	maxReads := 100 // Safety limit to avoid infinite loop
+	for i := 0; i < maxReads; i++ {
+		_, responseBytes, err := conn.Read(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read: %w", err)
+		}
+
+		var response CDPMessage
+		if err := json.Unmarshal(responseBytes, &response); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+
+		// Skip events (messages without ID or with non-matching ID)
+		if response.ID != id {
+			continue
+		}
+
+		// Found our response
+		if response.Error != nil {
+			return &response, fmt.Errorf("CDP error: %s (code %d)", response.Error.Message, response.Error.Code)
+		}
+
+		return &response, nil
 	}
 
-	var response CDPMessage
-	if err := json.Unmarshal(responseBytes, &response); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
-	}
-
-	if response.Error != nil {
-		return &response, fmt.Errorf("CDP error: %s (code %d)", response.Error.Message, response.Error.Code)
-	}
-
-	return &response, nil
+	return nil, fmt.Errorf("did not receive response for ID %d after %d reads", id, maxReads)
 }
 
 // calculatePercentiles calculates latency percentiles
