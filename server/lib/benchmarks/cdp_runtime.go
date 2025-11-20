@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"runtime"
 	"sort"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -172,39 +173,50 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 	benchCtx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
-	// Define test scenarios with named operations
-	type testScenario struct {
+	// Define test scenario generators that will use session context
+	type testScenarioGen struct {
 		Name        string
 		Description string
 		Category    string
-		Message     []byte
+		GenFunc     func(*cdpSessionContext) (string, map[string]interface{}) // returns method, params
 	}
 
-	scenarios := []testScenario{
+	scenarioGens := []testScenarioGen{
 		// Runtime operations - JavaScript evaluation and object inspection
 		{
 			Name:        "Runtime.evaluate",
 			Description: "Evaluate simple JavaScript expression",
 			Category:    "Runtime",
-			Message:     []byte(`{"id":1,"method":"Runtime.evaluate","params":{"expression":"1+1"}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Runtime.evaluate", map[string]interface{}{"expression": "1+1"}
+			},
 		},
 		{
 			Name:        "Runtime.evaluate-complex",
 			Description: "Evaluate complex JavaScript with DOM access",
 			Category:    "Runtime",
-			Message:     []byte(`{"id":2,"method":"Runtime.evaluate","params":{"expression":"document.querySelector('body').children.length"}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Runtime.evaluate", map[string]interface{}{"expression": "document.querySelector('body').children.length"}
+			},
 		},
 		{
 			Name:        "Runtime.getProperties",
 			Description: "Get runtime object properties",
 			Category:    "Runtime",
-			Message:     []byte(`{"id":3,"method":"Runtime.getProperties","params":{"objectId":"1"}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Runtime.getProperties", map[string]interface{}{"objectId": sess.objectID}
+			},
 		},
 		{
 			Name:        "Runtime.callFunctionOn",
 			Description: "Call function on remote object",
 			Category:    "Runtime",
-			Message:     []byte(`{"id":4,"method":"Runtime.callFunctionOn","params":{"objectId":"1","functionDeclaration":"function(){return this;}"}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Runtime.callFunctionOn", map[string]interface{}{
+					"objectId":            sess.objectID,
+					"functionDeclaration": "function(){return this;}",
+				}
+			},
 		},
 
 		// DOM operations - Document structure and element queries
@@ -212,25 +224,36 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			Name:        "DOM.getDocument",
 			Description: "Retrieve the root DOM document structure",
 			Category:    "DOM",
-			Message:     []byte(`{"id":5,"method":"DOM.getDocument","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "DOM.getDocument", map[string]interface{}{}
+			},
 		},
 		{
 			Name:        "DOM.querySelector",
 			Description: "Query DOM elements by CSS selector",
 			Category:    "DOM",
-			Message:     []byte(`{"id":6,"method":"DOM.querySelector","params":{"nodeId":1,"selector":"body"}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "DOM.querySelector", map[string]interface{}{
+					"nodeId":   sess.documentNode,
+					"selector": "body",
+				}
+			},
 		},
 		{
 			Name:        "DOM.getAttributes",
 			Description: "Get attributes of a DOM node",
 			Category:    "DOM",
-			Message:     []byte(`{"id":7,"method":"DOM.getAttributes","params":{"nodeId":1}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "DOM.getAttributes", map[string]interface{}{"nodeId": sess.documentNode}
+			},
 		},
 		{
 			Name:        "DOM.getOuterHTML",
 			Description: "Get outer HTML of a node",
 			Category:    "DOM",
-			Message:     []byte(`{"id":8,"method":"DOM.getOuterHTML","params":{"nodeId":1}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "DOM.getOuterHTML", map[string]interface{}{"nodeId": sess.documentNode}
+			},
 		},
 
 		// Page operations - Navigation, resources, and page state
@@ -238,25 +261,33 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			Name:        "Page.getNavigationHistory",
 			Description: "Retrieve page navigation history",
 			Category:    "Page",
-			Message:     []byte(`{"id":9,"method":"Page.getNavigationHistory","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Page.getNavigationHistory", map[string]interface{}{}
+			},
 		},
 		{
 			Name:        "Page.getResourceTree",
 			Description: "Get page resource tree structure",
 			Category:    "Page",
-			Message:     []byte(`{"id":10,"method":"Page.getResourceTree","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Page.getResourceTree", map[string]interface{}{}
+			},
 		},
 		{
 			Name:        "Page.getFrameTree",
 			Description: "Get frame tree structure",
 			Category:    "Page",
-			Message:     []byte(`{"id":11,"method":"Page.getFrameTree","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Page.getFrameTree", map[string]interface{}{}
+			},
 		},
 		{
 			Name:        "Page.captureScreenshot",
 			Description: "Capture page screenshot via CDP",
 			Category:    "Page",
-			Message:     []byte(`{"id":12,"method":"Page.captureScreenshot","params":{"format":"png"}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Page.captureScreenshot", map[string]interface{}{"format": "png"}
+			},
 		},
 
 		// Network operations - Request/response inspection
@@ -264,13 +295,17 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			Name:        "Network.getCookies",
 			Description: "Retrieve browser cookies",
 			Category:    "Network",
-			Message:     []byte(`{"id":13,"method":"Network.getCookies","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Network.getCookies", map[string]interface{}{}
+			},
 		},
 		{
 			Name:        "Network.getAllCookies",
 			Description: "Get all cookies from all contexts",
 			Category:    "Network",
-			Message:     []byte(`{"id":14,"method":"Network.getAllCookies","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Network.getAllCookies", map[string]interface{}{}
+			},
 		},
 
 		// Performance operations - Metrics and profiling
@@ -278,7 +313,9 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			Name:        "Performance.getMetrics",
 			Description: "Get runtime performance metrics",
 			Category:    "Performance",
-			Message:     []byte(`{"id":15,"method":"Performance.getMetrics","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Performance.getMetrics", map[string]interface{}{}
+			},
 		},
 
 		// Target operations - Tab and context management
@@ -286,13 +323,21 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			Name:        "Target.getTargets",
 			Description: "List all available targets",
 			Category:    "Target",
-			Message:     []byte(`{"id":16,"method":"Target.getTargets","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Target.getTargets", map[string]interface{}{}
+			},
 		},
 		{
 			Name:        "Target.getTargetInfo",
 			Description: "Get information about specific target",
 			Category:    "Target",
-			Message:     []byte(`{"id":17,"method":"Target.getTargetInfo","params":{"targetId":"page"}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				params := map[string]interface{}{}
+				if sess.targetID != "" {
+					params["targetId"] = sess.targetID
+				}
+				return "Target.getTargetInfo", params
+			},
 		},
 
 		// Browser operations - Browser-level information
@@ -300,18 +345,19 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			Name:        "Browser.getVersion",
 			Description: "Get browser version information",
 			Category:    "Browser",
-			Message:     []byte(`{"id":18,"method":"Browser.getVersion","params":{}}`),
+			GenFunc: func(sess *cdpSessionContext) (string, map[string]interface{}) {
+				return "Browser.getVersion", map[string]interface{}{}
+			},
 		},
-		// Note: Browser.getHistograms and SystemInfo methods removed - they return huge responses or are unsupported
 	}
 
 	// Initialize scenario tracking
-	scenarioStatsMap := make([]*scenarioStats, len(scenarios))
-	for i, scenario := range scenarios {
+	scenarioStatsMap := make([]*scenarioStats, len(scenarioGens))
+	for i, scenarioGen := range scenarioGens {
 		scenarioStatsMap[i] = &scenarioStats{
-			Name:        scenario.Name,
-			Description: scenario.Description,
-			Category:    scenario.Category,
+			Name:        scenarioGen.Name,
+			Description: scenarioGen.Description,
+			Category:    scenarioGen.Category,
 			Latencies:   make([]float64, 0, 1000),
 		}
 	}
@@ -338,6 +384,13 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			}
 			defer conn.Close(websocket.StatusNormalClosure, "")
 
+			// Initialize CDP session with proper domains and context
+			sessionCtx, err := initializeCDPSession(benchCtx, conn, b.logger)
+			if err != nil {
+				b.logger.Error("failed to initialize CDP session", "worker", workerID, "err", err)
+				return
+			}
+
 			msgIdx := 0
 			for {
 				select {
@@ -346,32 +399,39 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 				default:
 				}
 
-				scenarioIdx := msgIdx % len(scenarios)
-				msg := scenarios[scenarioIdx].Message
+				scenarioIdx := msgIdx % len(scenarioGens)
+				scenarioGen := scenarioGens[scenarioIdx]
 				stats := scenarioStatsMap[scenarioIdx]
 				msgIdx++
 
+				// Generate method and params using session context
+				method, params := scenarioGen.GenFunc(sessionCtx)
+
+				// Use unique message ID based on worker and message index
+				msgID := workerID*1000000 + msgIdx
+
 				start := time.Now()
-				if err := conn.Write(benchCtx, websocket.MessageText, msg); err != nil {
-					if benchCtx.Err() != nil {
-						return
-					}
-					stats.Failures.Add(1)
-					b.logger.Error("write failed", "worker", workerID, "scenario", stats.Name, "err", err)
-					return
-				}
-
-				if _, _, err := conn.Read(benchCtx); err != nil {
-					if benchCtx.Err() != nil {
-						return
-					}
-					stats.Failures.Add(1)
-					b.logger.Error("read failed", "worker", workerID, "scenario", stats.Name, "err", err)
-					return
-				}
-
+				response, err := sendCDPCommand(benchCtx, conn, msgID, method, params)
 				latency := time.Since(start)
 				latencyMs := float64(latency.Microseconds()) / 1000.0
+
+				if err != nil {
+					// Check if it's a CDP error (response received but with error) vs connection error
+					if response != nil && response.Error != nil {
+						// CDP returned an error response - this is a failure
+						stats.Failures.Add(1)
+						if !strings.Contains(err.Error(), "Cannot find context") {
+							b.logger.Debug("CDP error", "worker", workerID, "scenario", stats.Name, "err", err)
+						}
+					} else {
+						// Connection error - bail out
+						if benchCtx.Err() != nil {
+							return
+						}
+						b.logger.Error("connection error", "worker", workerID, "scenario", stats.Name, "err", err)
+						return
+					}
+				}
 
 				// Track overall stats
 				totalOps.Add(1)
@@ -476,4 +536,121 @@ type CDPMessage struct {
 type CDPError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
+}
+
+// cdpSessionContext holds the initialized CDP session state
+type cdpSessionContext struct {
+	sessionID    string
+	targetID     string
+	documentNode int
+	objectID     string // A valid runtime object ID
+}
+
+// sendCDPCommand sends a CDP command and waits for the response
+func sendCDPCommand(ctx context.Context, conn *websocket.Conn, id int, method string, params map[string]interface{}) (*CDPMessage, error) {
+	request := CDPMessage{
+		ID:     id,
+		Method: method,
+		Params: params,
+	}
+
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request: %w", err)
+	}
+
+	if err := conn.Write(ctx, websocket.MessageText, requestBytes); err != nil {
+		return nil, fmt.Errorf("failed to write: %w", err)
+	}
+
+	_, responseBytes, err := conn.Read(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read: %w", err)
+	}
+
+	var response CDPMessage
+	if err := json.Unmarshal(responseBytes, &response); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+	}
+
+	if response.Error != nil {
+		return &response, fmt.Errorf("CDP error: %s (code %d)", response.Error.Message, response.Error.Code)
+	}
+
+	return &response, nil
+}
+
+// initializeCDPSession sets up a proper CDP session with enabled domains and context
+func initializeCDPSession(ctx context.Context, conn *websocket.Conn, logger *slog.Logger) (*cdpSessionContext, error) {
+	msgID := 1000000 // Use high IDs to avoid collision with benchmark messages
+
+	// Enable Runtime domain
+	if _, err := sendCDPCommand(ctx, conn, msgID, "Runtime.enable", nil); err != nil {
+		logger.Warn("Runtime.enable failed", "err", err)
+	}
+	msgID++
+
+	// Enable DOM domain
+	if _, err := sendCDPCommand(ctx, conn, msgID, "DOM.enable", nil); err != nil {
+		logger.Warn("DOM.enable failed", "err", err)
+	}
+	msgID++
+
+	// Enable Page domain
+	if _, err := sendCDPCommand(ctx, conn, msgID, "Page.enable", nil); err != nil {
+		logger.Warn("Page.enable failed", "err", err)
+	}
+	msgID++
+
+	// Enable Network domain
+	if _, err := sendCDPCommand(ctx, conn, msgID, "Network.enable", nil); err != nil {
+		logger.Warn("Network.enable failed", "err", err)
+	}
+	msgID++
+
+	// Get the current target ID
+	targetResp, err := sendCDPCommand(ctx, conn, msgID, "Target.getTargets", nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get targets: %w", err)
+	}
+	msgID++
+
+	// Extract first page target
+	sessionCtx := &cdpSessionContext{}
+	if targetInfos, ok := targetResp.Result["targetInfos"].([]interface{}); ok && len(targetInfos) > 0 {
+		if targetInfo, ok := targetInfos[0].(map[string]interface{}); ok {
+			if targetID, ok := targetInfo["targetId"].(string); ok {
+				sessionCtx.targetID = targetID
+			}
+		}
+	}
+
+	// Get document node
+	docResp, err := sendCDPCommand(ctx, conn, msgID, "DOM.getDocument", nil)
+	if err != nil {
+		logger.Warn("DOM.getDocument failed during init", "err", err)
+	} else {
+		if root, ok := docResp.Result["root"].(map[string]interface{}); ok {
+			if nodeID, ok := root["nodeId"].(float64); ok {
+				sessionCtx.documentNode = int(nodeID)
+			}
+		}
+	}
+	msgID++
+
+	// Get a valid object ID by evaluating a simple expression
+	objResp, err := sendCDPCommand(ctx, conn, msgID, "Runtime.evaluate", map[string]interface{}{
+		"expression": "({test: 123})",
+	})
+	if err != nil {
+		logger.Warn("Runtime.evaluate failed during init", "err", err)
+	} else {
+		if result, ok := objResp.Result["result"].(map[string]interface{}); ok {
+			if objectID, ok := result["objectId"].(string); ok {
+				sessionCtx.objectID = objectID
+			}
+		}
+	}
+
+	return sessionCtx, nil
 }
