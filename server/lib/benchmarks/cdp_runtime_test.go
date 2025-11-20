@@ -51,7 +51,7 @@ func TestSendCDPCommand_Success(t *testing.T) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	// Test sendCDPCommand
-	response, err := sendCDPCommand(ctx, conn, "", 1, "Test.method", map[string]interface{}{"key": "value"})
+	response, err := sendCDPCommandSimple(ctx, conn, 1, "Test.method", map[string]interface{}{"key": "value"})
 	if err != nil {
 		t.Errorf("Expected success, got error: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestSendCDPCommand_ErrorResponse(t *testing.T) {
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
 	// Test sendCDPCommand with error response
-	response, err := sendCDPCommand(ctx, conn, "", 1, "Test.method", nil)
+	response, err := sendCDPCommandSimple(ctx, conn, 1, "Test.method", nil)
 	if err == nil {
 		t.Error("Expected error, got nil")
 	}
