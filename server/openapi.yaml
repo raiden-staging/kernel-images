@@ -19,7 +19,7 @@ paths:
       parameters:
         - name: components
           in: query
-          description: Comma-separated list of components to benchmark (cdp,webrtc,recording,screenshot,all). Defaults to all components.
+          description: Comma-separated list of components to benchmark (cdp,webrtc,recording,all). Defaults to all components.
           required: false
           schema:
             type: string
@@ -1626,8 +1626,6 @@ components:
           $ref: "#/components/schemas/WebRTCLiveViewResults"
         recording:
           $ref: "#/components/schemas/RecordingResults"
-        screenshot_latency:
-          $ref: "#/components/schemas/ScreenshotLatencyResults"
       additionalProperties: false
     CDPProxyResults:
       type: object
@@ -1751,31 +1749,6 @@ components:
         impact_percent:
           type: number
           description: Percentage change in frame rate (negative means degradation)
-      additionalProperties: false
-    ScreenshotLatencyResults:
-      type: object
-      description: Screenshot capture performance metrics
-      properties:
-        total_screenshots:
-          type: integer
-          description: Total number of screenshot attempts
-        successful_captures:
-          type: integer
-          description: Number of successful screenshot captures
-        failed_captures:
-          type: integer
-          description: Number of failed screenshot attempts
-        success_rate:
-          type: number
-          description: Success rate percentage (0-100)
-        latency_ms:
-          $ref: "#/components/schemas/LatencyMetrics"
-        avg_image_size_bytes:
-          type: integer
-          description: Average screenshot image size in bytes
-        throughput_per_sec:
-          type: number
-          description: Screenshots captured per second
       additionalProperties: false
     LatencyMetrics:
       type: object

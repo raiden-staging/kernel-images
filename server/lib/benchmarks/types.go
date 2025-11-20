@@ -22,10 +22,9 @@ type SystemInfo struct {
 
 // ComponentResults contains results for each benchmarked component
 type ComponentResults struct {
-	CDP                *CDPProxyResults          `json:"cdp,omitempty"`
-	WebRTCLiveView     *WebRTCLiveViewResults    `json:"webrtc_live_view,omitempty"`
-	Recording          *RecordingResults         `json:"recording,omitempty"`
-	ScreenshotLatency  *ScreenshotLatencyResults `json:"screenshot_latency,omitempty"`
+	CDP            *CDPProxyResults       `json:"cdp,omitempty"`
+	WebRTCLiveView *WebRTCLiveViewResults `json:"webrtc_live_view,omitempty"`
+	Recording      *RecordingResults      `json:"recording,omitempty"`
 }
 
 // CDPProxyResults contains CDP proxy benchmark results
@@ -129,11 +128,10 @@ type MessageSizeMetrics struct {
 type BenchmarkComponent string
 
 const (
-	ComponentCDP        BenchmarkComponent = "cdp"
-	ComponentWebRTC     BenchmarkComponent = "webrtc"
-	ComponentRecording  BenchmarkComponent = "recording"
-	ComponentScreenshot BenchmarkComponent = "screenshot"
-	ComponentAll        BenchmarkComponent = "all"
+	ComponentCDP       BenchmarkComponent = "cdp"
+	ComponentWebRTC    BenchmarkComponent = "webrtc"
+	ComponentRecording BenchmarkComponent = "recording"
+	ComponentAll       BenchmarkComponent = "all"
 )
 
 // BenchmarkConfig contains configuration for running benchmarks

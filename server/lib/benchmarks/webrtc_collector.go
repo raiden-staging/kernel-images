@@ -42,13 +42,9 @@ func (b *WebRTCBenchmark) Run(ctx context.Context, duration time.Duration) (*Web
 	const webrtcDuration = 10 * time.Second
 	b.logger.Info("starting WebRTC benchmark", "duration", webrtcDuration)
 
-	// Try to trigger neko benchmark collection (if available)
-	if err := b.triggerNekoBenchmark(ctx, webrtcDuration); err != nil {
-		b.logger.Warn("failed to trigger neko benchmark via API, will try alternatives", "err", err)
-	}
-
-	// Wait for collection duration + buffer
-	time.Sleep(webrtcDuration + 2*time.Second)
+	// Neko continuously exports benchmark stats to a file
+	// We just wait a moment for recent stats and then read them
+	time.Sleep(2 * time.Second)
 
 	// Try to read stats from neko export file
 	stats, err := b.readNekoStats(ctx)
@@ -182,33 +178,6 @@ func (b *WebRTCBenchmark) queryNekoStatsAPI(ctx context.Context) (*WebRTCLiveVie
 			PerViewer: 15.0,
 		},
 	}, nil
-}
-
-// triggerNekoBenchmark attempts to trigger benchmark collection in neko
-func (b *WebRTCBenchmark) triggerNekoBenchmark(ctx context.Context, duration time.Duration) error {
-	// This would call a neko internal API endpoint to trigger benchmark collection
-	// For now, this is a placeholder
-	// In a real implementation, neko would expose an endpoint like:
-	// POST /internal/benchmark/start?duration=10
-
-	req, err := http.NewRequestWithContext(ctx, "POST",
-		fmt.Sprintf("%s/internal/benchmark/start?duration=%d", b.nekoBaseURL, int(duration.Seconds())),
-		nil)
-	if err != nil {
-		return err
-	}
-
-	resp, err := b.httpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
-	}
-
-	return nil
 }
 
 // readNekoStats reads WebRTC stats from the neko export file
