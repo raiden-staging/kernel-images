@@ -7,19 +7,12 @@ paths:
     get:
       summary: Run performance benchmarks
       description: |
-        Execute performance benchmarks on specified components and return detailed metrics.
-        Benchmarks run internally within the image and collect real-time performance data.
-
-        **Resilient Execution:**
-        - The endpoint always returns 200 OK with results for successful components
-        - Failed components are omitted from results and reported in the `errors` array
-        - Each benchmark component runs independently - one failure doesn't prevent others from running
-        - Check the `errors` field to identify which components failed and why
+        Execute performance benchmarks
       operationId: runBenchmark
       parameters:
         - name: components
           in: query
-          description: Comma-separated list of components to benchmark (cdp,webrtc,recording,all). Defaults to all components.
+          description: Comma-separated list of components to benchmark (cdp,webrtc,recording,all).
           required: false
           schema:
             type: string
@@ -1577,8 +1570,7 @@ components:
     BenchmarkResults:
       type: object
       description: |
-        Performance benchmark results. Always returns with available data even if some components fail.
-        Failed components will be absent from 'results' and their errors listed in 'errors' array.
+        Performance benchmark results.
       properties:
         timestamp:
           type: string
@@ -1596,8 +1588,7 @@ components:
           items:
             type: string
           description: |
-            Errors encountered during benchmarking. Each entry follows the format "ComponentName: error message".
-            Empty array means all requested benchmarks succeeded.
+            Errors encountered during benchmarking.
         startup_timing:
           $ref: "#/components/schemas/StartupTimingResults"
       additionalProperties: false
@@ -1616,9 +1607,7 @@ components:
     ComponentResults:
       type: object
       description: |
-        Results from individual benchmark components. All fields are optional.
-        Missing fields indicate that component was not requested or failed to run.
-        Check the 'errors' array in BenchmarkResults for failure details.
+        Results from individual benchmark components.
       properties:
         cdp:
           $ref: "#/components/schemas/CDPProxyResults"
