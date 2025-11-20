@@ -38,24 +38,50 @@ func NewWebRTCBenchmark(logger *slog.Logger, nekoBaseURL string) *WebRTCBenchmar
 
 // Run executes the WebRTC benchmark
 func (b *WebRTCBenchmark) Run(ctx context.Context, duration time.Duration) (*WebRTCLiveViewResults, error) {
-	// Fixed 10-second collection duration for WebRTC benchmarks
-	const webrtcDuration = 10 * time.Second
-	b.logger.Info("starting WebRTC benchmark", "duration", webrtcDuration)
+	b.logger.Info("starting WebRTC benchmark via websocket trigger")
 
-	// Neko continuously exports benchmark stats to a file
-	// We just wait a moment for recent stats and then read them
-	time.Sleep(2 * time.Second)
+	// Create neko websocket client
+	nekoClient := NewNekoClient(b.logger, b.nekoBaseURL)
 
-	// Try to read stats from neko export file
+	// Trigger neko to collect fresh benchmark stats via websocket
+	// This will block until neko responds with "benchmark_ready" (or timeout after 30s)
+	b.logger.Info("triggering neko benchmark collection via websocket")
+	if err := nekoClient.TriggerBenchmarkCollection(ctx); err != nil {
+		b.logger.Warn("websocket trigger failed, trying fallback approach", "err", err)
+
+		// Fallback: wait for initial stats file if websocket fails
+		b.logger.Info("falling back to reading initial stats file")
+		time.Sleep(15 * time.Second)
+
+		stats, err := b.readNekoStats(ctx)
+		if err != nil {
+			b.logger.Warn("fallback also failed, using measurement fallback", "err", err)
+			return b.measureWebRTCFallback(ctx, duration)
+		}
+
+		return b.convertNekoStatsToResults(stats), nil
+	}
+
+	b.logger.Info("neko benchmark collection completed, reading stats file")
+
+	// Read the fresh stats from neko export file
 	stats, err := b.readNekoStats(ctx)
 	if err != nil {
-		b.logger.Warn("failed to read neko stats, using fallback measurement", "err", err)
-		// Fall back to alternative measurement methods
+		b.logger.Warn("failed to read neko stats after trigger, using fallback", "err", err)
 		return b.measureWebRTCFallback(ctx, duration)
 	}
 
 	// Convert neko stats to our format
-	results := &WebRTCLiveViewResults{
+	results := b.convertNekoStatsToResults(stats)
+
+	b.logger.Info("WebRTC benchmark completed", "viewers", results.ConcurrentViewers, "fps", results.FrameRateFPS.Achieved)
+
+	return results, nil
+}
+
+// convertNekoStatsToResults converts neko stats format to kernel-images format
+func (b *WebRTCBenchmark) convertNekoStatsToResults(stats *NekoWebRTCStats) *WebRTCLiveViewResults {
+	return &WebRTCLiveViewResults{
 		FrameRateFPS: FrameRateMetrics{
 			Target:   stats.FrameRateFPS.Target,
 			Achieved: stats.FrameRateFPS.Achieved,
@@ -79,10 +105,6 @@ func (b *WebRTCBenchmark) Run(ctx context.Context, duration time.Duration) (*Web
 			PerViewer: stats.MemoryMB.PerViewer,
 		},
 	}
-
-	b.logger.Info("WebRTC benchmark completed", "viewers", results.ConcurrentViewers, "fps", results.FrameRateFPS.Achieved)
-
-	return results, nil
 }
 
 // measureWebRTCFallback provides alternative WebRTC measurements when neko stats are unavailable
@@ -182,37 +204,44 @@ func (b *WebRTCBenchmark) queryNekoStatsAPI(ctx context.Context) (*WebRTCLiveVie
 
 // readNekoStats reads WebRTC stats from the neko export file
 func (b *WebRTCBenchmark) readNekoStats(ctx context.Context) (*NekoWebRTCStats, error) {
-	// Wait for file to appear with timeout
-	deadline := time.Now().Add(DefaultStatsWaitTimeout)
-	for {
-		if time.Now().After(deadline) {
-			return nil, fmt.Errorf("timeout waiting for neko stats file")
+	// Neko continuously exports stats, so file should exist
+	// Try reading with a few retries in case of timing issues
+	var lastErr error
+	for i := 0; i < 5; i++ {
+		if i > 0 {
+			b.logger.Debug("retrying neko stats read", "attempt", i+1)
+			time.Sleep(1 * time.Second)
 		}
 
-		if _, err := os.Stat(NekoWebRTCBenchmarkStatsPath); err == nil {
-			break
+		// Check if file exists
+		if _, err := os.Stat(NekoWebRTCBenchmarkStatsPath); err != nil {
+			lastErr = fmt.Errorf("stats file not found: %w", err)
+			continue
 		}
 
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(500 * time.Millisecond):
+		// Read file
+		data, err := os.ReadFile(NekoWebRTCBenchmarkStatsPath)
+		if err != nil {
+			lastErr = fmt.Errorf("failed to read stats file: %w", err)
+			continue
 		}
+
+		// Parse JSON
+		var stats NekoWebRTCStats
+		if err := json.Unmarshal(data, &stats); err != nil {
+			lastErr = fmt.Errorf("failed to parse stats JSON: %w", err)
+			continue
+		}
+
+		// Check that stats are recent (within last 30 seconds)
+		if time.Since(stats.Timestamp) > 30*time.Second {
+			b.logger.Warn("neko stats are stale", "age", time.Since(stats.Timestamp))
+		}
+
+		return &stats, nil
 	}
 
-	// Read file
-	data, err := os.ReadFile(NekoWebRTCBenchmarkStatsPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read stats file: %w", err)
-	}
-
-	// Parse JSON
-	var stats NekoWebRTCStats
-	if err := json.Unmarshal(data, &stats); err != nil {
-		return nil, fmt.Errorf("failed to parse stats JSON: %w", err)
-	}
-
-	return &stats, nil
+	return nil, fmt.Errorf("failed to read neko stats after retries: %w", lastErr)
 }
 
 // NekoWebRTCStats represents the stats format exported by neko

@@ -85,7 +85,8 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 		proxyOverhead = ((directResults.ThroughputMsgsPerSec - proxiedResults.ThroughputMsgsPerSec) / directResults.ThroughputMsgsPerSec) * 100.0
 	}
 
-	// Use proxied results for overall metrics (backward compatibility)
+	// Return results with both direct and proxied endpoint metrics
+	// Overall metrics use proxied results for backward compatibility
 	return &CDPProxyResults{
 		ThroughputMsgsPerSec:  proxiedResults.ThroughputMsgsPerSec,
 		LatencyMS:             proxiedResults.LatencyMS,
@@ -95,7 +96,7 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 			PerConnection: perConnectionMemMB,
 		},
 		MessageSizeBytes: proxiedResults.MessageSizeBytes,
-		Scenarios:        proxiedResults.Scenarios,
+		// No root-level Scenarios - they're in ProxiedEndpoint and DirectEndpoint
 		ProxiedEndpoint: &CDPEndpointResults{
 			EndpointURL:          proxiedURL,
 			ThroughputMsgsPerSec: proxiedResults.ThroughputMsgsPerSec,
