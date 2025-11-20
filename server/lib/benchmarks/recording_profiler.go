@@ -297,6 +297,9 @@ func parseFfmpegStats(output string) (framesCaptured, framesDropped int64, fps, 
 func (p *RecordingProfiler) measureCurrentFPS() float64 {
 	const nekoStatsPath = "/tmp/neko_webrtc_benchmark.json"
 
+	// Wait a moment for stats to be written
+	time.Sleep(500 * time.Millisecond)
+
 	// Try to read the neko stats file
 	data, err := os.ReadFile(nekoStatsPath)
 	if err != nil {
@@ -316,6 +319,7 @@ func (p *RecordingProfiler) measureCurrentFPS() float64 {
 		return 0.0
 	}
 
+	p.logger.Debug("measured FPS from neko stats", "fps", stats.FrameRateFPS.Achieved)
 	return stats.FrameRateFPS.Achieved
 }
 

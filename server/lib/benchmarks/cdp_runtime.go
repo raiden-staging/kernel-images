@@ -302,26 +302,7 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			Category:    "Browser",
 			Message:     []byte(`{"id":18,"method":"Browser.getVersion","params":{}}`),
 		},
-		{
-			Name:        "Browser.getHistograms",
-			Description: "Get browser performance histograms",
-			Category:    "Browser",
-			Message:     []byte(`{"id":19,"method":"Browser.getHistograms","params":{}}`),
-		},
-
-		// SystemInfo operations - System resource information
-		{
-			Name:        "SystemInfo.getInfo",
-			Description: "Get system information",
-			Category:    "SystemInfo",
-			Message:     []byte(`{"id":20,"method":"SystemInfo.getInfo","params":{}}`),
-		},
-		{
-			Name:        "SystemInfo.getProcessInfo",
-			Description: "Get browser process information",
-			Category:    "SystemInfo",
-			Message:     []byte(`{"id":21,"method":"SystemInfo.getProcessInfo","params":{}}`),
-		},
+		// Note: Browser.getHistograms and SystemInfo methods removed - they return huge responses or are unsupported
 	}
 
 	// Initialize scenario tracking

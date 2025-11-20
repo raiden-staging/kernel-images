@@ -38,36 +38,16 @@ func NewWebRTCBenchmark(logger *slog.Logger, nekoBaseURL string) *WebRTCBenchmar
 
 // Run executes the WebRTC benchmark
 func (b *WebRTCBenchmark) Run(ctx context.Context, duration time.Duration) (*WebRTCLiveViewResults, error) {
-	b.logger.Info("starting WebRTC benchmark via websocket trigger")
+	b.logger.Info("starting WebRTC benchmark - reading from neko continuous export")
 
-	// Create neko websocket client
-	nekoClient := NewNekoClient(b.logger, b.nekoBaseURL)
+	// Neko continuously exports stats every 10 seconds to /tmp/neko_webrtc_benchmark.json
+	// Wait a moment to ensure we have fresh stats (neko runs collection for 10s)
+	// If file is recent (within 30s), it's good to use
+	// Otherwise wait up to 15s for fresh collection cycle
 
-	// Trigger neko to collect fresh benchmark stats via websocket
-	// This will block until neko responds with "benchmark_ready" (or timeout after 30s)
-	b.logger.Info("triggering neko benchmark collection via websocket")
-	if err := nekoClient.TriggerBenchmarkCollection(ctx); err != nil {
-		b.logger.Warn("websocket trigger failed, trying fallback approach", "err", err)
-
-		// Fallback: wait for initial stats file if websocket fails
-		b.logger.Info("falling back to reading initial stats file")
-		time.Sleep(15 * time.Second)
-
-		stats, err := b.readNekoStats(ctx)
-		if err != nil {
-			b.logger.Warn("fallback also failed, using measurement fallback", "err", err)
-			return b.measureWebRTCFallback(ctx, duration)
-		}
-
-		return b.convertNekoStatsToResults(stats), nil
-	}
-
-	b.logger.Info("neko benchmark collection completed, reading stats file")
-
-	// Read the fresh stats from neko export file
-	stats, err := b.readNekoStats(ctx)
+	stats, err := b.readNekoStatsWithFreshness(ctx)
 	if err != nil {
-		b.logger.Warn("failed to read neko stats after trigger, using fallback", "err", err)
+		b.logger.Warn("failed to read fresh neko stats, using fallback", "err", err)
 		return b.measureWebRTCFallback(ctx, duration)
 	}
 
@@ -77,6 +57,44 @@ func (b *WebRTCBenchmark) Run(ctx context.Context, duration time.Duration) (*Web
 	b.logger.Info("WebRTC benchmark completed", "viewers", results.ConcurrentViewers, "fps", results.FrameRateFPS.Achieved)
 
 	return results, nil
+}
+
+// readNekoStatsWithFreshness reads neko stats, waiting if needed for fresh data
+func (b *WebRTCBenchmark) readNekoStatsWithFreshness(ctx context.Context) (*NekoWebRTCStats, error) {
+	const maxAge = 30 * time.Second
+	const maxWait = 15 * time.Second
+
+	deadline := time.Now().Add(maxWait)
+
+	for {
+		stats, err := b.readNekoStats(ctx)
+		if err == nil {
+			// Check age
+			age := time.Since(stats.Timestamp)
+			if age < maxAge {
+				b.logger.Info("using neko stats", "age_seconds", age.Seconds())
+				return stats, nil
+			}
+			b.logger.Debug("stats too old, waiting for fresh collection", "age_seconds", age.Seconds())
+		}
+
+		// Check if we should keep waiting
+		if time.Now().After(deadline) {
+			// Return whatever we have, even if old
+			if err == nil {
+				b.logger.Warn("stats are old but using anyway", "age_seconds", time.Since(stats.Timestamp).Seconds())
+				return stats, nil
+			}
+			return nil, fmt.Errorf("timeout waiting for fresh stats: %w", err)
+		}
+
+		// Wait a bit before retrying
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(2 * time.Second):
+		}
+	}
 }
 
 // convertNekoStatsToResults converts neko stats format to kernel-images format
