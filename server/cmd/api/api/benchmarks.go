@@ -167,6 +167,7 @@ func convertCDPEndpointResults(endpoint *benchmarks.CDPEndpointResults) *oapi.CD
 			Name:                &scenario.Name,
 			Description:         &scenario.Description,
 			Category:            &scenario.Category,
+			Type:                optionalString(scenario.Type),
 			AttemptCount:        &attemptCount,
 			OperationCount:      &opCount,
 			DurationSeconds:     &durationSec,
@@ -174,6 +175,12 @@ func convertCDPEndpointResults(endpoint *benchmarks.CDPEndpointResults) *oapi.CD
 			ThroughputOpsPerSec: &throughputOps,
 			LatencyMs:           convertLatencyMetrics(scenario.LatencyMS),
 			SuccessRate:         &successRate,
+		}
+		if scenario.EventCount > 0 {
+			events := int(scenario.EventCount)
+			scenarios[i].EventCount = &events
+			eventThroughput := float32(scenario.EventThroughputSec)
+			scenarios[i].EventThroughputSec = &eventThroughput
 		}
 		if len(scenario.ErrorSamples) > 0 {
 			samples := scenario.ErrorSamples
@@ -362,6 +369,13 @@ func optionalInt(val int64) *int {
 	}
 	casted := int(val)
 	return &casted
+}
+
+func optionalString(val string) *string {
+	if val == "" {
+		return nil
+	}
+	return &val
 }
 
 func convertStartupTimingResults(timing *benchmarks.StartupTimingResults) *oapi.StartupTimingResults {
