@@ -29,23 +29,18 @@ type ComponentResults struct {
 
 // CDPProxyResults contains CDP proxy benchmark results
 type CDPProxyResults struct {
-	ThroughputMsgsPerSec   float64                `json:"throughput_msgs_per_sec"`
-	LatencyMS              LatencyMetrics         `json:"latency_ms"`
 	ConcurrentConnections  int                    `json:"concurrent_connections"`
 	MemoryMB               MemoryMetrics          `json:"memory_mb"`
-	MessageSizeBytes       MessageSizeMetrics     `json:"message_size_bytes"`
-	Scenarios              []CDPScenarioResult    `json:"scenarios,omitempty"`
-	ProxiedEndpoint        *CDPEndpointResults    `json:"proxied_endpoint,omitempty"`
-	DirectEndpoint         *CDPEndpointResults    `json:"direct_endpoint,omitempty"`
-	ProxyOverheadPercent   float64                `json:"proxy_overhead_percent,omitempty"`
+	ProxiedEndpoint        *CDPEndpointResults    `json:"proxied_endpoint"`
+	DirectEndpoint         *CDPEndpointResults    `json:"direct_endpoint"`
+	ProxyOverheadPercent   float64                `json:"proxy_overhead_percent"`
 }
 
 // CDPEndpointResults contains results for a specific CDP endpoint (proxied or direct)
 type CDPEndpointResults struct {
-	EndpointURL          string                 `json:"endpoint_url"`
-	ThroughputMsgsPerSec float64                `json:"throughput_msgs_per_sec"`
-	LatencyMS            LatencyMetrics         `json:"latency_ms"`
-	Scenarios            []CDPScenarioResult    `json:"scenarios,omitempty"`
+	EndpointURL               string              `json:"endpoint_url"`
+	TotalThroughputOpsPerSec  float64             `json:"total_throughput_ops_per_sec"`
+	Scenarios                 []CDPScenarioResult `json:"scenarios"`
 }
 
 // CDPScenarioResult contains results for a specific CDP scenario
@@ -167,13 +162,6 @@ type MemoryMetrics struct {
 	Baseline      float64 `json:"baseline"`
 	PerConnection float64 `json:"per_connection,omitempty"`
 	PerViewer     float64 `json:"per_viewer,omitempty"`
-}
-
-// MessageSizeMetrics contains message size statistics
-type MessageSizeMetrics struct {
-	Min int `json:"min"`
-	Max int `json:"max"`
-	Avg int `json:"avg"`
 }
 
 // BenchmarkComponent represents which component to benchmark

@@ -1618,22 +1618,13 @@ components:
       additionalProperties: false
     CDPProxyResults:
       type: object
+      description: CDP proxy benchmark results comparing direct vs proxied endpoints
       properties:
-        throughput_msgs_per_sec:
-          type: number
-        latency_ms:
-          $ref: "#/components/schemas/LatencyMetrics"
         concurrent_connections:
           type: integer
+          description: Number of concurrent connections used in benchmark
         memory_mb:
           $ref: "#/components/schemas/MemoryMetrics"
-        message_size_bytes:
-          $ref: "#/components/schemas/MessageSizeMetrics"
-        scenarios:
-          type: array
-          items:
-            $ref: "#/components/schemas/CDPScenarioResult"
-          description: Per-scenario benchmark results
         proxied_endpoint:
           $ref: "#/components/schemas/CDPEndpointResults"
           description: Results from proxied CDP endpoint (port 9222)
@@ -1651,16 +1642,18 @@ components:
         endpoint_url:
           type: string
           description: CDP endpoint URL
-        throughput_msgs_per_sec:
+        total_throughput_ops_per_sec:
           type: number
-          description: Messages per second throughput
-        latency_ms:
-          $ref: "#/components/schemas/LatencyMetrics"
+          description: Total operations per second across all scenarios
         scenarios:
           type: array
           items:
             $ref: "#/components/schemas/CDPScenarioResult"
           description: Per-scenario results for this endpoint
+      required:
+        - endpoint_url
+        - total_throughput_ops_per_sec
+        - scenarios
       additionalProperties: false
     CDPScenarioResult:
       type: object
@@ -1890,16 +1883,6 @@ components:
           type: number
         per_viewer:
           type: number
-      additionalProperties: false
-    MessageSizeMetrics:
-      type: object
-      properties:
-        min:
-          type: integer
-        max:
-          type: integer
-        avg:
-          type: integer
       additionalProperties: false
     StartupTimingResults:
       type: object

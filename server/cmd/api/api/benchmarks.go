@@ -121,35 +121,11 @@ func convertComponentResults(results benchmarks.ComponentResults) *oapi.Componen
 }
 
 func convertCDPProxyResults(cdp *benchmarks.CDPProxyResults) *oapi.CDPProxyResults {
-	throughput := float32(cdp.ThroughputMsgsPerSec)
 	proxyOverhead := float32(cdp.ProxyOverheadPercent)
 	result := &oapi.CDPProxyResults{
-		ThroughputMsgsPerSec:  &throughput,
-		LatencyMs:             convertLatencyMetrics(cdp.LatencyMS),
 		ConcurrentConnections: &cdp.ConcurrentConnections,
 		MemoryMb:              convertMemoryMetrics(cdp.MemoryMB),
-		MessageSizeBytes:      convertMessageSizeMetrics(cdp.MessageSizeBytes),
 		ProxyOverheadPercent:  &proxyOverhead,
-	}
-
-	// Convert scenarios if present
-	if len(cdp.Scenarios) > 0 {
-		scenarios := make([]oapi.CDPScenarioResult, len(cdp.Scenarios))
-		for i, scenario := range cdp.Scenarios {
-			opCount := int(scenario.OperationCount)
-			throughputOps := float32(scenario.ThroughputOpsPerSec)
-			successRate := float32(scenario.SuccessRate)
-			scenarios[i] = oapi.CDPScenarioResult{
-				Name:                &scenario.Name,
-				Description:         &scenario.Description,
-				Category:            &scenario.Category,
-				OperationCount:      &opCount,
-				ThroughputOpsPerSec: &throughputOps,
-				LatencyMs:           convertLatencyMetrics(scenario.LatencyMS),
-				SuccessRate:         &successRate,
-			}
-		}
-		result.Scenarios = &scenarios
 	}
 
 	// Convert proxied endpoint results
@@ -166,32 +142,29 @@ func convertCDPProxyResults(cdp *benchmarks.CDPProxyResults) *oapi.CDPProxyResul
 }
 
 func convertCDPEndpointResults(endpoint *benchmarks.CDPEndpointResults) *oapi.CDPEndpointResults {
-	throughput := float32(endpoint.ThroughputMsgsPerSec)
+	throughput := float32(endpoint.TotalThroughputOpsPerSec)
 	result := &oapi.CDPEndpointResults{
-		EndpointUrl:          &endpoint.EndpointURL,
-		ThroughputMsgsPerSec: &throughput,
-		LatencyMs:            convertLatencyMetrics(endpoint.LatencyMS),
+		EndpointUrl:              endpoint.EndpointURL,
+		TotalThroughputOpsPerSec: throughput,
 	}
 
-	// Convert scenarios if present
-	if len(endpoint.Scenarios) > 0 {
-		scenarios := make([]oapi.CDPScenarioResult, len(endpoint.Scenarios))
-		for i, scenario := range endpoint.Scenarios {
-			opCount := int(scenario.OperationCount)
-			throughputOps := float32(scenario.ThroughputOpsPerSec)
-			successRate := float32(scenario.SuccessRate)
-			scenarios[i] = oapi.CDPScenarioResult{
-				Name:                &scenario.Name,
-				Description:         &scenario.Description,
-				Category:            &scenario.Category,
-				OperationCount:      &opCount,
-				ThroughputOpsPerSec: &throughputOps,
-				LatencyMs:           convertLatencyMetrics(scenario.LatencyMS),
-				SuccessRate:         &successRate,
-			}
+	// Convert scenarios
+	scenarios := make([]oapi.CDPScenarioResult, len(endpoint.Scenarios))
+	for i, scenario := range endpoint.Scenarios {
+		opCount := int(scenario.OperationCount)
+		throughputOps := float32(scenario.ThroughputOpsPerSec)
+		successRate := float32(scenario.SuccessRate)
+		scenarios[i] = oapi.CDPScenarioResult{
+			Name:                &scenario.Name,
+			Description:         &scenario.Description,
+			Category:            &scenario.Category,
+			OperationCount:      &opCount,
+			ThroughputOpsPerSec: &throughputOps,
+			LatencyMs:           convertLatencyMetrics(scenario.LatencyMS),
+			SuccessRate:         &successRate,
 		}
-		result.Scenarios = &scenarios
 	}
+	result.Scenarios = scenarios
 
 	return result
 }
@@ -367,13 +340,6 @@ func convertMemoryMetrics(mem benchmarks.MemoryMetrics) *oapi.MemoryMetrics {
 	return result
 }
 
-func convertMessageSizeMetrics(msg benchmarks.MessageSizeMetrics) *oapi.MessageSizeMetrics {
-	return &oapi.MessageSizeMetrics{
-		Min: &msg.Min,
-		Max: &msg.Max,
-		Avg: &msg.Avg,
-	}
-}
 
 func convertStartupTimingResults(timing *benchmarks.StartupTimingResults) *oapi.StartupTimingResults {
 	totalMs := float32(timing.TotalStartupTimeMS)
