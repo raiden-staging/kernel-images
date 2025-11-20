@@ -397,7 +397,7 @@ func (s *ApiService) runCDPBenchmark(ctx context.Context) (*benchmarks.CDPProxyR
 
 	// CDP proxy is exposed on port 9222
 	cdpProxyURL := "http://localhost:9222"
-	concurrency := 5 // Number of concurrent connections to test
+	concurrency := 1 // Sequential, consistent benchmark
 
 	benchmark := benchmarks.NewCDPRuntimeBenchmark(log, cdpProxyURL, concurrency)
 	return benchmark.Run(ctx, 0) // Duration parameter ignored, uses internal 5s
