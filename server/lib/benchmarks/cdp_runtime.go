@@ -20,9 +20,8 @@ import (
 )
 
 const (
-	benchmarkPageHTML  = `<!doctype html><html><head><title>Onkernel Benchmark</title></head><body><div id="benchmark-root" data-value="42">benchmark</div><script>window.benchmarkCounter=0;window.bumpCounter=()=>++window.benchmarkCounter;</script></body></html>`
-	maxErrorSamples    = 5
-	scenarioIterations = 5
+	benchmarkPageHTML = `<!doctype html><html><head><title>Onkernel Benchmark</title></head><body><div id="benchmark-root" data-value="42">benchmark</div><script>window.benchmarkCounter=0;window.bumpCounter=()=>++window.benchmarkCounter;</script></body></html>`
+	maxErrorSamples   = 5
 )
 
 // CDPRuntimeBenchmark performs runtime benchmarks on the CDP proxy
@@ -43,7 +42,7 @@ func NewCDPRuntimeBenchmark(logger *slog.Logger, proxyURL string, concurrency in
 
 // Run executes the CDP benchmark
 func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (*CDPProxyResults, error) {
-	benchmarkDuration := 20 * time.Second
+	benchmarkDuration := 40 * time.Second
 	if duration > 0 {
 		benchmarkDuration = duration
 	}
@@ -103,6 +102,9 @@ type cdpScenario struct {
 	Category    string
 	Description string
 	Run         func(context.Context, *cdpSession) error
+	Duration    time.Duration // if >0, run as many iterations as possible within this duration
+	Iterations  int           // if >0, run exactly this many iterations (used for heavy pages)
+	Timeout     time.Duration // per-iteration timeout
 }
 
 // benchmarkEndpoint benchmarks a single CDP endpoint
@@ -163,7 +165,6 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 		stats := scenarioStatsMap[scenario.Name]
 		scenarioStart := time.Now()
 
-		// Dedicated session/target per scenario across its iterations.
 		session, err := newCDPSession(benchCtx, b.logger.With("endpoint", wsURL, "scenario", scenario.Name), wsURL)
 		if err != nil {
 			sessionErrs.Add(1)
@@ -179,29 +180,51 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 		}
 		sessionsUp.Add(1)
 
-		for iter := 0; iter < scenarioIterations; iter++ {
+		effectiveDuration := scenario.Duration
+		if effectiveDuration == 0 && scenario.Iterations == 0 {
+			effectiveDuration = 3 * time.Second
+		}
+		iterDeadline := time.Now().Add(effectiveDuration)
+		iterations := scenario.Iterations
+		for {
 			select {
 			case <-benchCtx.Done():
-				break
+				iterDeadline = time.Now() // ensure exit
 			default:
 			}
 
-			runCtx, cancelRun := context.WithTimeout(benchCtx, 12*time.Second)
+			if effectiveDuration > 0 && time.Now().After(iterDeadline) {
+				break
+			}
+			if scenario.Iterations > 0 && iterations <= 0 {
+				break
+			}
+
+			runCtx := benchCtx
+			cancelRun := func() {}
+			if scenario.Timeout > 0 {
+				runCtx, cancelRun = context.WithTimeout(benchCtx, scenario.Timeout)
+			}
+
 			start := time.Now()
 			err = scenario.Run(runCtx, session)
 			cancelRun()
-
 			latency := time.Since(start)
+
 			stats.Attempts.Add(1)
+
 			if err != nil {
 				stats.Failures.Add(1)
 				stats.recordError(err)
-				continue
+			} else {
+				totalSuccess.Add(1)
+				stats.Successes.Add(1)
+				stats.recordLatency(float64(latency.Microseconds()) / 1000.0)
 			}
 
-			totalSuccess.Add(1)
-			stats.Successes.Add(1)
-			stats.recordLatency(float64(latency.Microseconds()) / 1000.0)
+			if scenario.Iterations > 0 {
+				iterations--
+			}
 		}
 
 		stats.addDuration(time.Since(scenarioStart))
@@ -258,11 +281,18 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 
 // benchmarkScenarios defines deterministic CDP scenarios that require valid CDP sessions.
 func benchmarkScenarios() []cdpScenario {
+	quickDuration := 4 * time.Second
+	quickTimeout := 2 * time.Second
+	navTimeout := 12 * time.Second
+	trendingTimeout := 15 * time.Second
+
 	return []cdpScenario{
 		{
 			Name:        "Runtime.evaluate-basic",
 			Category:    "Runtime",
 			Description: "Evaluate a simple arithmetic expression",
+			Duration:    quickDuration,
+			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
 					"expression":    "21*2",
@@ -290,6 +320,8 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Runtime.evaluate-dom",
 			Category:    "Runtime",
 			Description: "Evaluate JavaScript that reads DOM content",
+			Duration:    quickDuration,
+			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
 					"expression":    "document.querySelector('#benchmark-root').dataset.value",
@@ -317,6 +349,8 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "DOM.querySelector",
 			Category:    "DOM",
 			Description: "Query DOM for benchmark node",
+			Duration:    quickDuration,
+			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				rootID, err := session.ensureDocumentRoot(ctx)
 				if err != nil {
@@ -347,6 +381,8 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "DOM.getBoxModel",
 			Category:    "DOM",
 			Description: "Fetch layout information for benchmark node",
+			Duration:    quickDuration,
+			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				nodeID, err := session.benchmarkNodeID(ctx)
 				if err != nil {
@@ -363,6 +399,8 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Performance.getMetrics",
 			Category:    "Performance",
 			Description: "Collect performance metrics from the page",
+			Duration:    3 * time.Second,
+			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				resp, err := session.send(ctx, "Performance.getMetrics", nil, true)
 				if err != nil {
@@ -385,6 +423,8 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Runtime.increment-counter",
 			Category:    "Runtime",
 			Description: "Mutate page state deterministically",
+			Duration:    quickDuration,
+			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
 					"expression":    "window.bumpCounter()",
@@ -412,6 +452,8 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Navigation.hackernews",
 			Category:    "Navigation",
 			Description: "Navigate to Hacker News and count headlines",
+			Iterations:  1,
+			Timeout:     navTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				if err := session.navigateToURL(ctx, "https://news.ycombinator.com/"); err != nil {
 					return err
@@ -442,6 +484,8 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Navigation.github-trending",
 			Category:    "Navigation",
 			Description: "Navigate to GitHub trending and inspect repository list",
+			Iterations:  1,
+			Timeout:     trendingTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				if err := session.navigateToURL(ctx, "https://github.com/trending?since=daily"); err != nil {
 					return err
@@ -598,7 +642,7 @@ func (s *cdpSession) PrepareTarget(ctx context.Context) error {
 }
 
 func (s *cdpSession) enableDomains(ctx context.Context) error {
-	domains := []string{"Page.enable", "Runtime.enable", "DOM.enable", "Network.enable", "Performance.enable"}
+	domains := []string{"Page.enable", "Runtime.enable", "DOM.enable", "Performance.enable"}
 	for _, method := range domains {
 		if _, err := s.send(ctx, method, nil, true); err != nil {
 			return fmt.Errorf("%s: %w", method, err)
