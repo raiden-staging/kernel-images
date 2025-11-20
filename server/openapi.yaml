@@ -1644,6 +1644,13 @@ components:
         category:
           type: string
           description: Scenario category (e.g., Runtime, DOM, Page, Network, Performance)
+        attempt_count:
+          type: integer
+          description: Total attempts issued for this scenario
+        duration_seconds:
+          type: number
+          format: float
+          description: Wall-clock time spent running this scenario
         operation_count:
           type: integer
           description: Number of successful operations performed in this scenario
