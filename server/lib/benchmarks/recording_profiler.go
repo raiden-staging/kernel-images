@@ -24,8 +24,8 @@ var (
 
 // RecordingProfiler profiles recording performance
 type RecordingProfiler struct {
-	logger         *slog.Logger
-	recorderMgr    recorder.RecordManager
+	logger          *slog.Logger
+	recorderMgr     recorder.RecordManager
 	recorderFactory recorder.FFmpegRecorderFactory
 }
 
@@ -40,7 +40,9 @@ func NewRecordingProfiler(logger *slog.Logger, recorderMgr recorder.RecordManage
 
 // Run executes the recording benchmark
 func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*RecordingResults, error) {
-	p.logger.Info("starting recording benchmark", "duration", duration)
+	// Fixed 10-second recording duration for benchmarks
+	const recordingDuration = 10 * time.Second
+	p.logger.Info("starting recording benchmark", "duration", recordingDuration)
 
 	// Capture baseline metrics
 	var memStatsBefore runtime.MemStats
@@ -71,12 +73,13 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 
 	// Capture metrics after recording starts
 	time.Sleep(2 * time.Second) // Let recording stabilize
+
 	var memStatsAfter runtime.MemStats
 	runtime.ReadMemStats(&memStatsAfter)
 	cpuAfter, _ := GetProcessCPUStats()
 
 	// Let recording run for the specified duration
-	time.Sleep(duration)
+	time.Sleep(recordingDuration)
 
 	// Stop recording
 	if err := testRecorder.Stop(ctx); err != nil {
@@ -97,7 +100,7 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 
 	// If parsing failed, use approximations
 	if framesCaptured == 0 {
-		framesCaptured = int64(duration.Seconds() * 30) // Assuming 30fps
+		framesCaptured = int64(recordingDuration.Seconds() * 30) // Assuming 30fps
 	}
 
 	// Calculate encoding lag (rough estimate based on FPS vs target)
@@ -134,6 +137,7 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 		AvgEncodingLagMS:     avgEncodingLag,
 		DiskWriteMBPS:        diskWriteMBPS,
 		ConcurrentRecordings: 1,
+		FrameRateImpact:      nil, // FPS measurement requires active WebRTC connections
 	}
 
 	p.logger.Info("recording benchmark completed",

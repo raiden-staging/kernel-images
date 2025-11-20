@@ -4,12 +4,12 @@ import "time"
 
 // BenchmarkResults represents the complete benchmark output
 type BenchmarkResults struct {
-	Timestamp       time.Time              `json:"timestamp"`
-	DurationSeconds int                    `json:"duration_seconds"`
-	System          SystemInfo             `json:"system"`
-	Results         ComponentResults       `json:"results"`
-	Errors          []string               `json:"errors"`
-	StartupTiming   *StartupTimingResults  `json:"startup_timing,omitempty"`
+	Timestamp      time.Time             `json:"timestamp"`
+	ElapsedSeconds float64               `json:"elapsed_seconds"` // Actual elapsed time of all benchmarks
+	System         SystemInfo            `json:"system"`
+	Results        ComponentResults      `json:"results"`
+	Errors         []string              `json:"errors"`
+	StartupTiming  *StartupTimingResults `json:"startup_timing,omitempty"`
 }
 
 // SystemInfo contains system information
@@ -22,7 +22,7 @@ type SystemInfo struct {
 
 // ComponentResults contains results for each benchmarked component
 type ComponentResults struct {
-	CDPProxy           *CDPProxyResults          `json:"cdp_proxy,omitempty"`
+	CDP                *CDPProxyResults          `json:"cdp,omitempty"`
 	WebRTCLiveView     *WebRTCLiveViewResults    `json:"webrtc_live_view,omitempty"`
 	Recording          *RecordingResults         `json:"recording,omitempty"`
 	ScreenshotLatency  *ScreenshotLatencyResults `json:"screenshot_latency,omitempty"`
