@@ -261,12 +261,14 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 			Name:                scenario.Name,
 			Description:         scenario.Description,
 			Category:            scenario.Category,
+			AttemptCount:        attempts,
 			OperationCount:      successes,
 			FailureCount:        failures,
 			ThroughputOpsPerSec: throughput,
 			LatencyMS:           latencyMetrics,
 			SuccessRate:         successRate,
 			ErrorSamples:        stats.copyErrors(),
+			DurationSeconds:     durationSec,
 		})
 	}
 
@@ -281,10 +283,11 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 
 // benchmarkScenarios defines deterministic CDP scenarios that require valid CDP sessions.
 func benchmarkScenarios() []cdpScenario {
-	quickDuration := 4 * time.Second
-	quickTimeout := 2 * time.Second
-	navTimeout := 12 * time.Second
-	trendingTimeout := 15 * time.Second
+	quickDuration := 5 * time.Second
+	quickTimeout := 3 * time.Second
+	navTimeout := 15 * time.Second
+	trendingTimeout := 18 * time.Second
+	pageWarmupTimeout := 5 * time.Second
 
 	return []cdpScenario{
 		{
@@ -399,7 +402,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Performance.getMetrics",
 			Category:    "Performance",
 			Description: "Collect performance metrics from the page",
-			Duration:    3 * time.Second,
+			Duration:    5 * time.Second,
 			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				resp, err := session.send(ctx, "Performance.getMetrics", nil, true)
@@ -452,10 +455,13 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Navigation.hackernews",
 			Category:    "Navigation",
 			Description: "Navigate to Hacker News and count headlines",
-			Iterations:  1,
+			Iterations:  2,
 			Timeout:     navTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				if err := session.navigateToURL(ctx, "https://news.ycombinator.com/"); err != nil {
+					return err
+				}
+				if err := session.waitForReadyWithTimeout(ctx, pageWarmupTimeout); err != nil {
 					return err
 				}
 				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
@@ -484,10 +490,13 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Navigation.github-trending",
 			Category:    "Navigation",
 			Description: "Navigate to GitHub trending and inspect repository list",
-			Iterations:  1,
+			Iterations:  2,
 			Timeout:     trendingTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
 				if err := session.navigateToURL(ctx, "https://github.com/trending?since=daily"); err != nil {
+					return err
+				}
+				if err := session.waitForReadyWithTimeout(ctx, pageWarmupTimeout); err != nil {
 					return err
 				}
 				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
@@ -564,6 +573,8 @@ func newCDPSession(ctx context.Context, logger *slog.Logger, wsURL string) (*cdp
 	if err != nil {
 		return nil, fmt.Errorf("failed to open WebSocket: %w", err)
 	}
+	// Allow larger CDP messages (events, responses)
+	conn.SetReadLimit(10 * 1024 * 1024)
 
 	return &cdpSession{
 		logger: logger,
@@ -672,7 +683,17 @@ func (s *cdpSession) navigateToURL(ctx context.Context, targetURL string) error 
 }
 
 func (s *cdpSession) waitForReady(ctx context.Context) error {
-	for i := 0; i < 10; i++ {
+	return s.waitForReadyWithTimeout(ctx, 0)
+}
+
+func (s *cdpSession) waitForReadyWithTimeout(ctx context.Context, override time.Duration) error {
+	if override > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, override)
+		defer cancel()
+	}
+
+	for i := 0; i < 40; i++ {
 		resp, err := s.send(ctx, "Runtime.evaluate", map[string]interface{}{
 			"expression":    "document.readyState",
 			"returnByValue": true,
@@ -691,7 +712,7 @@ func (s *cdpSession) waitForReady(ctx context.Context) error {
 		if result.Result.Value == "complete" {
 			return nil
 		}
-		time.Sleep(50 * time.Millisecond)
+		time.Sleep(250 * time.Millisecond)
 	}
 	return fmt.Errorf("page did not reach readyState complete")
 }

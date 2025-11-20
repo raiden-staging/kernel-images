@@ -159,13 +159,17 @@ func convertCDPEndpointResults(endpoint *benchmarks.CDPEndpointResults) *oapi.CD
 	scenarios := make([]oapi.CDPScenarioResult, len(endpoint.Scenarios))
 	for i, scenario := range endpoint.Scenarios {
 		opCount := int(scenario.OperationCount)
+		attemptCount := int(scenario.AttemptCount)
+		durationSec := float32(scenario.DurationSeconds)
 		throughputOps := float32(scenario.ThroughputOpsPerSec)
 		successRate := float32(scenario.SuccessRate)
 		scenarios[i] = oapi.CDPScenarioResult{
 			Name:                &scenario.Name,
 			Description:         &scenario.Description,
 			Category:            &scenario.Category,
+			AttemptCount:        &attemptCount,
 			OperationCount:      &opCount,
+			DurationSeconds:     &durationSec,
 			FailureCount:        optionalInt(scenario.FailureCount),
 			ThroughputOpsPerSec: &throughputOps,
 			LatencyMs:           convertLatencyMetrics(scenario.LatencyMS),
