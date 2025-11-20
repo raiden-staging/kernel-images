@@ -322,4 +322,3 @@ func (p *RecordingProfiler) measureCurrentFPS() float64 {
 	p.logger.Debug("measured FPS from neko stats", "fps", stats.FrameRateFPS.Achieved)
 	return stats.FrameRateFPS.Achieved
 }
-

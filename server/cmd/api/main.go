@@ -55,7 +55,6 @@ func main() {
 
 	startupTiming.StartPhase("controller_init")
 	stz := scaletozero.NewDebouncedController(scaletozero.NewUnikraftCloudController())
-
 	startupTiming.StartPhase("router_middleware_setup")
 	r := chi.NewRouter()
 	r.Use(
@@ -70,13 +69,13 @@ func main() {
 		scaletozero.Middleware(stz),
 	)
 
-	startupTiming.StartPhase("recording_params_validation")
 	defaultParams := recorder.FFmpegRecordingParams{
 		DisplayNum:  &config.DisplayNum,
 		FrameRate:   &config.FrameRate,
 		MaxSizeInMB: &config.MaxSizeInMB,
 		OutputDir:   &config.OutputDir,
 	}
+	startupTiming.StartPhase("recording_params_validation")
 	if err := defaultParams.Validate(); err != nil {
 		slogger.Error("invalid default recording parameters", "err", err)
 		os.Exit(1)
@@ -100,7 +99,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	startupTiming.StartPhase("api_service_creation")
 	apiService, err := api.New(
 		recorder.NewFFmpegManager(),
 		recorder.NewFFmpegRecorderFactory(config.PathToFFmpeg, defaultParams, stz),

@@ -27,13 +27,13 @@ func NewScreenshotLatencyBenchmark(logger *slog.Logger, apiBaseURL string) *Scre
 
 // ScreenshotLatencyResults contains screenshot benchmark results
 type ScreenshotLatencyResults struct {
-	TotalScreenshots     int            `json:"total_screenshots"`
-	SuccessfulCaptures   int            `json:"successful_captures"`
-	FailedCaptures       int            `json:"failed_captures"`
-	SuccessRate          float64        `json:"success_rate"`
-	LatencyMS            LatencyMetrics `json:"latency_ms"`
-	AvgImageSizeBytes    int64          `json:"avg_image_size_bytes"`
-	ThroughputPerSec     float64        `json:"throughput_per_sec"`
+	TotalScreenshots   int            `json:"total_screenshots"`
+	SuccessfulCaptures int            `json:"successful_captures"`
+	FailedCaptures     int            `json:"failed_captures"`
+	SuccessRate        float64        `json:"success_rate"`
+	LatencyMS          LatencyMetrics `json:"latency_ms"`
+	AvgImageSizeBytes  int64          `json:"avg_image_size_bytes"`
+	ThroughputPerSec   float64        `json:"throughput_per_sec"`
 }
 
 // Run executes the screenshot latency benchmark

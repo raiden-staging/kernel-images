@@ -20,9 +20,9 @@ const (
 
 // WebRTCBenchmark performs WebRTC benchmarks by collecting stats from neko
 type WebRTCBenchmark struct {
-	logger       *slog.Logger
-	nekoBaseURL  string
-	httpClient   *http.Client
+	logger      *slog.Logger
+	nekoBaseURL string
+	httpClient  *http.Client
 }
 
 // NewWebRTCBenchmark creates a new WebRTC benchmark
@@ -369,19 +369,19 @@ func (b *WebRTCBenchmark) readNekoStats(ctx context.Context) (*NekoWebRTCStats, 
 
 // NekoWebRTCStats represents the comprehensive stats format exported by neko from client
 type NekoWebRTCStats struct {
-	Timestamp          time.Time                 `json:"timestamp"`
-	ConnectionState    string                    `json:"connection_state"`
-	IceConnectionState string                    `json:"ice_connection_state"`
-	FrameRateFPS       NekoFrameRateMetrics      `json:"frame_rate_fps"`
-	FrameLatencyMS     NekoLatencyMetrics        `json:"frame_latency_ms"`
-	BitrateKbps        NekoBitrateMetrics        `json:"bitrate_kbps"`
-	Packets            NekoPacketMetrics         `json:"packets"`
-	Frames             NekoFrameMetrics          `json:"frames"`
-	JitterMS           NekoJitterMetrics         `json:"jitter_ms"`
-	Network            NekoNetworkMetrics        `json:"network"`
-	Codecs             NekoCodecMetrics          `json:"codecs"`
-	Resolution         NekoResolutionMetrics     `json:"resolution"`
-	ConcurrentViewers  int                       `json:"concurrent_viewers"`
+	Timestamp          time.Time             `json:"timestamp"`
+	ConnectionState    string                `json:"connection_state"`
+	IceConnectionState string                `json:"ice_connection_state"`
+	FrameRateFPS       NekoFrameRateMetrics  `json:"frame_rate_fps"`
+	FrameLatencyMS     NekoLatencyMetrics    `json:"frame_latency_ms"`
+	BitrateKbps        NekoBitrateMetrics    `json:"bitrate_kbps"`
+	Packets            NekoPacketMetrics     `json:"packets"`
+	Frames             NekoFrameMetrics      `json:"frames"`
+	JitterMS           NekoJitterMetrics     `json:"jitter_ms"`
+	Network            NekoNetworkMetrics    `json:"network"`
+	Codecs             NekoCodecMetrics      `json:"codecs"`
+	Resolution         NekoResolutionMetrics `json:"resolution"`
+	ConcurrentViewers  int                   `json:"concurrent_viewers"`
 }
 
 type NekoFrameRateMetrics struct {

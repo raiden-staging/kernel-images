@@ -168,7 +168,6 @@ func (fr *FFmpegRecorder) Start(ctx context.Context) error {
 	cmd := exec.Command(fr.binaryPath, args...)
 	// create process group to ensure all processes are signaled together
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-
 	// Capture stderr for benchmarking while also writing to os.Stderr
 	fr.stderrBuf.Reset()
 	cmd.Stderr = io.MultiWriter(os.Stderr, &fr.stderrBuf)
@@ -226,6 +225,14 @@ func (fr *FFmpegRecorder) ForceStop(ctx context.Context) error {
 	return err
 }
 
+// GetStderr returns the captured ffmpeg stderr output for benchmarking
+func (fr *FFmpegRecorder) GetStderr() string {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+
+	return fr.stderrBuf.String()
+}
+
 // IsRecording returns true if a recording is currently in progress.
 func (fr *FFmpegRecorder) IsRecording(ctx context.Context) bool {
 	fr.mu.Lock()
@@ -248,14 +255,6 @@ func (fr *FFmpegRecorder) Metadata() *RecordingMetadata {
 		StartTime: fr.startTime,
 		EndTime:   fr.endTime,
 	}
-}
-
-// GetStderr returns the captured ffmpeg stderr output for benchmarking
-func (fr *FFmpegRecorder) GetStderr() string {
-	fr.mu.Lock()
-	defer fr.mu.Unlock()
-
-	return fr.stderrBuf.String()
 }
 
 // Recording returns the recording file as an io.ReadCloser.

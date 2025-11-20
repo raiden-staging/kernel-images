@@ -103,9 +103,9 @@ func (st *StartupTiming) GetTotalStartupTime() time.Duration {
 
 // StartupTimingResults contains startup timing data for benchmark results
 type StartupTimingResults struct {
-	TotalStartupTimeMS float64        `json:"total_startup_time_ms"`
-	Phases             []PhaseResult  `json:"phases"`
-	PhaseSummary       PhaseSummary   `json:"phase_summary"`
+	TotalStartupTimeMS float64       `json:"total_startup_time_ms"`
+	Phases             []PhaseResult `json:"phases"`
+	PhaseSummary       PhaseSummary  `json:"phase_summary"`
 }
 
 type PhaseResult struct {
