@@ -105,6 +105,7 @@ type cdpScenario struct {
 	Duration    time.Duration // if >0, run as many iterations as possible within this duration
 	Iterations  int           // if >0, run exactly this many iterations (used for heavy pages)
 	Timeout     time.Duration // per-iteration timeout
+	Type        string
 }
 
 // benchmarkEndpoint benchmarks a single CDP endpoint
@@ -127,12 +128,14 @@ type scenarioStats struct {
 	Name         string
 	Description  string
 	Category     string
+	Type         string
 	Attempts     atomic.Int64
 	Successes    atomic.Int64
 	Failures     atomic.Int64
 	Latencies    []float64
 	ErrorSamples []string
 	DurationNS   atomic.Int64
+	EventCount   atomic.Int64
 	mu           sync.Mutex
 }
 
@@ -148,6 +151,7 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 			Name:        scenario.Name,
 			Description: scenario.Description,
 			Category:    scenario.Category,
+			Type:        scenario.Type,
 			Latencies:   make([]float64, 0, 4096),
 			mu:          sync.Mutex{},
 		}
@@ -179,6 +183,7 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 			continue
 		}
 		sessionsUp.Add(1)
+		session.resetEvents()
 
 		effectiveDuration := scenario.Duration
 		if effectiveDuration == 0 && scenario.Iterations == 0 {
@@ -228,6 +233,7 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 		}
 
 		stats.addDuration(time.Since(scenarioStart))
+		stats.EventCount.Add(session.EventCount())
 		session.Close()
 	}
 
@@ -265,10 +271,13 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 			OperationCount:      successes,
 			FailureCount:        failures,
 			ThroughputOpsPerSec: throughput,
+			EventCount:          stats.EventCount.Load(),
+			EventThroughputSec:  float64(stats.EventCount.Load()) / durationSec,
 			LatencyMS:           latencyMetrics,
 			SuccessRate:         successRate,
 			ErrorSamples:        stats.copyErrors(),
 			DurationSeconds:     durationSec,
+			Type:                scenario.Type,
 		})
 	}
 
@@ -294,6 +303,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Runtime.evaluate-basic",
 			Category:    "Runtime",
 			Description: "Evaluate a simple arithmetic expression",
+			Type:        "micro",
 			Duration:    quickDuration,
 			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
@@ -323,6 +333,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Runtime.evaluate-dom",
 			Category:    "Runtime",
 			Description: "Evaluate JavaScript that reads DOM content",
+			Type:        "micro",
 			Duration:    quickDuration,
 			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
@@ -352,6 +363,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "DOM.querySelector",
 			Category:    "DOM",
 			Description: "Query DOM for benchmark node",
+			Type:        "dom",
 			Duration:    quickDuration,
 			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
@@ -384,6 +396,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "DOM.getBoxModel",
 			Category:    "DOM",
 			Description: "Fetch layout information for benchmark node",
+			Type:        "dom",
 			Duration:    quickDuration,
 			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
@@ -402,6 +415,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Performance.getMetrics",
 			Category:    "Performance",
 			Description: "Collect performance metrics from the page",
+			Type:        "perf",
 			Duration:    5 * time.Second,
 			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
@@ -426,6 +440,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Runtime.increment-counter",
 			Category:    "Runtime",
 			Description: "Mutate page state deterministically",
+			Type:        "micro",
 			Duration:    quickDuration,
 			Timeout:     quickTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
@@ -455,6 +470,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Navigation.hackernews",
 			Category:    "Navigation",
 			Description: "Navigate to Hacker News and count headlines",
+			Type:        "navigation",
 			Iterations:  2,
 			Timeout:     navTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
@@ -490,6 +506,7 @@ func benchmarkScenarios() []cdpScenario {
 			Name:        "Navigation.github-trending",
 			Category:    "Navigation",
 			Description: "Navigate to GitHub trending and inspect repository list",
+			Type:        "navigation",
 			Iterations:  2,
 			Timeout:     trendingTimeout,
 			Run: func(ctx context.Context, session *cdpSession) error {
@@ -517,6 +534,38 @@ func benchmarkScenarios() []cdpScenario {
 				}
 				if result.Result.Value < 5 {
 					return fmt.Errorf("too few trending repos found: %v", result.Result.Value)
+				}
+				return nil
+			},
+		},
+		{
+			Name:        "Network.fetch-burst",
+			Category:    "Network",
+			Description: "Generate network traffic via fetch burst against data URLs",
+			Type:        "network",
+			Duration:    5 * time.Second,
+			Timeout:     4 * time.Second,
+			Run: func(ctx context.Context, session *cdpSession) error {
+				if err := session.enableNetwork(ctx); err != nil {
+					return err
+				}
+				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
+					"expression":    `(async()=>{const payload='data:text/plain,'+('x'.repeat(256));const urls=new Array(5).fill(payload);const res=await Promise.all(urls.map(u=>fetch(u).then(r=>r.text())));return res.length;})()`,
+					"returnByValue": true,
+				}, true)
+				if err != nil {
+					return err
+				}
+				var result struct {
+					Result struct {
+						Value float64 `json:"value"`
+					} `json:"result"`
+				}
+				if err := decodeCDPResult(resp.Result, &result); err != nil {
+					return err
+				}
+				if result.Result.Value != 5 {
+					return fmt.Errorf("unexpected fetch burst result: %v", result.Result.Value)
 				}
 				return nil
 			},
@@ -566,6 +615,7 @@ type cdpSession struct {
 	targetID  string
 	rootID    int64
 	msgID     atomic.Int64
+	events    atomic.Int64
 }
 
 func newCDPSession(ctx context.Context, logger *slog.Logger, wsURL string) (*cdpSession, error) {
@@ -660,6 +710,17 @@ func (s *cdpSession) enableDomains(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (s *cdpSession) enableNetwork(ctx context.Context) error {
+	if _, err := s.send(ctx, "Network.enable", nil, true); err != nil {
+		return fmt.Errorf("Network.enable: %w", err)
+	}
+	return nil
+}
+
+func (s *cdpSession) resetEvents() {
+	s.events.Store(0)
 }
 
 func (s *cdpSession) navigateToBenchmarkPage(ctx context.Context) error {
@@ -801,6 +862,10 @@ func (s *cdpSession) send(ctx context.Context, method string, params map[string]
 			return nil, fmt.Errorf("unmarshal response: %w", err)
 		}
 
+		if response.ID == 0 || (response.ID != id && response.Method != "") {
+			s.incrementEvents()
+		}
+
 		if response.ID != id {
 			continue
 		}
@@ -883,6 +948,14 @@ type CDPMessage struct {
 	Params    map[string]interface{} `json:"params,omitempty"`
 	Result    map[string]interface{} `json:"result,omitempty"`
 	Error     *CDPError              `json:"error,omitempty"`
+}
+
+func (s *cdpSession) EventCount() int64 {
+	return s.events.Load()
+}
+
+func (s *cdpSession) incrementEvents() {
+	s.events.Add(1)
 }
 
 // CDPError represents a CDP error response
