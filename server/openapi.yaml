@@ -9,6 +9,12 @@ paths:
       description: |
         Execute performance benchmarks on specified components and return detailed metrics.
         Benchmarks run internally within the image and collect real-time performance data.
+
+        **Resilient Execution:**
+        - The endpoint always returns 200 OK with results for successful components
+        - Failed components are omitted from results and reported in the `errors` array
+        - Each benchmark component runs independently - one failure doesn't prevent others from running
+        - Check the `errors` field to identify which components failed and why
       operationId: runBenchmark
       parameters:
         - name: components
@@ -1577,7 +1583,9 @@ components:
       additionalProperties: false
     BenchmarkResults:
       type: object
-      description: Performance benchmark results
+      description: |
+        Performance benchmark results. Always returns with available data even if some components fail.
+        Failed components will be absent from 'results' and their errors listed in 'errors' array.
       properties:
         timestamp:
           type: string
@@ -1594,7 +1602,11 @@ components:
           type: array
           items:
             type: string
-          description: Any errors encountered during benchmarking
+          description: |
+            Errors encountered during benchmarking. Each entry follows the format "ComponentName: error message".
+            Empty array means all requested benchmarks succeeded.
+        startup_timing:
+          $ref: "#/components/schemas/StartupTimingResults"
       additionalProperties: false
     SystemInfo:
       type: object
@@ -1610,6 +1622,10 @@ components:
       additionalProperties: false
     ComponentResults:
       type: object
+      description: |
+        Results from individual benchmark components. All fields are optional.
+        Missing fields indicate that component was not requested or failed to run.
+        Check the 'errors' array in BenchmarkResults for failure details.
       properties:
         cdp_proxy:
           $ref: "#/components/schemas/CDPProxyResults"
@@ -1617,6 +1633,8 @@ components:
           $ref: "#/components/schemas/WebRTCLiveViewResults"
         recording:
           $ref: "#/components/schemas/RecordingResults"
+        screenshot_latency:
+          $ref: "#/components/schemas/ScreenshotLatencyResults"
       additionalProperties: false
     CDPProxyResults:
       type: object
@@ -1631,6 +1649,63 @@ components:
           $ref: "#/components/schemas/MemoryMetrics"
         message_size_bytes:
           $ref: "#/components/schemas/MessageSizeMetrics"
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/CDPScenarioResult"
+          description: Per-scenario benchmark results
+        proxied_endpoint:
+          $ref: "#/components/schemas/CDPEndpointResults"
+          description: Results from proxied CDP endpoint (port 9222)
+        direct_endpoint:
+          $ref: "#/components/schemas/CDPEndpointResults"
+          description: Results from direct CDP endpoint (port 9223)
+        proxy_overhead_percent:
+          type: number
+          description: Performance overhead of proxy as percentage (positive = slower through proxy)
+      additionalProperties: false
+    CDPEndpointResults:
+      type: object
+      description: Results for a specific CDP endpoint (proxied or direct)
+      properties:
+        endpoint_url:
+          type: string
+          description: CDP endpoint URL
+        throughput_msgs_per_sec:
+          type: number
+          description: Messages per second throughput
+        latency_ms:
+          $ref: "#/components/schemas/LatencyMetrics"
+        scenarios:
+          type: array
+          items:
+            $ref: "#/components/schemas/CDPScenarioResult"
+          description: Per-scenario results for this endpoint
+      additionalProperties: false
+    CDPScenarioResult:
+      type: object
+      description: Results for a specific CDP test scenario
+      properties:
+        name:
+          type: string
+          description: Scenario name (e.g., Runtime.evaluate, DOM.getDocument)
+        description:
+          type: string
+          description: Human-readable description of the scenario
+        category:
+          type: string
+          description: Scenario category (e.g., Runtime, DOM, Page, Network, Performance)
+        operation_count:
+          type: integer
+          description: Number of operations performed in this scenario
+        throughput_ops_per_sec:
+          type: number
+          description: Operations per second for this scenario
+        latency_ms:
+          $ref: "#/components/schemas/LatencyMetrics"
+        success_rate:
+          type: number
+          description: Success rate percentage (0-100)
       additionalProperties: false
     WebRTCLiveViewResults:
       type: object
@@ -1667,6 +1742,47 @@ components:
           type: number
         concurrent_recordings:
           type: integer
+        frame_rate_impact:
+          $ref: "#/components/schemas/RecordingFrameRateImpact"
+      additionalProperties: false
+    RecordingFrameRateImpact:
+      type: object
+      description: Impact of recording on live view frame rate
+      properties:
+        before_recording_fps:
+          type: number
+          description: Frame rate before recording started
+        during_recording_fps:
+          type: number
+          description: Frame rate while recording is active
+        impact_percent:
+          type: number
+          description: Percentage change in frame rate (negative means degradation)
+      additionalProperties: false
+    ScreenshotLatencyResults:
+      type: object
+      description: Screenshot capture performance metrics
+      properties:
+        total_screenshots:
+          type: integer
+          description: Total number of screenshot attempts
+        successful_captures:
+          type: integer
+          description: Number of successful screenshot captures
+        failed_captures:
+          type: integer
+          description: Number of failed screenshot attempts
+        success_rate:
+          type: number
+          description: Success rate percentage (0-100)
+        latency_ms:
+          $ref: "#/components/schemas/LatencyMetrics"
+        avg_image_size_bytes:
+          type: integer
+          description: Average screenshot image size in bytes
+        throughput_per_sec:
+          type: number
+          description: Screenshots captured per second
       additionalProperties: false
     LatencyMetrics:
       type: object
@@ -1717,6 +1833,52 @@ components:
           type: integer
         avg:
           type: integer
+      additionalProperties: false
+    StartupTimingResults:
+      type: object
+      description: Container startup timing metrics
+      properties:
+        total_startup_time_ms:
+          type: number
+          description: Total startup time from container start to ready state
+        phases:
+          type: array
+          items:
+            $ref: "#/components/schemas/PhaseResult"
+          description: Individual startup phases with durations
+        phase_summary:
+          $ref: "#/components/schemas/PhaseSummary"
+      additionalProperties: false
+    PhaseResult:
+      type: object
+      description: Timing data for a single startup phase
+      properties:
+        name:
+          type: string
+          description: Name of the startup phase
+        duration_ms:
+          type: number
+          description: Duration of this phase in milliseconds
+        percentage:
+          type: number
+          description: Percentage of total startup time
+      additionalProperties: false
+    PhaseSummary:
+      type: object
+      description: Summary statistics for startup phases
+      properties:
+        fastest_phase:
+          type: string
+          description: Name of the fastest phase
+        slowest_phase:
+          type: string
+          description: Name of the slowest phase
+        fastest_ms:
+          type: number
+          description: Duration of fastest phase in milliseconds
+        slowest_ms:
+          type: number
+          description: Duration of slowest phase in milliseconds
       additionalProperties: false
     ExecutePlaywrightRequest:
       type: object

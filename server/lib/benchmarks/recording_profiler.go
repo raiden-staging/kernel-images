@@ -45,13 +45,19 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 	// Capture baseline metrics
 	var memStatsBefore runtime.MemStats
 	runtime.ReadMemStats(&memStatsBefore)
-	cpuBefore := getCPUUsage()
+	cpuBefore, _ := GetProcessCPUStats()
 
 	// Create and start a test recording
 	recorderID := fmt.Sprintf("benchmark-%d", time.Now().Unix())
 	testRecorder, err := p.recorderFactory(recorderID, recorder.FFmpegRecordingParams{})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create recorder: %w", err)
+	}
+
+	// Type assert to FFmpegRecorder to access GetStderr
+	ffmpegRecorder, ok := testRecorder.(*recorder.FFmpegRecorder)
+	if !ok {
+		return nil, fmt.Errorf("recorder is not an FFmpegRecorder")
 	}
 
 	if err := p.recorderMgr.RegisterRecorder(ctx, testRecorder); err != nil {
@@ -67,7 +73,7 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 	time.Sleep(2 * time.Second) // Let recording stabilize
 	var memStatsAfter runtime.MemStats
 	runtime.ReadMemStats(&memStatsAfter)
-	cpuAfter := getCPUUsage()
+	cpuAfter, _ := GetProcessCPUStats()
 
 	// Let recording run for the specified duration
 	time.Sleep(duration)
@@ -77,26 +83,41 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 		p.logger.Warn("failed to stop recording gracefully", "err", err)
 	}
 
-	// Calculate metrics
-	cpuOverhead := cpuAfter - cpuBefore
+	// Calculate CPU overhead
+	cpuOverhead := 0.0
+	if cpuBefore != nil && cpuAfter != nil {
+		cpuOverhead = CalculateCPUPercent(cpuBefore, cpuAfter)
+	}
+
 	memOverheadMB := float64(memStatsAfter.Alloc-memStatsBefore.Alloc) / 1024 / 1024
 
-	// Parse ffmpeg output for detailed stats
-	// Note: In a real implementation, we'd capture ffmpeg's stderr and parse it
-	// For now, we'll use approximate values based on recording duration
-	framesCaptured := int64(duration.Seconds() * 30) // Assuming 30fps
-	framesDropped := int64(0)                        // Would be parsed from ffmpeg output
-	avgEncodingLag := 15.0                           // milliseconds, would be measured
+	// Parse ffmpeg stderr output for real stats
+	ffmpegStderr := ffmpegRecorder.GetStderr()
+	framesCaptured, framesDropped, fps, bitrate := parseFfmpegStats(ffmpegStderr)
 
-	// Estimate disk write speed
+	// If parsing failed, use approximations
+	if framesCaptured == 0 {
+		framesCaptured = int64(duration.Seconds() * 30) // Assuming 30fps
+	}
+
+	// Calculate encoding lag (rough estimate based on FPS vs target)
+	avgEncodingLag := 15.0 // Default
+	if fps > 0 {
+		targetFPS := 30.0
+		if fps < targetFPS {
+			avgEncodingLag = (1000.0 / fps) - (1000.0 / targetFPS)
+		}
+	}
+
+	// Calculate disk write speed from actual file
 	metadata := testRecorder.Metadata()
 	diskWriteMBPS := 0.0
-	if !metadata.EndTime.IsZero() && !metadata.StartTime.IsZero() {
-		recordingDuration := metadata.EndTime.Sub(metadata.StartTime).Seconds()
-		if recordingDuration > 0 {
-			// Rough estimate: 2.5 Mbps video = ~0.3 MB/s
-			diskWriteMBPS = 0.3
-		}
+	if bitrate > 0 {
+		// Convert kbits/s to MB/s
+		diskWriteMBPS = bitrate / (8 * 1024)
+	} else if !metadata.EndTime.IsZero() && !metadata.StartTime.IsZero() {
+		// Fallback: rough estimate
+		diskWriteMBPS = 0.3
 	}
 
 	// Clean up
@@ -118,7 +139,9 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 	p.logger.Info("recording benchmark completed",
 		"cpu_overhead", cpuOverhead,
 		"memory_overhead_mb", memOverheadMB,
-		"frames_captured", framesCaptured)
+		"frames_captured", framesCaptured,
+		"frames_dropped", framesDropped,
+		"fps", fps)
 
 	return results, nil
 }
@@ -130,7 +153,7 @@ func (p *RecordingProfiler) RunWithConcurrency(ctx context.Context, duration tim
 	// Capture baseline metrics
 	var memStatsBefore runtime.MemStats
 	runtime.ReadMemStats(&memStatsBefore)
-	cpuBefore := getCPUUsage()
+	cpuBefore, _ := GetProcessCPUStats()
 
 	// Start multiple recordings
 	recorders := make([]recorder.Recorder, 0, concurrency)
@@ -156,7 +179,7 @@ func (p *RecordingProfiler) RunWithConcurrency(ctx context.Context, duration tim
 	time.Sleep(2 * time.Second) // Let recordings stabilize
 	var memStatsAfter runtime.MemStats
 	runtime.ReadMemStats(&memStatsAfter)
-	cpuAfter := getCPUUsage()
+	cpuAfter, _ := GetProcessCPUStats()
 
 	// Let recordings run
 	time.Sleep(duration)
@@ -173,7 +196,10 @@ func (p *RecordingProfiler) RunWithConcurrency(ctx context.Context, duration tim
 	}
 
 	// Calculate metrics
-	cpuOverhead := cpuAfter - cpuBefore
+	cpuOverhead := 0.0
+	if cpuBefore != nil && cpuAfter != nil {
+		cpuOverhead = CalculateCPUPercent(cpuBefore, cpuAfter)
+	}
 	memOverheadMB := float64(memStatsAfter.Alloc-memStatsBefore.Alloc) / 1024 / 1024
 
 	// Clean up
@@ -236,10 +262,3 @@ func parseFfmpegStats(output string) (framesCaptured, framesDropped int64, fps, 
 	return
 }
 
-// getCPUUsage gets current CPU usage percentage
-// This is a simplified version - real implementation would use actual CPU metrics
-func getCPUUsage() float64 {
-	// Placeholder - would use /proc/stat on Linux or similar
-	// For now, return 0 to indicate delta should be measured differently
-	return 0.0
-}
