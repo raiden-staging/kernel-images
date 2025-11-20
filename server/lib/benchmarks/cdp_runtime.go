@@ -20,9 +20,9 @@ import (
 )
 
 const (
-	benchmarkPageHTML = `<!doctype html><html><head><title>Onkernel Benchmark</title></head><body><div id="benchmark-root" data-value="42">benchmark</div><script>window.benchmarkCounter=0;window.bumpCounter=()=>++window.benchmarkCounter;</script></body></html>`
-	maxErrorSamples   = 5
-	scenarioRounds    = 3
+	benchmarkPageHTML  = `<!doctype html><html><head><title>Onkernel Benchmark</title></head><body><div id="benchmark-root" data-value="42">benchmark</div><script>window.benchmarkCounter=0;window.bumpCounter=()=>++window.benchmarkCounter;</script></body></html>`
+	maxErrorSamples    = 5
+	scenarioIterations = 5
 )
 
 // CDPRuntimeBenchmark performs runtime benchmarks on the CDP proxy
@@ -43,7 +43,7 @@ func NewCDPRuntimeBenchmark(logger *slog.Logger, proxyURL string, concurrency in
 
 // Run executes the CDP benchmark
 func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (*CDPProxyResults, error) {
-	benchmarkDuration := 15 * time.Second
+	benchmarkDuration := 20 * time.Second
 	if duration > 0 {
 		benchmarkDuration = duration
 	}
@@ -139,11 +139,6 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 	benchCtx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
-	scenarioDuration := duration / time.Duration(len(scenarios)*scenarioRounds)
-	if scenarioDuration < 400*time.Millisecond {
-		scenarioDuration = 400 * time.Millisecond
-	}
-
 	// Initialize scenario tracking
 	scenarioStatsMap := make(map[string]*scenarioStats)
 	for _, scenario := range scenarios {
@@ -164,62 +159,53 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 
 	startTime := time.Now()
 
-	for round := 0; round < scenarioRounds; round++ {
-		for _, scenario := range scenarios {
-			stats := scenarioStatsMap[scenario.Name]
-			scenarioStart := time.Now()
-			scenarioDeadline := scenarioStart.Add(scenarioDuration)
+	for _, scenario := range scenarios {
+		stats := scenarioStatsMap[scenario.Name]
+		scenarioStart := time.Now()
 
-			for {
-				select {
-				case <-benchCtx.Done():
-					stats.addDuration(time.Since(scenarioStart))
-					break
-				default:
-				}
-
-				if time.Now().After(scenarioDeadline) {
-					stats.addDuration(time.Since(scenarioStart))
-					break
-				}
-
-				session, err := newCDPSession(benchCtx, b.logger.With("endpoint", wsURL, "scenario", scenario.Name), wsURL)
-				if err != nil {
-					sessionErrs.Add(1)
-					stats.recordError(err)
-					continue
-				}
-
-				if err := session.PrepareTarget(benchCtx); err != nil {
-					sessionErrs.Add(1)
-					stats.recordError(err)
-					session.Close()
-					continue
-				}
-				sessionsUp.Add(1)
-
-				runCtx, cancelRun := context.WithTimeout(benchCtx, 6*time.Second)
-				start := time.Now()
-				err = scenario.Run(runCtx, session)
-				cancelRun()
-
-				latency := time.Since(start)
-				latencyMs := float64(latency.Microseconds()) / 1000.0
-
-				stats.Attempts.Add(1)
-				if err != nil {
-					stats.Failures.Add(1)
-					stats.recordError(err)
-					session.Close()
-					continue
-				}
-
-				totalSuccess.Add(1)
-				stats.Successes.Add(1)
-				stats.recordLatency(latencyMs)
-				session.Close()
-			}
+		// Dedicated session/target per scenario across its iterations.
+		session, err := newCDPSession(benchCtx, b.logger.With("endpoint", wsURL, "scenario", scenario.Name), wsURL)
+		if err != nil {
+			sessionErrs.Add(1)
+			stats.recordError(err)
+			continue
 		}
+
+		if err := session.PrepareTarget(benchCtx); err != nil {
+			sessionErrs.Add(1)
+			stats.recordError(err)
+			session.Close()
+			continue
+		}
+		sessionsUp.Add(1)
+
+		for iter := 0; iter < scenarioIterations; iter++ {
+			select {
+			case <-benchCtx.Done():
+				break
+			default:
+			}
+
+			runCtx, cancelRun := context.WithTimeout(benchCtx, 12*time.Second)
+			start := time.Now()
+			err = scenario.Run(runCtx, session)
+			cancelRun()
+
+			latency := time.Since(start)
+			stats.Attempts.Add(1)
+			if err != nil {
+				stats.Failures.Add(1)
+				stats.recordError(err)
+				continue
+			}
+
+			totalSuccess.Add(1)
+			stats.Successes.Add(1)
+			stats.recordLatency(float64(latency.Microseconds()) / 1000.0)
+		}
+
+		stats.addDuration(time.Since(scenarioStart))
+		session.Close()
 	}
 
 	elapsed := time.Since(startTime)
