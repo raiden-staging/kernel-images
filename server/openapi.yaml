@@ -1645,6 +1645,12 @@ components:
         total_throughput_ops_per_sec:
           type: number
           description: Total operations per second across all scenarios
+        sessions_started:
+          type: integer
+          description: Successfully prepared CDP sessions (per-endpoint)
+        session_failures:
+          type: integer
+          description: Sessions that failed during setup (create/attach/navigation)
         scenarios:
           type: array
           items:
@@ -1670,7 +1676,10 @@ components:
           description: Scenario category (e.g., Runtime, DOM, Page, Network, Performance)
         operation_count:
           type: integer
-          description: Number of operations performed in this scenario
+          description: Number of successful operations performed in this scenario
+        failure_count:
+          type: integer
+          description: Number of failed attempts for this scenario
         throughput_ops_per_sec:
           type: number
           description: Operations per second for this scenario
@@ -1679,6 +1688,11 @@ components:
         success_rate:
           type: number
           description: Success rate percentage (0-100)
+        error_samples:
+          type: array
+          description: Sample of unique error messages encountered during benchmark
+          items:
+            type: string
       additionalProperties: false
     WebRTCLiveViewResults:
       type: object

@@ -14,10 +14,10 @@ type BenchmarkResults struct {
 
 // SystemInfo contains system information
 type SystemInfo struct {
-	CPUCount        int    `json:"cpu_count"`
-	MemoryTotalMB   int64  `json:"memory_total_mb"`
-	OS              string `json:"os"`
-	Arch            string `json:"arch"`
+	CPUCount      int    `json:"cpu_count"`
+	MemoryTotalMB int64  `json:"memory_total_mb"`
+	OS            string `json:"os"`
+	Arch          string `json:"arch"`
 }
 
 // ComponentResults contains results for each benchmarked component
@@ -29,59 +29,63 @@ type ComponentResults struct {
 
 // CDPProxyResults contains CDP proxy benchmark results
 type CDPProxyResults struct {
-	ConcurrentConnections  int                    `json:"concurrent_connections"`
-	MemoryMB               MemoryMetrics          `json:"memory_mb"`
-	ProxiedEndpoint        *CDPEndpointResults    `json:"proxied_endpoint"`
-	DirectEndpoint         *CDPEndpointResults    `json:"direct_endpoint"`
-	ProxyOverheadPercent   float64                `json:"proxy_overhead_percent"`
+	ConcurrentConnections int                 `json:"concurrent_connections"`
+	MemoryMB              MemoryMetrics       `json:"memory_mb"`
+	ProxiedEndpoint       *CDPEndpointResults `json:"proxied_endpoint"`
+	DirectEndpoint        *CDPEndpointResults `json:"direct_endpoint"`
+	ProxyOverheadPercent  float64             `json:"proxy_overhead_percent"`
 }
 
 // CDPEndpointResults contains results for a specific CDP endpoint (proxied or direct)
 type CDPEndpointResults struct {
-	EndpointURL               string              `json:"endpoint_url"`
-	TotalThroughputOpsPerSec  float64             `json:"total_throughput_ops_per_sec"`
-	Scenarios                 []CDPScenarioResult `json:"scenarios"`
+	EndpointURL              string              `json:"endpoint_url"`
+	TotalThroughputOpsPerSec float64             `json:"total_throughput_ops_per_sec"`
+	SessionsStarted          int                 `json:"sessions_started,omitempty"`
+	SessionFailures          int                 `json:"session_failures,omitempty"`
+	Scenarios                []CDPScenarioResult `json:"scenarios"`
 }
 
 // CDPScenarioResult contains results for a specific CDP scenario
 type CDPScenarioResult struct {
-	Name                 string           `json:"name"`
-	Description          string           `json:"description"`
-	Category             string           `json:"category"`
-	OperationCount       int64            `json:"operation_count"`
-	ThroughputOpsPerSec  float64          `json:"throughput_ops_per_sec"`
-	LatencyMS            LatencyMetrics   `json:"latency_ms"`
-	SuccessRate          float64          `json:"success_rate"`
+	Name                string         `json:"name"`
+	Description         string         `json:"description"`
+	Category            string         `json:"category"`
+	OperationCount      int64          `json:"operation_count"`
+	FailureCount        int64          `json:"failure_count,omitempty"`
+	ThroughputOpsPerSec float64        `json:"throughput_ops_per_sec"`
+	LatencyMS           LatencyMetrics `json:"latency_ms"`
+	SuccessRate         float64        `json:"success_rate"`
+	ErrorSamples        []string       `json:"error_samples,omitempty"`
 }
 
 // WebRTCLiveViewResults contains comprehensive WebRTC live view benchmark results
 type WebRTCLiveViewResults struct {
-	ConnectionState    string                 `json:"connection_state"`
-	IceConnectionState string                 `json:"ice_connection_state"`
-	FrameRateFPS       FrameRateMetrics       `json:"frame_rate_fps"`
-	FrameLatencyMS     LatencyMetrics         `json:"frame_latency_ms"`
-	BitrateKbps        BitrateMetrics         `json:"bitrate_kbps"`
-	Packets            PacketMetrics          `json:"packets"`
-	Frames             FrameMetrics           `json:"frames"`
-	JitterMS           JitterMetrics          `json:"jitter_ms"`
-	Network            NetworkMetrics         `json:"network"`
-	Codecs             CodecMetrics           `json:"codecs"`
-	Resolution         ResolutionMetrics      `json:"resolution"`
-	ConcurrentViewers  int                    `json:"concurrent_viewers"`
-	CPUUsagePercent    float64                `json:"cpu_usage_percent"`
-	MemoryMB           MemoryMetrics          `json:"memory_mb"`
+	ConnectionState    string            `json:"connection_state"`
+	IceConnectionState string            `json:"ice_connection_state"`
+	FrameRateFPS       FrameRateMetrics  `json:"frame_rate_fps"`
+	FrameLatencyMS     LatencyMetrics    `json:"frame_latency_ms"`
+	BitrateKbps        BitrateMetrics    `json:"bitrate_kbps"`
+	Packets            PacketMetrics     `json:"packets"`
+	Frames             FrameMetrics      `json:"frames"`
+	JitterMS           JitterMetrics     `json:"jitter_ms"`
+	Network            NetworkMetrics    `json:"network"`
+	Codecs             CodecMetrics      `json:"codecs"`
+	Resolution         ResolutionMetrics `json:"resolution"`
+	ConcurrentViewers  int               `json:"concurrent_viewers"`
+	CPUUsagePercent    float64           `json:"cpu_usage_percent"`
+	MemoryMB           MemoryMetrics     `json:"memory_mb"`
 }
 
 // RecordingResults contains recording benchmark results
 type RecordingResults struct {
-	CPUOverheadPercent    float64                       `json:"cpu_overhead_percent"`
-	MemoryOverheadMB      float64                       `json:"memory_overhead_mb"`
-	FramesCaptured        int64                         `json:"frames_captured"`
-	FramesDropped         int64                         `json:"frames_dropped"`
-	AvgEncodingLagMS      float64                       `json:"avg_encoding_lag_ms"`
-	DiskWriteMBPS         float64                       `json:"disk_write_mbps"`
-	ConcurrentRecordings  int                           `json:"concurrent_recordings"`
-	FrameRateImpact       *RecordingFrameRateImpact     `json:"frame_rate_impact,omitempty"`
+	CPUOverheadPercent   float64                   `json:"cpu_overhead_percent"`
+	MemoryOverheadMB     float64                   `json:"memory_overhead_mb"`
+	FramesCaptured       int64                     `json:"frames_captured"`
+	FramesDropped        int64                     `json:"frames_dropped"`
+	AvgEncodingLagMS     float64                   `json:"avg_encoding_lag_ms"`
+	DiskWriteMBPS        float64                   `json:"disk_write_mbps"`
+	ConcurrentRecordings int                       `json:"concurrent_recordings"`
+	FrameRateImpact      *RecordingFrameRateImpact `json:"frame_rate_impact,omitempty"`
 }
 
 // RecordingFrameRateImpact shows how recording affects live view frame rate
