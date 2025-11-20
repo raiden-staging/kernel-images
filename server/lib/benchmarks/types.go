@@ -50,6 +50,8 @@ type CDPScenarioResult struct {
 	Name                string         `json:"name"`
 	Description         string         `json:"description"`
 	Category            string         `json:"category"`
+	AttemptCount        int64          `json:"attempt_count"`
+	DurationSeconds     float64        `json:"duration_seconds"`
 	OperationCount      int64          `json:"operation_count"`
 	FailureCount        int64          `json:"failure_count,omitempty"`
 	ThroughputOpsPerSec float64        `json:"throughput_ops_per_sec"`
