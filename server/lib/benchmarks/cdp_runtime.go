@@ -2,9 +2,12 @@ package benchmarks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
 	"math"
+	"net/http"
 	"net/url"
 	"runtime"
 	"sort"
@@ -32,26 +35,38 @@ func NewCDPRuntimeBenchmark(logger *slog.Logger, proxyURL string, concurrency in
 }
 
 // Run executes the CDP benchmark for the specified duration
+// Tests both proxied (9222) and direct (9223) CDP endpoints
 func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (*CDPProxyResults, error) {
-	b.logger.Info("starting CDP proxy benchmark", "duration", duration, "concurrency", b.concurrency)
-
-	// Parse proxy URL
-	u, err := url.Parse(b.proxyURL)
-	if err != nil {
-		return nil, fmt.Errorf("invalid proxy URL: %w", err)
-	}
-	if u.Scheme == "http" {
-		u.Scheme = "ws"
-	} else if u.Scheme == "https" {
-		u.Scheme = "wss"
-	}
+	b.logger.Info("starting CDP benchmark (proxied + direct)", "duration", duration, "concurrency", b.concurrency)
 
 	// Get baseline memory
 	var memStatsBefore runtime.MemStats
 	runtime.ReadMemStats(&memStatsBefore)
 
-	// Run benchmark with workers
-	results := b.runWorkers(ctx, u.String(), duration)
+	// Parse proxy URL and derive direct URL
+	proxiedURL := b.proxyURL
+	directURL := "http://localhost:9223" // Direct Chrome CDP endpoint
+
+	// Fetch WebSocket URLs from /json/version endpoints
+	proxiedWSURL, err := fetchCDPWebSocketURL(proxiedURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get proxied CDP WebSocket URL: %w", err)
+	}
+	b.logger.Info("resolved proxied WebSocket URL", "url", proxiedWSURL)
+
+	directWSURL, err := fetchCDPWebSocketURL(directURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get direct CDP WebSocket URL: %w", err)
+	}
+	b.logger.Info("resolved direct WebSocket URL", "url", directWSURL)
+
+	// Benchmark proxied endpoint (kernel-images proxy on port 9222)
+	b.logger.Info("benchmarking proxied CDP endpoint", "url", proxiedURL)
+	proxiedResults := b.runWorkers(ctx, proxiedWSURL, duration)
+
+	// Benchmark direct endpoint (Chrome CDP on port 9223)
+	b.logger.Info("benchmarking direct CDP endpoint", "url", directURL)
+	directResults := b.runWorkers(ctx, directWSURL, duration)
 
 	// Get final memory
 	var memStatsAfter runtime.MemStats
@@ -62,31 +77,263 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 	finalMemMB := float64(memStatsAfter.Alloc) / 1024 / 1024
 	perConnectionMemMB := (finalMemMB - baselineMemMB) / float64(b.concurrency)
 
+	// Calculate proxy overhead
+	proxyOverhead := 0.0
+	if directResults.ThroughputMsgsPerSec > 0 {
+		proxyOverhead = ((directResults.ThroughputMsgsPerSec - proxiedResults.ThroughputMsgsPerSec) / directResults.ThroughputMsgsPerSec) * 100.0
+	}
+
+	// Use proxied results for overall metrics (backward compatibility)
 	return &CDPProxyResults{
-		ThroughputMsgsPerSec:  results.ThroughputMsgsPerSec,
-		LatencyMS:             results.LatencyMS,
+		ThroughputMsgsPerSec:  proxiedResults.ThroughputMsgsPerSec,
+		LatencyMS:             proxiedResults.LatencyMS,
 		ConcurrentConnections: b.concurrency,
 		MemoryMB: MemoryMetrics{
 			Baseline:      baselineMemMB,
 			PerConnection: perConnectionMemMB,
 		},
-		MessageSizeBytes: results.MessageSizeBytes,
+		MessageSizeBytes: proxiedResults.MessageSizeBytes,
+		Scenarios:        proxiedResults.Scenarios,
+		ProxiedEndpoint: &CDPEndpointResults{
+			EndpointURL:          proxiedURL,
+			ThroughputMsgsPerSec: proxiedResults.ThroughputMsgsPerSec,
+			LatencyMS:            proxiedResults.LatencyMS,
+			Scenarios:            proxiedResults.Scenarios,
+		},
+		DirectEndpoint: &CDPEndpointResults{
+			EndpointURL:          directURL,
+			ThroughputMsgsPerSec: directResults.ThroughputMsgsPerSec,
+			LatencyMS:            directResults.LatencyMS,
+			Scenarios:            directResults.Scenarios,
+		},
+		ProxyOverheadPercent: proxyOverhead,
 	}, nil
+}
+
+// fetchCDPWebSocketURL fetches the WebSocket debugger URL from a CDP endpoint
+// by querying the /json/version endpoint, following the standard CDP protocol
+func fetchCDPWebSocketURL(baseURL string) (string, error) {
+	// Ensure baseURL has a scheme
+	if u, err := url.Parse(baseURL); err == nil && u.Scheme == "" {
+		baseURL = "http://" + baseURL
+	}
+
+	// Construct /json/version URL
+	versionURL := baseURL + "/json/version"
+
+	// Make HTTP request
+	resp, err := http.Get(versionURL)
+	if err != nil {
+		return "", fmt.Errorf("failed to fetch %s: %w", versionURL, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("unexpected status %d from %s: %s", resp.StatusCode, versionURL, string(body))
+	}
+
+	// Parse JSON response
+	var versionInfo struct {
+		WebSocketDebuggerURL string `json:"webSocketDebuggerUrl"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
+		return "", fmt.Errorf("failed to decode JSON from %s: %w", versionURL, err)
+	}
+
+	if versionInfo.WebSocketDebuggerURL == "" {
+		return "", fmt.Errorf("webSocketDebuggerUrl not found in response from %s", versionURL)
+	}
+
+	return versionInfo.WebSocketDebuggerURL, nil
 }
 
 type workerResults struct {
 	ThroughputMsgsPerSec float64
 	LatencyMS            LatencyMetrics
 	MessageSizeBytes     MessageSizeMetrics
+	Scenarios            []CDPScenarioResult
+}
+
+type scenarioStats struct {
+	Name        string
+	Description string
+	Category    string
+	Operations  atomic.Int64
+	Failures    atomic.Int64
+	Latencies   []float64
+	LatenciesMu sync.Mutex
 }
 
 func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, duration time.Duration) workerResults {
 	benchCtx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
+	// Define test scenarios with named operations
+	type testScenario struct {
+		Name        string
+		Description string
+		Category    string
+		Message     []byte
+	}
+
+	scenarios := []testScenario{
+		// Runtime operations - JavaScript evaluation and object inspection
+		{
+			Name:        "Runtime.evaluate",
+			Description: "Evaluate simple JavaScript expression",
+			Category:    "Runtime",
+			Message:     []byte(`{"id":1,"method":"Runtime.evaluate","params":{"expression":"1+1"}}`),
+		},
+		{
+			Name:        "Runtime.evaluate-complex",
+			Description: "Evaluate complex JavaScript with DOM access",
+			Category:    "Runtime",
+			Message:     []byte(`{"id":2,"method":"Runtime.evaluate","params":{"expression":"document.querySelector('body').children.length"}}`),
+		},
+		{
+			Name:        "Runtime.getProperties",
+			Description: "Get runtime object properties",
+			Category:    "Runtime",
+			Message:     []byte(`{"id":3,"method":"Runtime.getProperties","params":{"objectId":"1"}}`),
+		},
+		{
+			Name:        "Runtime.callFunctionOn",
+			Description: "Call function on remote object",
+			Category:    "Runtime",
+			Message:     []byte(`{"id":4,"method":"Runtime.callFunctionOn","params":{"objectId":"1","functionDeclaration":"function(){return this;}"}}`),
+		},
+
+		// DOM operations - Document structure and element queries
+		{
+			Name:        "DOM.getDocument",
+			Description: "Retrieve the root DOM document structure",
+			Category:    "DOM",
+			Message:     []byte(`{"id":5,"method":"DOM.getDocument","params":{}}`),
+		},
+		{
+			Name:        "DOM.querySelector",
+			Description: "Query DOM elements by CSS selector",
+			Category:    "DOM",
+			Message:     []byte(`{"id":6,"method":"DOM.querySelector","params":{"nodeId":1,"selector":"body"}}`),
+		},
+		{
+			Name:        "DOM.getAttributes",
+			Description: "Get attributes of a DOM node",
+			Category:    "DOM",
+			Message:     []byte(`{"id":7,"method":"DOM.getAttributes","params":{"nodeId":1}}`),
+		},
+		{
+			Name:        "DOM.getOuterHTML",
+			Description: "Get outer HTML of a node",
+			Category:    "DOM",
+			Message:     []byte(`{"id":8,"method":"DOM.getOuterHTML","params":{"nodeId":1}}`),
+		},
+
+		// Page operations - Navigation, resources, and page state
+		{
+			Name:        "Page.getNavigationHistory",
+			Description: "Retrieve page navigation history",
+			Category:    "Page",
+			Message:     []byte(`{"id":9,"method":"Page.getNavigationHistory","params":{}}`),
+		},
+		{
+			Name:        "Page.getResourceTree",
+			Description: "Get page resource tree structure",
+			Category:    "Page",
+			Message:     []byte(`{"id":10,"method":"Page.getResourceTree","params":{}}`),
+		},
+		{
+			Name:        "Page.getFrameTree",
+			Description: "Get frame tree structure",
+			Category:    "Page",
+			Message:     []byte(`{"id":11,"method":"Page.getFrameTree","params":{}}`),
+		},
+		{
+			Name:        "Page.captureScreenshot",
+			Description: "Capture page screenshot via CDP",
+			Category:    "Page",
+			Message:     []byte(`{"id":12,"method":"Page.captureScreenshot","params":{"format":"png"}}`),
+		},
+
+		// Network operations - Request/response inspection
+		{
+			Name:        "Network.getCookies",
+			Description: "Retrieve browser cookies",
+			Category:    "Network",
+			Message:     []byte(`{"id":13,"method":"Network.getCookies","params":{}}`),
+		},
+		{
+			Name:        "Network.getAllCookies",
+			Description: "Get all cookies from all contexts",
+			Category:    "Network",
+			Message:     []byte(`{"id":14,"method":"Network.getAllCookies","params":{}}`),
+		},
+
+		// Performance operations - Metrics and profiling
+		{
+			Name:        "Performance.getMetrics",
+			Description: "Get runtime performance metrics",
+			Category:    "Performance",
+			Message:     []byte(`{"id":15,"method":"Performance.getMetrics","params":{}}`),
+		},
+
+		// Target operations - Tab and context management
+		{
+			Name:        "Target.getTargets",
+			Description: "List all available targets",
+			Category:    "Target",
+			Message:     []byte(`{"id":16,"method":"Target.getTargets","params":{}}`),
+		},
+		{
+			Name:        "Target.getTargetInfo",
+			Description: "Get information about specific target",
+			Category:    "Target",
+			Message:     []byte(`{"id":17,"method":"Target.getTargetInfo","params":{"targetId":"page"}}`),
+		},
+
+		// Browser operations - Browser-level information
+		{
+			Name:        "Browser.getVersion",
+			Description: "Get browser version information",
+			Category:    "Browser",
+			Message:     []byte(`{"id":18,"method":"Browser.getVersion","params":{}}`),
+		},
+		{
+			Name:        "Browser.getHistograms",
+			Description: "Get browser performance histograms",
+			Category:    "Browser",
+			Message:     []byte(`{"id":19,"method":"Browser.getHistograms","params":{}}`),
+		},
+
+		// SystemInfo operations - System resource information
+		{
+			Name:        "SystemInfo.getInfo",
+			Description: "Get system information",
+			Category:    "SystemInfo",
+			Message:     []byte(`{"id":20,"method":"SystemInfo.getInfo","params":{}}`),
+		},
+		{
+			Name:        "SystemInfo.getProcessInfo",
+			Description: "Get browser process information",
+			Category:    "SystemInfo",
+			Message:     []byte(`{"id":21,"method":"SystemInfo.getProcessInfo","params":{}}`),
+		},
+	}
+
+	// Initialize scenario tracking
+	scenarioStatsMap := make([]*scenarioStats, len(scenarios))
+	for i, scenario := range scenarios {
+		scenarioStatsMap[i] = &scenarioStats{
+			Name:        scenario.Name,
+			Description: scenario.Description,
+			Category:    scenario.Category,
+			Latencies:   make([]float64, 0, 1000),
+		}
+	}
+
 	var (
 		totalOps     atomic.Int64
-		totalLatency atomic.Int64
 		latencies    []float64
 		latenciesMu  sync.Mutex
 		wg           sync.WaitGroup
@@ -107,14 +354,6 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 			}
 			defer conn.Close(websocket.StatusNormalClosure, "")
 
-			// Test messages - mix of different CDP commands
-			messages := [][]byte{
-				[]byte(`{"id":1,"method":"Runtime.evaluate","params":{"expression":"1+1"}}`),
-				[]byte(`{"id":2,"method":"Page.getNavigationHistory","params":{}}`),
-				[]byte(`{"id":3,"method":"DOM.getDocument","params":{}}`),
-				[]byte(`{"id":4,"method":"Runtime.getProperties","params":{"objectId":"1"}}`),
-			}
-
 			msgIdx := 0
 			for {
 				select {
@@ -123,7 +362,9 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 				default:
 				}
 
-				msg := messages[msgIdx%len(messages)]
+				scenarioIdx := msgIdx % len(scenarios)
+				msg := scenarios[scenarioIdx].Message
+				stats := scenarioStatsMap[scenarioIdx]
 				msgIdx++
 
 				start := time.Now()
@@ -131,7 +372,8 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 					if benchCtx.Err() != nil {
 						return
 					}
-					b.logger.Error("write failed", "worker", workerID, "err", err)
+					stats.Failures.Add(1)
+					b.logger.Error("write failed", "worker", workerID, "scenario", stats.Name, "err", err)
 					return
 				}
 
@@ -139,17 +381,25 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 					if benchCtx.Err() != nil {
 						return
 					}
-					b.logger.Error("read failed", "worker", workerID, "err", err)
+					stats.Failures.Add(1)
+					b.logger.Error("read failed", "worker", workerID, "scenario", stats.Name, "err", err)
 					return
 				}
 
 				latency := time.Since(start)
-				totalOps.Add(1)
-				totalLatency.Add(latency.Microseconds())
+				latencyMs := float64(latency.Microseconds()) / 1000.0
 
+				// Track overall stats
+				totalOps.Add(1)
 				latenciesMu.Lock()
-				latencies = append(latencies, float64(latency.Microseconds())/1000.0)
+				latencies = append(latencies, latencyMs)
 				latenciesMu.Unlock()
+
+				// Track scenario-specific stats
+				stats.Operations.Add(1)
+				stats.LatenciesMu.Lock()
+				stats.Latencies = append(stats.Latencies, latencyMs)
+				stats.LatenciesMu.Unlock()
 			}
 		}(i)
 	}
@@ -159,11 +409,32 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 	elapsed := time.Since(startTime)
 	ops := totalOps.Load()
 
-	// Calculate throughput
+	// Calculate overall throughput
 	throughput := float64(ops) / elapsed.Seconds()
 
-	// Calculate latency percentiles
+	// Calculate overall latency percentiles
 	latencyMetrics := calculatePercentiles(latencies)
+
+	// Calculate per-scenario results
+	scenarioResults := make([]CDPScenarioResult, len(scenarioStatsMap))
+	for i, stats := range scenarioStatsMap {
+		operations := stats.Operations.Load()
+		failures := stats.Failures.Load()
+		successRate := 100.0
+		if operations > 0 {
+			successRate = (float64(operations-failures) / float64(operations)) * 100.0
+		}
+
+		scenarioResults[i] = CDPScenarioResult{
+			Name:                stats.Name,
+			Description:         stats.Description,
+			Category:            stats.Category,
+			OperationCount:      operations,
+			ThroughputOpsPerSec: float64(operations) / elapsed.Seconds(),
+			LatencyMS:           calculatePercentiles(stats.Latencies),
+			SuccessRate:         successRate,
+		}
+	}
 
 	// Message size metrics (approximate based on test messages)
 	messageSizes := MessageSizeMetrics{
@@ -176,6 +447,7 @@ func (b *CDPRuntimeBenchmark) runWorkers(ctx context.Context, wsURL string, dura
 		ThroughputMsgsPerSec: throughput,
 		LatencyMS:            latencyMetrics,
 		MessageSizeBytes:     messageSizes,
+		Scenarios:            scenarioResults,
 	}
 }
 
