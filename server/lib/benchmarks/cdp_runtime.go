@@ -129,6 +129,7 @@ type scenarioStats struct {
 	Failures     atomic.Int64
 	Latencies    []float64
 	ErrorSamples []string
+	DurationNS   atomic.Int64
 	mu           sync.Mutex
 }
 
@@ -136,6 +137,11 @@ type scenarioStats struct {
 func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, scenarios []cdpScenario, duration time.Duration) *CDPEndpointResults {
 	benchCtx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
+
+	scenarioDuration := duration / time.Duration(len(scenarios))
+	if scenarioDuration < 500*time.Millisecond {
+		scenarioDuration = 500 * time.Millisecond
+	}
 
 	// Initialize scenario tracking
 	scenarioStatsMap := make(map[string]*scenarioStats)
@@ -178,36 +184,43 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 			}
 			sessionsUp.Add(1)
 
-			scenarioIdx := 0
-			for {
-				select {
-				case <-benchCtx.Done():
-					return
-				default:
-				}
-
-				scenario := scenarios[scenarioIdx%len(scenarios)]
+			for _, scenario := range scenarios {
 				stats := scenarioStatsMap[scenario.Name]
-				scenarioIdx++
+				scenarioStart := time.Now()
+				scenarioDeadline := scenarioStart.Add(scenarioDuration)
 
-				runCtx, cancelRun := context.WithTimeout(benchCtx, 1500*time.Millisecond)
-				start := time.Now()
-				err := scenario.Run(runCtx, session)
-				cancelRun()
+				for {
+					select {
+					case <-benchCtx.Done():
+						stats.addDuration(time.Since(scenarioStart))
+						return
+					default:
+					}
 
-				latency := time.Since(start)
-				latencyMs := float64(latency.Microseconds()) / 1000.0
+					if time.Now().After(scenarioDeadline) {
+						stats.addDuration(time.Since(scenarioStart))
+						break
+					}
 
-				stats.Attempts.Add(1)
-				if err != nil {
-					stats.Failures.Add(1)
-					stats.recordError(err)
-					continue
+					runCtx, cancelRun := context.WithTimeout(benchCtx, 4*time.Second)
+					start := time.Now()
+					err := scenario.Run(runCtx, session)
+					cancelRun()
+
+					latency := time.Since(start)
+					latencyMs := float64(latency.Microseconds()) / 1000.0
+
+					stats.Attempts.Add(1)
+					if err != nil {
+						stats.Failures.Add(1)
+						stats.recordError(err)
+						continue
+					}
+
+					totalSuccess.Add(1)
+					stats.Successes.Add(1)
+					stats.recordLatency(latencyMs)
 				}
-
-				totalSuccess.Add(1)
-				stats.Successes.Add(1)
-				stats.recordLatency(latencyMs)
 			}
 		}(i)
 	}
@@ -233,7 +246,11 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 			successRate = (float64(successes) / float64(attempts)) * 100.0
 		}
 
-		throughput := float64(successes) / elapsed.Seconds()
+		durationSec := stats.durationSeconds()
+		throughput := 0.0
+		if durationSec > 0 {
+			throughput = float64(successes) / durationSec
+		}
 		latencyMetrics := calculatePercentiles(stats.Latencies)
 
 		scenarioResults = append(scenarioResults, CDPScenarioResult{
@@ -410,6 +427,66 @@ func benchmarkScenarios() []cdpScenario {
 				return nil
 			},
 		},
+		{
+			Name:        "Navigation.hackernews",
+			Category:    "Navigation",
+			Description: "Navigate to Hacker News and count headlines",
+			Run: func(ctx context.Context, session *cdpSession) error {
+				if err := session.navigateToURL(ctx, "https://news.ycombinator.com/"); err != nil {
+					return err
+				}
+				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
+					"expression":    "document.querySelectorAll('a.storylink, span.titleline a').length",
+					"returnByValue": true,
+				}, true)
+				if err != nil {
+					return err
+				}
+
+				var result struct {
+					Result struct {
+						Value float64 `json:"value"`
+					} `json:"result"`
+				}
+				if err := decodeCDPResult(resp.Result, &result); err != nil {
+					return err
+				}
+				if result.Result.Value < 20 {
+					return fmt.Errorf("too few headlines found: %v", result.Result.Value)
+				}
+				return nil
+			},
+		},
+		{
+			Name:        "Navigation.github-trending",
+			Category:    "Navigation",
+			Description: "Navigate to GitHub trending and inspect repository list",
+			Run: func(ctx context.Context, session *cdpSession) error {
+				if err := session.navigateToURL(ctx, "https://github.com/trending?since=daily"); err != nil {
+					return err
+				}
+				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
+					"expression":    "document.querySelectorAll('article.Box-row').length",
+					"returnByValue": true,
+				}, true)
+				if err != nil {
+					return err
+				}
+
+				var result struct {
+					Result struct {
+						Value float64 `json:"value"`
+					} `json:"result"`
+				}
+				if err := decodeCDPResult(resp.Result, &result); err != nil {
+					return err
+				}
+				if result.Result.Value < 5 {
+					return fmt.Errorf("too few trending repos found: %v", result.Result.Value)
+				}
+				return nil
+			},
+		},
 	}
 }
 
@@ -437,6 +514,14 @@ func (s *scenarioStats) copyErrors() []string {
 	out := make([]string, len(s.ErrorSamples))
 	copy(out, s.ErrorSamples)
 	return out
+}
+
+func (s *scenarioStats) addDuration(d time.Duration) {
+	s.DurationNS.Add(d.Nanoseconds())
+}
+
+func (s *scenarioStats) durationSeconds() float64 {
+	return float64(s.DurationNS.Load()) / float64(time.Second)
 }
 
 // cdpSession represents a single connection + target scoped to one worker.
@@ -538,10 +623,22 @@ func (s *cdpSession) navigateToBenchmarkPage(ctx context.Context) error {
 	if _, err := s.send(ctx, "Page.navigate", map[string]interface{}{
 		"url": fmt.Sprintf("data:text/html,%s", url.PathEscape(benchmarkPageHTML)),
 	}, true); err != nil {
-		return fmt.Errorf("navigate: %w", err)
+		return fmt.Errorf("navigate benchmark: %w", err)
 	}
+	return s.waitForReady(ctx)
+}
 
-	for i := 0; i < 5; i++ {
+func (s *cdpSession) navigateToURL(ctx context.Context, targetURL string) error {
+	if _, err := s.send(ctx, "Page.navigate", map[string]interface{}{
+		"url": targetURL,
+	}, true); err != nil {
+		return fmt.Errorf("navigate %s: %w", targetURL, err)
+	}
+	return s.waitForReady(ctx)
+}
+
+func (s *cdpSession) waitForReady(ctx context.Context) error {
+	for i := 0; i < 10; i++ {
 		resp, err := s.send(ctx, "Runtime.evaluate", map[string]interface{}{
 			"expression":    "document.readyState",
 			"returnByValue": true,
