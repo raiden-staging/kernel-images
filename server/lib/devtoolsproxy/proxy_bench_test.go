@@ -22,6 +22,7 @@ func BenchmarkWebSocketProxyThroughput(b *testing.B) {
 
 	mgr, proxySrv := setupProxy(b, echoSrv.URL)
 	defer proxySrv.Close()
+	_ = mgr
 
 	ctx := context.Background()
 	conn := connectToProxy(b, ctx, proxySrv.URL)
@@ -53,6 +54,7 @@ func BenchmarkWebSocketProxyLatency(b *testing.B) {
 
 	mgr, proxySrv := setupProxy(b, echoSrv.URL)
 	defer proxySrv.Close()
+	_ = mgr
 
 	ctx := context.Background()
 	conn := connectToProxy(b, ctx, proxySrv.URL)
@@ -81,11 +83,11 @@ func BenchmarkWebSocketProxyLatency(b *testing.B) {
 // BenchmarkWebSocketProxyMessageSizes tests performance with different message sizes
 func BenchmarkWebSocketProxyMessageSizes(b *testing.B) {
 	sizes := []int{
-		100,        // Small CDP command
-		1024,       // 1KB - typical CDP response
-		10240,      // 10KB - larger DOM query result
-		102400,     // 100KB - screenshot data
-		524288,     // 512KB - large data transfer
+		100,    // Small CDP command
+		1024,   // 1KB - typical CDP response
+		10240,  // 10KB - larger DOM query result
+		102400, // 100KB - screenshot data
+		524288, // 512KB - large data transfer
 	}
 
 	for _, size := range sizes {
@@ -95,6 +97,7 @@ func BenchmarkWebSocketProxyMessageSizes(b *testing.B) {
 
 			mgr, proxySrv := setupProxy(b, echoSrv.URL)
 			defer proxySrv.Close()
+			_ = mgr
 
 			ctx := context.Background()
 			conn := connectToProxy(b, ctx, proxySrv.URL)
@@ -132,6 +135,7 @@ func BenchmarkWebSocketProxyConcurrentConnections(b *testing.B) {
 
 			mgr, proxySrv := setupProxy(b, echoSrv.URL)
 			defer proxySrv.Close()
+			_ = mgr
 
 			ctx := context.Background()
 			msg := []byte(`{"id":1,"method":"Runtime.evaluate","params":{"expression":"1+1"}}`)

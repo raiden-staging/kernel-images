@@ -148,6 +148,13 @@ func convertCDPEndpointResults(endpoint *benchmarks.CDPEndpointResults) *oapi.CD
 		TotalThroughputOpsPerSec: throughput,
 	}
 
+	if endpoint.SessionsStarted > 0 {
+		result.SessionsStarted = &endpoint.SessionsStarted
+	}
+	if endpoint.SessionFailures > 0 {
+		result.SessionFailures = &endpoint.SessionFailures
+	}
+
 	// Convert scenarios
 	scenarios := make([]oapi.CDPScenarioResult, len(endpoint.Scenarios))
 	for i, scenario := range endpoint.Scenarios {
@@ -159,9 +166,14 @@ func convertCDPEndpointResults(endpoint *benchmarks.CDPEndpointResults) *oapi.CD
 			Description:         &scenario.Description,
 			Category:            &scenario.Category,
 			OperationCount:      &opCount,
+			FailureCount:        optionalInt(scenario.FailureCount),
 			ThroughputOpsPerSec: &throughputOps,
 			LatencyMs:           convertLatencyMetrics(scenario.LatencyMS),
 			SuccessRate:         &successRate,
+		}
+		if len(scenario.ErrorSamples) > 0 {
+			samples := scenario.ErrorSamples
+			scenarios[i].ErrorSamples = &samples
 		}
 	}
 	result.Scenarios = scenarios
@@ -340,6 +352,13 @@ func convertMemoryMetrics(mem benchmarks.MemoryMetrics) *oapi.MemoryMetrics {
 	return result
 }
 
+func optionalInt(val int64) *int {
+	if val == 0 {
+		return nil
+	}
+	casted := int(val)
+	return &casted
+}
 
 func convertStartupTimingResults(timing *benchmarks.StartupTimingResults) *oapi.StartupTimingResults {
 	totalMs := float32(timing.TotalStartupTimeMS)
