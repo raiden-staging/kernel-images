@@ -552,20 +552,30 @@ func benchmarkScenarios() []cdpScenario {
 				resp, err := session.send(ctx, "Runtime.evaluate", map[string]interface{}{
 					"expression":    `(async()=>{const payload='data:text/plain,'+('x'.repeat(256));const urls=new Array(5).fill(payload);const res=await Promise.all(urls.map(u=>fetch(u).then(r=>r.text())));return res.length;})()`,
 					"returnByValue": true,
+					"awaitPromise":  true,
 				}, true)
 				if err != nil {
 					return err
 				}
 				var result struct {
 					Result struct {
-						Value float64 `json:"value"`
+						Value interface{} `json:"value"`
 					} `json:"result"`
 				}
 				if err := decodeCDPResult(resp.Result, &result); err != nil {
 					return err
 				}
-				if result.Result.Value != 5 {
-					return fmt.Errorf("unexpected fetch burst result: %v", result.Result.Value)
+				switch v := result.Result.Value.(type) {
+				case float64:
+					if v != 5 {
+						return fmt.Errorf("unexpected fetch burst result: %v", v)
+					}
+				case int:
+					if v != 5 {
+						return fmt.Errorf("unexpected fetch burst result: %v", v)
+					}
+				default:
+					return fmt.Errorf("unexpected fetch burst result type: %T", v)
 				}
 				return nil
 			},
