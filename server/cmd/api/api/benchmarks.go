@@ -504,12 +504,18 @@ func parseDuration(durationParam *int) time.Duration {
 }
 
 func getSystemInfo() benchmarks.SystemInfo {
-	var memStats runtime.MemStats
-	runtime.ReadMemStats(&memStats)
+	memTotalMB := int64(0)
+	if total, err := benchmarks.GetSystemMemoryTotalMB(); err == nil && total > 0 {
+		memTotalMB = int64(total)
+	} else {
+		var memStats runtime.MemStats
+		runtime.ReadMemStats(&memStats)
+		memTotalMB = int64(memStats.Sys / 1024 / 1024)
+	}
 
 	return benchmarks.SystemInfo{
 		CPUCount:      runtime.NumCPU(),
-		MemoryTotalMB: int64(memStats.Sys / 1024 / 1024),
+		MemoryTotalMB: memTotalMB,
 		OS:            runtime.GOOS,
 		Arch:          runtime.GOARCH,
 	}

@@ -8,17 +8,23 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
+
+const clockTicksPerSecond = 100.0 // Linux HZ is overwhelmingly 100 on contemporary distros
 
 // CPUStats represents CPU usage statistics
 type CPUStats struct {
 	User   uint64
 	System uint64
 	Total  uint64
+	// Timestamp records when the snapshot was taken so we can compute wall time deltas.
+	Timestamp time.Time
 }
 
 // GetProcessCPUStats retrieves CPU stats for the current process
 func GetProcessCPUStats() (*CPUStats, error) {
+	now := time.Now()
 	// Read /proc/self/stat
 	data, err := os.ReadFile("/proc/self/stat")
 	if err != nil {
@@ -47,11 +53,14 @@ func GetProcessCPUStats() (*CPUStats, error) {
 		User:   utime,
 		System: stime,
 		Total:  utime + stime,
+		// Use the same timestamp for the snapshot so we can compute wall-clock deltas later.
+		Timestamp: now,
 	}, nil
 }
 
 // GetSystemCPUStats retrieves system-wide CPU stats
 func GetSystemCPUStats() (*CPUStats, error) {
+	now := time.Now()
 	file, err := os.Open("/proc/stat")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open /proc/stat: %w", err)
@@ -88,9 +97,10 @@ func GetSystemCPUStats() (*CPUStats, error) {
 	}
 
 	return &CPUStats{
-		User:   user + nice,
-		System: system,
-		Total:  total,
+		User:      user + nice,
+		System:    system,
+		Total:     total,
+		Timestamp: now,
 	}, nil
 }
 
@@ -105,7 +115,14 @@ func CalculateCPUPercent(before, after *CPUStats) float64 {
 		return 0.0
 	}
 
-	return (float64(deltaTotal) / 100.0) // Convert clock ticks to percentage
+	elapsed := after.Timestamp.Sub(before.Timestamp).Seconds()
+	if elapsed <= 0 {
+		return 0.0
+	}
+
+	// Convert process clock ticks to seconds, then to percentage of wall time.
+	procSeconds := float64(deltaTotal) / clockTicksPerSecond
+	return (procSeconds / elapsed) * 100.0
 }
 
 // GetProcessMemoryMB returns the current memory usage of the process in MB (heap)

@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"net/url"
-	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -50,8 +49,11 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 	b.logger.Info("starting CDP benchmark", "duration", benchmarkDuration, "concurrency", b.concurrency)
 
 	// Get baseline memory
-	var memStatsBefore runtime.MemStats
-	runtime.ReadMemStats(&memStatsBefore)
+	baselineMemMB, err := GetProcessRSSMemoryMB()
+	if err != nil {
+		b.logger.Warn("failed to read baseline RSS", "err", err)
+		baselineMemMB = 0
+	}
 
 	// Benchmark proxied endpoint
 	proxiedURL := b.proxyURL
@@ -70,13 +72,21 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 	}
 
 	// Get final memory
-	var memStatsAfter runtime.MemStats
-	runtime.ReadMemStats(&memStatsAfter)
+	finalMemMB, err := GetProcessRSSMemoryMB()
+	if err != nil {
+		b.logger.Warn("failed to read final RSS", "err", err)
+		finalMemMB = baselineMemMB
+	}
 
 	// Calculate memory metrics
-	baselineMemMB := float64(memStatsBefore.Alloc) / 1024 / 1024
-	finalMemMB := float64(memStatsAfter.Alloc) / 1024 / 1024
-	perConnectionMemMB := (finalMemMB - baselineMemMB) / float64(b.concurrency)
+	memDeltaMB := finalMemMB - baselineMemMB
+	if memDeltaMB < 0 {
+		memDeltaMB = 0
+	}
+	perConnectionMemMB := 0.0
+	if b.concurrency > 0 {
+		perConnectionMemMB = memDeltaMB / float64(b.concurrency)
+	}
 
 	// Calculate proxy overhead
 	proxyOverhead := 0.0
@@ -85,7 +95,7 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 	}
 
 	return &CDPProxyResults{
-		ConcurrentConnections: 1,
+		ConcurrentConnections: b.concurrency,
 		MemoryMB: MemoryMetrics{
 			Baseline:      baselineMemMB,
 			PerConnection: perConnectionMemMB,

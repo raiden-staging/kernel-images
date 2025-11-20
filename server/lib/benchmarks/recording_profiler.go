@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"os"
 	"regexp"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +43,7 @@ func NewRecordingProfiler(logger *slog.Logger, recorderMgr recorder.RecordManage
 func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*RecordingResults, error) {
 	// Fixed 10-second recording duration for benchmarks
 	const recordingDuration = 10 * time.Second
+	const warmupDuration = 2 * time.Second
 	p.logger.Info("starting recording benchmark", "duration", recordingDuration)
 
 	// Measure FPS before recording starts
@@ -52,8 +52,10 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 	p.logger.Info("baseline FPS measured", "fps", fpsBeforeRecording)
 
 	// Capture baseline metrics
-	var memStatsBefore runtime.MemStats
-	runtime.ReadMemStats(&memStatsBefore)
+	rssBefore, err := GetProcessRSSMemoryMB()
+	if err != nil {
+		p.logger.Warn("failed to read baseline RSS", "err", err)
+	}
 	cpuBefore, _ := GetProcessCPUStats()
 
 	// Create and start a test recording
@@ -78,20 +80,27 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 		return nil, fmt.Errorf("failed to start recording: %w", err)
 	}
 
-	// Let recording stabilize and measure CPU/memory after recording starts
-	time.Sleep(2 * time.Second)
+	// Let recording stabilize briefly before measuring
+	time.Sleep(warmupDuration)
 
-	var memStatsAfter runtime.MemStats
-	runtime.ReadMemStats(&memStatsAfter)
-	cpuAfter, _ := GetProcessCPUStats()
-
-	// Let recording run for the specified duration
-	time.Sleep(recordingDuration)
+	// Let recording run for the specified duration (excluding warmup)
+	activeDuration := recordingDuration - warmupDuration
+	if activeDuration < 0 {
+		activeDuration = recordingDuration
+	}
+	time.Sleep(activeDuration)
 
 	// Measure FPS during recording (near the end)
 	p.logger.Info("measuring FPS during recording")
 	fpsDuringRecording := p.measureCurrentFPS()
 	p.logger.Info("FPS during recording measured", "fps", fpsDuringRecording)
+
+	// Capture CPU/memory while recording is still active to reflect real overhead
+	rssAfter, err := GetProcessRSSMemoryMB()
+	if err != nil {
+		p.logger.Warn("failed to read recording RSS", "err", err)
+	}
+	cpuAfter, _ := GetProcessCPUStats()
 
 	// Stop recording
 	if err := testRecorder.Stop(ctx); err != nil {
@@ -104,7 +113,10 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 		cpuOverhead = CalculateCPUPercent(cpuBefore, cpuAfter)
 	}
 
-	memOverheadMB := float64(memStatsAfter.Alloc-memStatsBefore.Alloc) / 1024 / 1024
+	memOverheadMB := rssAfter - rssBefore
+	if memOverheadMB < 0 {
+		memOverheadMB = 0
+	}
 
 	// Parse ffmpeg stderr output for real stats
 	ffmpegStderr := ffmpegRecorder.GetStderr()
@@ -182,8 +194,10 @@ func (p *RecordingProfiler) RunWithConcurrency(ctx context.Context, duration tim
 	p.logger.Info("starting concurrent recording benchmark", "duration", duration, "concurrency", concurrency)
 
 	// Capture baseline metrics
-	var memStatsBefore runtime.MemStats
-	runtime.ReadMemStats(&memStatsBefore)
+	rssBefore, err := GetProcessRSSMemoryMB()
+	if err != nil {
+		p.logger.Warn("failed to read baseline RSS", "err", err)
+	}
 	cpuBefore, _ := GetProcessCPUStats()
 
 	// Start multiple recordings
@@ -208,8 +222,10 @@ func (p *RecordingProfiler) RunWithConcurrency(ctx context.Context, duration tim
 
 	// Capture metrics after recordings start
 	time.Sleep(2 * time.Second) // Let recordings stabilize
-	var memStatsAfter runtime.MemStats
-	runtime.ReadMemStats(&memStatsAfter)
+	rssAfter, err := GetProcessRSSMemoryMB()
+	if err != nil {
+		p.logger.Warn("failed to read RSS after recordings", "err", err)
+	}
 	cpuAfter, _ := GetProcessCPUStats()
 
 	// Let recordings run
@@ -231,7 +247,10 @@ func (p *RecordingProfiler) RunWithConcurrency(ctx context.Context, duration tim
 	if cpuBefore != nil && cpuAfter != nil {
 		cpuOverhead = CalculateCPUPercent(cpuBefore, cpuAfter)
 	}
-	memOverheadMB := float64(memStatsAfter.Alloc-memStatsBefore.Alloc) / 1024 / 1024
+	memOverheadMB := rssAfter - rssBefore
+	if memOverheadMB < 0 {
+		memOverheadMB = 0
+	}
 
 	// Clean up
 	for _, rec := range recorders {

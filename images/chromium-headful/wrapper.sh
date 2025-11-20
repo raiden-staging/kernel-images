@@ -5,16 +5,18 @@ set -o pipefail -o errexit -o nounset
 # Startup timing infrastructure
 STARTUP_TIMING_FILE="/tmp/kernel_startup_timing.json"
 STARTUP_START_TIME=$(date +%s%N)
+STARTUP_LAST_PHASE_TIME=$STARTUP_START_TIME
 STARTUP_PHASES=()
 
 log_phase() {
   local phase_name="$1"
   local phase_end_time=$(date +%s%N)
-  local duration_ns=$((phase_end_time - STARTUP_START_TIME))
+  local duration_ns=$((phase_end_time - STARTUP_LAST_PHASE_TIME))
   local duration_ms=$((duration_ns / 1000000))
 
   STARTUP_PHASES+=("{\"name\":\"$phase_name\",\"duration_ms\":$duration_ms}")
   echo "[wrapper][timing] $phase_name: ${duration_ms}ms"
+  STARTUP_LAST_PHASE_TIME=$phase_end_time
 }
 
 export_startup_timing() {
