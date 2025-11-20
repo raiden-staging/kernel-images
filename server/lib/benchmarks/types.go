@@ -50,11 +50,14 @@ type CDPScenarioResult struct {
 	Name                string         `json:"name"`
 	Description         string         `json:"description"`
 	Category            string         `json:"category"`
+	Type                string         `json:"type,omitempty"`
 	AttemptCount        int64          `json:"attempt_count"`
 	DurationSeconds     float64        `json:"duration_seconds"`
 	OperationCount      int64          `json:"operation_count"`
 	FailureCount        int64          `json:"failure_count,omitempty"`
 	ThroughputOpsPerSec float64        `json:"throughput_ops_per_sec"`
+	EventCount          int64          `json:"event_count,omitempty"`
+	EventThroughputSec  float64        `json:"event_throughput_sec,omitempty"`
 	LatencyMS           LatencyMetrics `json:"latency_ms"`
 	SuccessRate         float64        `json:"success_rate"`
 	ErrorSamples        []string       `json:"error_samples,omitempty"`

@@ -1687,6 +1687,15 @@ components:
         failure_count:
           type: integer
           description: Number of failed attempts for this scenario
+        type:
+          type: string
+          description: Scenario type (micro, dom, perf, navigation, network)
+        event_count:
+          type: integer
+          description: Number of CDP events observed during this scenario
+        event_throughput_sec:
+          type: number
+          description: Events per second during this scenario
         throughput_ops_per_sec:
           type: number
           description: Operations per second for this scenario
