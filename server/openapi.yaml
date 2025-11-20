@@ -1689,15 +1689,32 @@ components:
       additionalProperties: false
     WebRTCLiveViewResults:
       type: object
+      description: Comprehensive WebRTC live view benchmark results from client
       properties:
+        connection_state:
+          type: string
+          description: WebRTC connection state
+        ice_connection_state:
+          type: string
+          description: ICE connection state
         frame_rate_fps:
           $ref: "#/components/schemas/FrameRateMetrics"
         frame_latency_ms:
           $ref: "#/components/schemas/LatencyMetrics"
         bitrate_kbps:
           $ref: "#/components/schemas/BitrateMetrics"
-        connection_setup_ms:
-          type: number
+        packets:
+          $ref: "#/components/schemas/PacketMetrics"
+        frames:
+          $ref: "#/components/schemas/FrameMetrics"
+        jitter_ms:
+          $ref: "#/components/schemas/JitterMetrics"
+        network:
+          $ref: "#/components/schemas/NetworkMetrics"
+        codecs:
+          $ref: "#/components/schemas/CodecMetrics"
+        resolution:
+          $ref: "#/components/schemas/ResolutionMetrics"
         concurrent_viewers:
           type: integer
         cpu_usage_percent:
@@ -1764,10 +1781,105 @@ components:
     BitrateMetrics:
       type: object
       properties:
-        target:
+        video:
           type: number
-        actual:
+          description: Video bitrate in kbps
+        audio:
           type: number
+          description: Audio bitrate in kbps
+        total:
+          type: number
+          description: Total bitrate in kbps
+      additionalProperties: false
+    PacketMetrics:
+      type: object
+      description: Packet statistics for WebRTC streams
+      properties:
+        video_received:
+          type: integer
+          description: Total video packets received
+        video_lost:
+          type: integer
+          description: Total video packets lost
+        audio_received:
+          type: integer
+          description: Total audio packets received
+        audio_lost:
+          type: integer
+          description: Total audio packets lost
+        loss_percent:
+          type: number
+          description: Overall packet loss percentage
+      additionalProperties: false
+    FrameMetrics:
+      type: object
+      description: Frame statistics for WebRTC video
+      properties:
+        received:
+          type: integer
+          description: Total frames received
+        dropped:
+          type: integer
+          description: Frames dropped
+        decoded:
+          type: integer
+          description: Frames decoded
+        corrupted:
+          type: integer
+          description: Corrupted frames
+        key_frames_decoded:
+          type: integer
+          description: Key frames decoded
+      additionalProperties: false
+    JitterMetrics:
+      type: object
+      description: Jitter measurements in milliseconds
+      properties:
+        video:
+          type: number
+          description: Video jitter in ms
+        audio:
+          type: number
+          description: Audio jitter in ms
+      additionalProperties: false
+    NetworkMetrics:
+      type: object
+      description: Network-level metrics
+      properties:
+        rtt_ms:
+          type: number
+          description: Round-trip time in milliseconds
+        available_outgoing_bitrate_kbps:
+          type: number
+          description: Available outgoing bitrate in kbps
+        bytes_received:
+          type: integer
+          description: Total bytes received
+        bytes_sent:
+          type: integer
+          description: Total bytes sent
+      additionalProperties: false
+    CodecMetrics:
+      type: object
+      description: Codec information
+      properties:
+        video:
+          type: string
+          description: Video codec (e.g., video/VP8)
+        audio:
+          type: string
+          description: Audio codec (e.g., audio/opus)
+      additionalProperties: false
+    ResolutionMetrics:
+      type: object
+      description: Video resolution
+      properties:
+        width:
+          type: integer
+          description: Video width in pixels
+        height:
+          type: integer
+          description: Video height in pixels
       additionalProperties: false
     MemoryMetrics:
       type: object
