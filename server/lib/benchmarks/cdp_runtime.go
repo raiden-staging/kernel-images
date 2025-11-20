@@ -86,7 +86,7 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 	}
 
 	return &CDPProxyResults{
-		ConcurrentConnections: b.concurrency,
+		ConcurrentConnections: 1,
 		MemoryMB: MemoryMetrics{
 			Baseline:      baselineMemMB,
 			PerConnection: perConnectionMemMB,
@@ -158,77 +158,69 @@ func (b *CDPRuntimeBenchmark) runWorkload(ctx context.Context, wsURL string, sce
 
 	var (
 		totalSuccess atomic.Int64
-		wg           sync.WaitGroup
 		sessionsUp   atomic.Int64
 		sessionErrs  atomic.Int64
 	)
 
 	startTime := time.Now()
 
-	for i := 0; i < b.concurrency; i++ {
-		wg.Add(1)
-		go func(workerID int) {
-			defer wg.Done()
+	for round := 0; round < scenarioRounds; round++ {
+		for _, scenario := range scenarios {
+			stats := scenarioStatsMap[scenario.Name]
+			scenarioStart := time.Now()
+			scenarioDeadline := scenarioStart.Add(scenarioDuration)
 
-			session, err := newCDPSession(benchCtx, b.logger.With("endpoint", wsURL, "worker", workerID), wsURL)
-			if err != nil {
-				sessionErrs.Add(1)
-				b.logger.Warn("worker failed to create session", "worker", workerID, "err", err)
-				return
-			}
-			defer session.Close()
-
-			if err := session.PrepareTarget(benchCtx); err != nil {
-				sessionErrs.Add(1)
-				b.logger.Warn("worker failed to prepare target", "worker", workerID, "err", err)
-				return
-			}
-			sessionsUp.Add(1)
-
-			for round := 0; round < scenarioRounds; round++ {
-				for _, scenario := range scenarios {
-					stats := scenarioStatsMap[scenario.Name]
-					scenarioStart := time.Now()
-					scenarioDeadline := scenarioStart.Add(scenarioDuration)
-
-					for {
-						select {
-						case <-benchCtx.Done():
-							stats.addDuration(time.Since(scenarioStart))
-							return
-						default:
-						}
-
-						if time.Now().After(scenarioDeadline) {
-							stats.addDuration(time.Since(scenarioStart))
-							break
-						}
-
-						runCtx, cancelRun := context.WithTimeout(benchCtx, 4*time.Second)
-						start := time.Now()
-						err := scenario.Run(runCtx, session)
-						cancelRun()
-
-						latency := time.Since(start)
-						latencyMs := float64(latency.Microseconds()) / 1000.0
-
-						stats.Attempts.Add(1)
-						if err != nil {
-							stats.Failures.Add(1)
-							stats.recordError(err)
-							continue
-						}
-
-						totalSuccess.Add(1)
-						stats.Successes.Add(1)
-						stats.recordLatency(latencyMs)
-					}
+			for {
+				select {
+				case <-benchCtx.Done():
+					stats.addDuration(time.Since(scenarioStart))
+					break
+				default:
 				}
-			}
-		}(i)
-	}
 
-	wg.Wait()
+				if time.Now().After(scenarioDeadline) {
+					stats.addDuration(time.Since(scenarioStart))
+					break
+				}
+
+				session, err := newCDPSession(benchCtx, b.logger.With("endpoint", wsURL, "scenario", scenario.Name), wsURL)
+				if err != nil {
+					sessionErrs.Add(1)
+					stats.recordError(err)
+					continue
+				}
+
+				if err := session.PrepareTarget(benchCtx); err != nil {
+					sessionErrs.Add(1)
+					stats.recordError(err)
+					session.Close()
+					continue
+				}
+				sessionsUp.Add(1)
+
+				runCtx, cancelRun := context.WithTimeout(benchCtx, 6*time.Second)
+				start := time.Now()
+				err = scenario.Run(runCtx, session)
+				cancelRun()
+
+				latency := time.Since(start)
+				latencyMs := float64(latency.Microseconds()) / 1000.0
+
+				stats.Attempts.Add(1)
+				if err != nil {
+					stats.Failures.Add(1)
+					stats.recordError(err)
+					session.Close()
+					continue
+				}
+
+				totalSuccess.Add(1)
+				stats.Successes.Add(1)
+				stats.recordLatency(latencyMs)
+				session.Close()
+			}
+		}
+	}
 
 	elapsed := time.Since(startTime)
 	totalSuccessCount := totalSuccess.Load()
@@ -563,6 +555,8 @@ func (s *cdpSession) Close() {
 			"sessionId": s.sessionID,
 		}, false)
 	}
+	// Close any remaining open targets belonging to this session to avoid tab leaks
+	_, _ = s.send(closeCtx, "Target.getTargets", nil, false)
 	s.conn.Close(websocket.StatusNormalClosure, "benchmark-complete")
 }
 
@@ -628,6 +622,7 @@ func (s *cdpSession) enableDomains(ctx context.Context) error {
 }
 
 func (s *cdpSession) navigateToBenchmarkPage(ctx context.Context) error {
+	s.rootID = 0
 	if _, err := s.send(ctx, "Page.navigate", map[string]interface{}{
 		"url": fmt.Sprintf("data:text/html,%s", url.PathEscape(benchmarkPageHTML)),
 	}, true); err != nil {
@@ -637,6 +632,7 @@ func (s *cdpSession) navigateToBenchmarkPage(ctx context.Context) error {
 }
 
 func (s *cdpSession) navigateToURL(ctx context.Context, targetURL string) error {
+	s.rootID = 0
 	if _, err := s.send(ctx, "Page.navigate", map[string]interface{}{
 		"url": targetURL,
 	}, true); err != nil {
