@@ -56,14 +56,6 @@ func (s *ApiService) RunBenchmark(ctx context.Context, request oapi.RunBenchmark
 			} else {
 				results.Results.Recording = recordingResults
 			}
-
-		case benchmarks.ComponentScreenshot:
-			if screenshotResults, err := s.runScreenshotBenchmark(ctx); err != nil {
-				log.Error("Screenshot benchmark failed", "err", err)
-				results.Errors = append(results.Errors, fmt.Sprintf("Screenshot: %v", err))
-			} else {
-				results.Results.ScreenshotLatency = screenshotResults
-			}
 		}
 	}
 
@@ -123,10 +115,6 @@ func convertComponentResults(results benchmarks.ComponentResults) *oapi.Componen
 
 	if results.Recording != nil {
 		resp.Recording = convertRecordingResults(results.Recording)
-	}
-
-	if results.ScreenshotLatency != nil {
-		resp.ScreenshotLatency = convertScreenshotResults(results.ScreenshotLatency)
 	}
 
 	return resp
@@ -254,21 +242,6 @@ func convertRecordingResults(rec *benchmarks.RecordingResults) *oapi.RecordingRe
 	return result
 }
 
-func convertScreenshotResults(screenshot *benchmarks.ScreenshotLatencyResults) *oapi.ScreenshotLatencyResults {
-	successRate := float32(screenshot.SuccessRate)
-	throughput := float32(screenshot.ThroughputPerSec)
-	avgImageSize := int(screenshot.AvgImageSizeBytes)
-	return &oapi.ScreenshotLatencyResults{
-		TotalScreenshots:    &screenshot.TotalScreenshots,
-		SuccessfulCaptures:  &screenshot.SuccessfulCaptures,
-		FailedCaptures:      &screenshot.FailedCaptures,
-		SuccessRate:         &successRate,
-		LatencyMs:           convertLatencyMetrics(screenshot.LatencyMS),
-		AvgImageSizeBytes:   &avgImageSize,
-		ThroughputPerSec:    &throughput,
-	}
-}
-
 func convertLatencyMetrics(lat benchmarks.LatencyMetrics) *oapi.LatencyMetrics {
 	p50 := float32(lat.P50)
 	p95 := float32(lat.P95)
@@ -388,16 +361,6 @@ func (s *ApiService) runRecordingBenchmark(ctx context.Context) (*benchmarks.Rec
 	return profiler.Run(ctx, 0) // Duration parameter ignored, uses internal 10s
 }
 
-func (s *ApiService) runScreenshotBenchmark(ctx context.Context) (*benchmarks.ScreenshotLatencyResults, error) {
-	log := logger.FromContext(ctx)
-	log.Info("running Screenshot latency benchmark")
-
-	// API should be available on localhost
-	apiBaseURL := "http://localhost:10001"
-	benchmark := benchmarks.NewScreenshotLatencyBenchmark(log, apiBaseURL)
-	return benchmark.Run(ctx, 0) // Duration parameter ignored, uses internal fixed count
-}
-
 func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {
 	if componentsParam == nil {
 		return []benchmarks.BenchmarkComponent{benchmarks.ComponentAll}
@@ -409,7 +372,6 @@ func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {
 			benchmarks.ComponentCDP,
 			benchmarks.ComponentWebRTC,
 			benchmarks.ComponentRecording,
-			benchmarks.ComponentScreenshot,
 		}
 	}
 
@@ -426,14 +388,11 @@ func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {
 			components = append(components, benchmarks.ComponentWebRTC)
 		case "recording":
 			components = append(components, benchmarks.ComponentRecording)
-		case "screenshot":
-			components = append(components, benchmarks.ComponentScreenshot)
 		case "all":
 			return []benchmarks.BenchmarkComponent{
 				benchmarks.ComponentCDP,
 				benchmarks.ComponentWebRTC,
 				benchmarks.ComponentRecording,
-				benchmarks.ComponentScreenshot,
 			}
 		}
 	}
@@ -444,7 +403,6 @@ func parseComponents(componentsParam *string) []benchmarks.BenchmarkComponent {
 			benchmarks.ComponentCDP,
 			benchmarks.ComponentWebRTC,
 			benchmarks.ComponentRecording,
-			benchmarks.ComponentScreenshot,
 		}
 	}
 
