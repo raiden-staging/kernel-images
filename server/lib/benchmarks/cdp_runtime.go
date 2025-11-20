@@ -34,7 +34,7 @@ func NewCDPRuntimeBenchmark(logger *slog.Logger, proxyURL string, concurrency in
 	}
 }
 
-// Run executes the CDP benchmark for a fixed duration
+// Run executes the CDP benchmark
 func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (*CDPProxyResults, error) {
 	const benchmarkDuration = 5 * time.Second
 	b.logger.Info("starting CDP benchmark", "duration", benchmarkDuration, "concurrency", b.concurrency)
@@ -43,11 +43,8 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 	var memStatsBefore runtime.MemStats
 	runtime.ReadMemStats(&memStatsBefore)
 
-	// Endpoints to test
-	proxiedURL := b.proxyURL              // http://localhost:9222
-	directURL := "http://localhost:9223" // Direct Chrome
-
 	// Benchmark proxied endpoint
+	proxiedURL := b.proxyURL // http://localhost:9222
 	b.logger.Info("benchmarking proxied CDP endpoint", "url", proxiedURL)
 	proxiedResults, err := b.benchmarkEndpoint(ctx, proxiedURL, benchmarkDuration)
 	if err != nil {
@@ -55,6 +52,7 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 	}
 
 	// Benchmark direct endpoint
+	directURL := "http://localhost:9223"
 	b.logger.Info("benchmarking direct CDP endpoint", "url", directURL)
 	directResults, err := b.benchmarkEndpoint(ctx, directURL, benchmarkDuration)
 	if err != nil {
@@ -90,12 +88,11 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 
 // scenarioDef defines a CDP scenario to benchmark
 type scenarioDef struct {
-	Name         string
-	Category     string
-	Description  string
-	Method       string
-	Params       map[string]interface{}
-	RequiresPage bool
+	Name        string
+	Category    string
+	Description string
+	Method      string
+	Params      map[string]interface{}
 }
 
 // benchmarkEndpoint benchmarks a single CDP endpoint
@@ -114,148 +111,131 @@ func (b *CDPRuntimeBenchmark) benchmarkEndpoint(ctx context.Context, baseURL str
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
-	// Define scenarios to benchmark
-	scenarios := []scenarioDef{
-		{
-			Name:         "Browser.getVersion",
-			Category:     "Browser",
-			Description:  "Get browser version information",
-			Method:       "Browser.getVersion",
-			Params:       nil,
-			RequiresPage: false,
-		},
-		{
-			Name:         "Runtime.evaluate",
-			Category:     "Runtime",
-			Description:  "Evaluate simple JavaScript expression",
-			Method:       "Runtime.evaluate",
-			Params:       map[string]interface{}{"expression": "1+1"},
-			RequiresPage: true,
-		},
-		{
-			Name:         "Runtime.evaluate-dom",
-			Category:     "Runtime",
-			Description:  "Evaluate JavaScript with DOM access",
-			Method:       "Runtime.evaluate",
-			Params:       map[string]interface{}{"expression": "document.title"},
-			RequiresPage: true,
-		},
-		{
-			Name:         "DOM.getDocument",
-			Category:     "DOM",
-			Description:  "Get DOM document tree",
-			Method:       "DOM.getDocument",
-			Params:       map[string]interface{}{"depth": 0},
-			RequiresPage: true,
-		},
-		{
-			Name:         "Page.getNavigationHistory",
-			Category:     "Page",
-			Description:  "Get page navigation history",
-			Method:       "Page.getNavigationHistory",
-			Params:       nil,
-			RequiresPage: true,
-		},
-		{
-			Name:         "Network.getCookies",
-			Category:     "Network",
-			Description:  "Get browser cookies",
-			Method:       "Network.getCookies",
-			Params:       nil,
-			RequiresPage: true,
-		},
-		{
-			Name:         "Performance.getMetrics",
-			Category:     "Performance",
-			Description:  "Get performance metrics",
-			Method:       "Performance.getMetrics",
-			Params:       nil,
-			RequiresPage: true,
-		},
-	}
-
-	// Attach to page target and get sessionId
-	sessionID, err := b.attachToPageTarget(ctx, conn)
+	// Create a new page target
+	msgID := 100000
+	b.logger.Info("creating new page target")
+	createResp, err := sendCDPCommand(ctx, conn, "", msgID, "Target.createTarget", map[string]interface{}{
+		"url": "about:blank",
+	})
 	if err != nil {
-		b.logger.Error("failed to attach to page target - page scenarios will fail", "err", err)
-		// Continue with empty sessionID - only browser-level commands will work
-	} else {
-		b.logger.Info("successfully attached to page target", "sessionId", sessionID)
+		return nil, fmt.Errorf("Target.createTarget failed: %w", err)
 	}
+	msgID++
 
-	// Run mixed workload benchmark
-	results := b.runMixedWorkload(ctx, conn, sessionID, scenarios, duration)
-
-	// Set the endpoint URL
-	results.EndpointURL = baseURL
-
-	return results, nil
-}
-
-// attachToPageTarget finds a page target and attaches to it
-func (b *CDPRuntimeBenchmark) attachToPageTarget(ctx context.Context, conn *websocket.Conn) (string, error) {
-	// Get list of targets
-	response, err := sendCDPCommand(ctx, conn, "", 100000, "Target.getTargets", nil)
-	if err != nil {
-		return "", fmt.Errorf("Target.getTargets failed: %w", err)
+	targetID, ok := createResp.Result["targetId"].(string)
+	if !ok || targetID == "" {
+		return nil, fmt.Errorf("no targetId in createTarget response")
 	}
+	b.logger.Info("created page target", "targetId", targetID)
 
-	// Find a page target
-	targetInfos, ok := response.Result["targetInfos"].([]interface{})
-	if !ok || len(targetInfos) == 0 {
-		return "", fmt.Errorf("no targets found")
-	}
-
-	var pageTargetID string
-	for _, info := range targetInfos {
-		targetInfo, ok := info.(map[string]interface{})
-		if !ok {
-			continue
-		}
-		targetType, _ := targetInfo["type"].(string)
-		if targetType == "page" {
-			pageTargetID, _ = targetInfo["targetId"].(string)
-			if pageTargetID != "" {
-				break
-			}
-		}
-	}
-
-	if pageTargetID == "" {
-		return "", fmt.Errorf("no page target found")
-	}
-
-	b.logger.Info("found page target", "targetId", pageTargetID)
-
-	// Attach to the page target
-	response, err = sendCDPCommand(ctx, conn, "", 100001, "Target.attachToTarget", map[string]interface{}{
-		"targetId": pageTargetID,
+	// Attach to the target
+	b.logger.Info("attaching to target")
+	attachResp, err := sendCDPCommand(ctx, conn, "", msgID, "Target.attachToTarget", map[string]interface{}{
+		"targetId": targetID,
 		"flatten":  true,
 	})
 	if err != nil {
-		return "", fmt.Errorf("Target.attachToTarget failed: %w", err)
+		return nil, fmt.Errorf("Target.attachToTarget failed: %w", err)
 	}
+	msgID++
 
-	sessionID, ok := response.Result["sessionId"].(string)
+	sessionID, ok := attachResp.Result["sessionId"].(string)
 	if !ok || sessionID == "" {
-		return "", fmt.Errorf("no sessionId in attach response")
+		return nil, fmt.Errorf("no sessionId in attachToTarget response")
 	}
+	b.logger.Info("attached to target", "sessionId", sessionID)
 
 	// Enable required domains
 	domains := []string{"Runtime", "DOM", "Page", "Network", "Performance"}
-	msgID := 100002
 	for _, domain := range domains {
 		method := domain + ".enable"
 		_, err := sendCDPCommand(ctx, conn, sessionID, msgID, method, nil)
 		if err != nil {
-			b.logger.Warn("failed to enable domain", "domain", domain, "sessionId", sessionID, "err", err)
+			b.logger.Warn("failed to enable domain", "domain", domain, "err", err)
 		} else {
 			b.logger.Debug("enabled domain", "domain", domain)
 		}
 		msgID++
 	}
 
-	return sessionID, nil
+	// Clean up target on exit
+	defer func() {
+		detachID := msgID
+		msgID++
+		_, err := sendCDPCommand(context.Background(), conn, "", detachID, "Target.detachFromTarget", map[string]interface{}{
+			"sessionId": sessionID,
+		})
+		if err != nil {
+			b.logger.Warn("failed to detach from target", "err", err)
+		}
+
+		closeID := msgID
+		_, err = sendCDPCommand(context.Background(), conn, "", closeID, "Target.closeTarget", map[string]interface{}{
+			"targetId": targetID,
+		})
+		if err != nil {
+			b.logger.Warn("failed to close target", "err", err)
+		}
+	}()
+
+	// Define scenarios to benchmark
+	scenarios := []scenarioDef{
+		{
+			Name:        "Browser.getVersion",
+			Category:    "Browser",
+			Description: "Get browser version information",
+			Method:      "Browser.getVersion",
+			Params:      nil,
+		},
+		{
+			Name:        "Runtime.evaluate",
+			Category:    "Runtime",
+			Description: "Evaluate simple JavaScript expression",
+			Method:      "Runtime.evaluate",
+			Params:      map[string]interface{}{"expression": "1+1"},
+		},
+		{
+			Name:        "Runtime.evaluate-dom",
+			Category:    "Runtime",
+			Description: "Evaluate JavaScript with DOM access",
+			Method:      "Runtime.evaluate",
+			Params:      map[string]interface{}{"expression": "document.title"},
+		},
+		{
+			Name:        "DOM.getDocument",
+			Category:    "DOM",
+			Description: "Get DOM document tree",
+			Method:      "DOM.getDocument",
+			Params:      map[string]interface{}{"depth": 0},
+		},
+		{
+			Name:        "Page.getNavigationHistory",
+			Category:    "Page",
+			Description: "Get page navigation history",
+			Method:      "Page.getNavigationHistory",
+			Params:      nil,
+		},
+		{
+			Name:        "Network.getCookies",
+			Category:    "Network",
+			Description: "Get browser cookies",
+			Method:      "Network.getCookies",
+			Params:      nil,
+		},
+		{
+			Name:        "Performance.getMetrics",
+			Category:    "Performance",
+			Description: "Get performance metrics",
+			Method:      "Performance.getMetrics",
+			Params:      nil,
+		},
+	}
+
+	// Run mixed workload benchmark
+	results := b.runMixedWorkload(ctx, conn, sessionID, scenarios, duration)
+	results.EndpointURL = baseURL
+
+	return results, nil
 }
 
 // scenarioStats tracks per-scenario statistics
@@ -264,6 +244,7 @@ type scenarioStats struct {
 	Description string
 	Category    string
 	Operations  atomic.Int64
+	Successes   atomic.Int64
 	Failures    atomic.Int64
 	Latencies   []float64
 	LatenciesMu sync.Mutex
@@ -286,8 +267,8 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 	}
 
 	var (
-		totalOps    atomic.Int64
-		wg          sync.WaitGroup
+		totalOps atomic.Int64
+		wg       sync.WaitGroup
 	)
 
 	startTime := time.Now()
@@ -298,7 +279,7 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 		go func(workerID int) {
 			defer wg.Done()
 
-			msgID := workerID * 1000000
+			msgID := (workerID + 1) * 1000000
 			scenarioIdx := 0
 
 			for {
@@ -313,31 +294,11 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 				stats := scenarioStatsMap[scenario.Name]
 				scenarioIdx++
 
-				// Determine which sessionID to use
-				effectiveSessionID := ""
-				if scenario.RequiresPage {
-					if sessionID == "" {
-						// Skip this scenario - no page session available
-						stats.Failures.Add(1)
-						stats.Operations.Add(1)
-						totalOps.Add(1)
-
-						// Sleep briefly to avoid tight loop
-						select {
-						case <-benchCtx.Done():
-							return
-						case <-time.After(1 * time.Millisecond):
-						}
-						continue
-					}
-					effectiveSessionID = sessionID
-				}
-
 				msgID++
 				start := time.Now()
 
-				// Send CDP command and measure actual response
-				response, err := sendCDPCommand(benchCtx, conn, effectiveSessionID, msgID, scenario.Method, scenario.Params)
+				// Send CDP command
+				response, err := sendCDPCommand(benchCtx, conn, sessionID, msgID, scenario.Method, scenario.Params)
 
 				latency := time.Since(start)
 				latencyMs := float64(latency.Microseconds()) / 1000.0
@@ -345,27 +306,29 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 				stats.Operations.Add(1)
 				totalOps.Add(1)
 
-				if err != nil {
-					stats.Failures.Add(1)
-
-					// Check if it's a CDP error vs connection error
-					if response == nil || response.Error == nil {
-						// Connection error - bail out
-						if benchCtx.Err() == nil {
-							b.logger.Error("connection error", "worker", workerID, "scenario", scenario.Name, "err", err)
-						}
-						return
-					}
-					// CDP error - log at debug level and continue
-					if response.Error != nil {
-						b.logger.Debug("CDP error", "scenario", scenario.Name, "code", response.Error.Code, "msg", response.Error.Message)
-					}
-				}
-
-				// Record latency (even for errors - it's still a round-trip)
+				// Record latency
 				stats.LatenciesMu.Lock()
 				stats.Latencies = append(stats.Latencies, latencyMs)
 				stats.LatenciesMu.Unlock()
+
+				// Check for errors
+				if err != nil {
+					// Check if it's a CDP error vs connection error
+					if response != nil && response.Error != nil {
+						// CDP error - log and CONTINUE (don't exit)
+						stats.Failures.Add(1)
+						b.logger.Debug("CDP error", "scenario", scenario.Name, "code", response.Error.Code, "msg", response.Error.Message)
+						continue
+					}
+					// Connection error - exit worker
+					if benchCtx.Err() == nil {
+						b.logger.Error("connection error", "worker", workerID, "scenario", scenario.Name, "err", err)
+					}
+					return
+				}
+
+				// Success
+				stats.Successes.Add(1)
 			}
 		}(i)
 	}
@@ -375,6 +338,8 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 	elapsed := time.Since(startTime)
 	totalOpsCount := totalOps.Load()
 
+	b.logger.Info("benchmark completed", "duration", elapsed, "total_ops", totalOpsCount)
+
 	// Calculate overall throughput
 	totalThroughput := float64(totalOpsCount) / elapsed.Seconds()
 
@@ -383,12 +348,12 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 	for _, scenario := range scenarios {
 		stats := scenarioStatsMap[scenario.Name]
 		ops := stats.Operations.Load()
-		fails := stats.Failures.Load()
+		successes := stats.Successes.Load()
 
 		// Calculate success rate
-		successRate := 100.0
+		successRate := 0.0
 		if ops > 0 {
-			successRate = (float64(ops-fails) / float64(ops)) * 100.0
+			successRate = (float64(successes) / float64(ops)) * 100.0
 		}
 
 		// Calculate throughput
@@ -417,7 +382,6 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 
 // fetchBrowserWebSocketURL fetches the browser WebSocket URL from /json/version
 func fetchBrowserWebSocketURL(baseURL string) (string, error) {
-	// Ensure baseURL has a scheme
 	if u, err := url.Parse(baseURL); err == nil && u.Scheme == "" {
 		baseURL = "http://" + baseURL
 	}
