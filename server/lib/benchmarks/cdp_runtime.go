@@ -44,7 +44,7 @@ func (b *CDPRuntimeBenchmark) Run(ctx context.Context, duration time.Duration) (
 	runtime.ReadMemStats(&memStatsBefore)
 
 	// Benchmark proxied endpoint
-	proxiedURL := b.proxyURL // http://localhost:9222
+	proxiedURL := b.proxyURL
 	b.logger.Info("benchmarking proxied CDP endpoint", "url", proxiedURL)
 	proxiedResults, err := b.benchmarkEndpoint(ctx, proxiedURL, benchmarkDuration)
 	if err != nil {
@@ -111,54 +111,15 @@ func (b *CDPRuntimeBenchmark) benchmarkEndpoint(ctx context.Context, baseURL str
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
 
-	// Create a new page target
 	msgID := 100000
-	b.logger.Info("creating new page target")
-	createResp, err := sendCDPCommand(ctx, conn, "", msgID, "Target.createTarget", map[string]interface{}{
-		"url": "about:blank",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("Target.createTarget failed: %w", err)
-	}
-	msgID++
 
-	targetID, ok := createResp.Result["targetId"].(string)
-	if !ok || targetID == "" {
-		return nil, fmt.Errorf("no targetId in createTarget response")
-	}
-	b.logger.Info("created page target", "targetId", targetID)
-
-	// Attach to the target (without flatten - proxy might not support it)
-	b.logger.Info("attaching to target")
-	attachResp, err := sendCDPCommand(ctx, conn, "", msgID, "Target.attachToTarget", map[string]interface{}{
-		"targetId": targetID,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("Target.attachToTarget failed: %w", err)
-	}
-	msgID++
-
-	// Log the full response to see what we got
-	respJSON, _ := json.Marshal(attachResp.Result)
-	b.logger.Info("attachToTarget response", "result_json", string(respJSON))
-
-	sessionID, ok := attachResp.Result["sessionId"].(string)
-	if !ok || sessionID == "" {
-		// Try without type assertion to see what's there
-		if sid, exists := attachResp.Result["sessionId"]; exists {
-			b.logger.Error("sessionId exists but wrong type", "value", sid, "type", fmt.Sprintf("%T", sid))
-		} else {
-			b.logger.Error("sessionId not in result", "result_keys", getMapKeys(attachResp.Result))
-		}
-		return nil, fmt.Errorf("no sessionId in attachToTarget response")
-	}
-	b.logger.Info("attached to target", "sessionId", sessionID)
-
-	// Enable required domains
+	// Just enable domains directly without creating/attaching to targets
+	// The browser WebSocket URL already points to a specific target
+	b.logger.Info("enabling CDP domains")
 	domains := []string{"Runtime", "DOM", "Page", "Network", "Performance"}
 	for _, domain := range domains {
 		method := domain + ".enable"
-		_, err := sendCDPCommand(ctx, conn, sessionID, msgID, method, nil)
+		_, err := sendCDPCommandSimple(ctx, conn, msgID, method, nil)
 		if err != nil {
 			b.logger.Warn("failed to enable domain", "domain", domain, "err", err)
 		} else {
@@ -166,26 +127,6 @@ func (b *CDPRuntimeBenchmark) benchmarkEndpoint(ctx context.Context, baseURL str
 		}
 		msgID++
 	}
-
-	// Clean up target on exit
-	defer func() {
-		detachID := msgID
-		msgID++
-		_, err := sendCDPCommand(context.Background(), conn, "", detachID, "Target.detachFromTarget", map[string]interface{}{
-			"sessionId": sessionID,
-		})
-		if err != nil {
-			b.logger.Warn("failed to detach from target", "err", err)
-		}
-
-		closeID := msgID
-		_, err = sendCDPCommand(context.Background(), conn, "", closeID, "Target.closeTarget", map[string]interface{}{
-			"targetId": targetID,
-		})
-		if err != nil {
-			b.logger.Warn("failed to close target", "err", err)
-		}
-	}()
 
 	// Define scenarios to benchmark
 	scenarios := []scenarioDef{
@@ -241,7 +182,7 @@ func (b *CDPRuntimeBenchmark) benchmarkEndpoint(ctx context.Context, baseURL str
 	}
 
 	// Run mixed workload benchmark
-	results := b.runMixedWorkload(ctx, conn, sessionID, scenarios, duration)
+	results := b.runMixedWorkload(ctx, conn, scenarios, duration)
 	results.EndpointURL = baseURL
 
 	return results, nil
@@ -260,7 +201,7 @@ type scenarioStats struct {
 }
 
 // runMixedWorkload runs a mixed workload benchmark
-func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websocket.Conn, sessionID string, scenarios []scenarioDef, duration time.Duration) *CDPEndpointResults {
+func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websocket.Conn, scenarios []scenarioDef, duration time.Duration) *CDPEndpointResults {
 	benchCtx, cancel := context.WithTimeout(ctx, duration)
 	defer cancel()
 
@@ -306,8 +247,8 @@ func (b *CDPRuntimeBenchmark) runMixedWorkload(ctx context.Context, conn *websoc
 				msgID++
 				start := time.Now()
 
-				// Send CDP command
-				response, err := sendCDPCommand(benchCtx, conn, sessionID, msgID, scenario.Method, scenario.Params)
+				// Send CDP command (no sessionID)
+				response, err := sendCDPCommandSimple(benchCtx, conn, msgID, scenario.Method, scenario.Params)
 
 				latency := time.Since(start)
 				latencyMs := float64(latency.Microseconds()) / 1000.0
@@ -422,16 +363,12 @@ func fetchBrowserWebSocketURL(baseURL string) (string, error) {
 	return versionInfo.WebSocketDebuggerURL, nil
 }
 
-// sendCDPCommand sends a CDP command and waits for the response
-func sendCDPCommand(ctx context.Context, conn *websocket.Conn, sessionID string, id int, method string, params map[string]interface{}) (*CDPMessage, error) {
+// sendCDPCommandSimple sends a CDP command without sessionID
+func sendCDPCommandSimple(ctx context.Context, conn *websocket.Conn, id int, method string, params map[string]interface{}) (*CDPMessage, error) {
 	request := CDPMessage{
 		ID:     id,
 		Method: method,
 		Params: params,
-	}
-
-	if sessionID != "" {
-		request.SessionID = sessionID
 	}
 
 	requestBytes, err := json.Marshal(request)
@@ -491,25 +428,15 @@ func calculatePercentiles(values []float64) LatencyMetrics {
 
 // CDPMessage represents a generic CDP message
 type CDPMessage struct {
-	ID        int                    `json:"id"`
-	SessionID string                 `json:"sessionId,omitempty"`
-	Method    string                 `json:"method,omitempty"`
-	Params    map[string]interface{} `json:"params,omitempty"`
-	Result    map[string]interface{} `json:"result,omitempty"`
-	Error     *CDPError              `json:"error,omitempty"`
+	ID     int                    `json:"id"`
+	Method string                 `json:"method,omitempty"`
+	Params map[string]interface{} `json:"params,omitempty"`
+	Result map[string]interface{} `json:"result,omitempty"`
+	Error  *CDPError              `json:"error,omitempty"`
 }
 
 // CDPError represents a CDP error response
 type CDPError struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
-}
-
-// getMapKeys returns the keys of a map for debugging
-func getMapKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }
