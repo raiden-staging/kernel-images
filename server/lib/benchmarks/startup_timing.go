@@ -161,7 +161,14 @@ func GetContainerStartupTiming() (*StartupTimingResults, error) {
 		slowestDur := containerTiming.Phases[0].DurationMS
 
 		for i, phase := range containerTiming.Phases {
-			percentage := (phase.DurationMS / containerTiming.TotalStartupTimeMS) * 100.0
+			total := containerTiming.TotalStartupTimeMS
+			if total <= 0 {
+				total = 0
+			}
+			percentage := 0.0
+			if total > 0 {
+				percentage = (phase.DurationMS / total) * 100.0
+			}
 
 			results.Phases[i] = PhaseResult{
 				Name:       phase.Name,

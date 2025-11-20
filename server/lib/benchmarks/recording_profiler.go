@@ -193,6 +193,10 @@ func (p *RecordingProfiler) Run(ctx context.Context, duration time.Duration) (*R
 func (p *RecordingProfiler) RunWithConcurrency(ctx context.Context, duration time.Duration, concurrency int) (*RecordingResults, error) {
 	p.logger.Info("starting concurrent recording benchmark", "duration", duration, "concurrency", concurrency)
 
+	if concurrency <= 0 {
+		return nil, fmt.Errorf("concurrency must be greater than zero")
+	}
+
 	// Capture baseline metrics
 	rssBefore, err := GetProcessRSSMemoryMB()
 	if err != nil {
