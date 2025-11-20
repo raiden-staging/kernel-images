@@ -99,7 +99,29 @@ func (b *WebRTCBenchmark) readNekoStatsWithFreshness(ctx context.Context) (*Neko
 
 // convertNekoStatsToResults converts neko stats format to kernel-images format
 func (b *WebRTCBenchmark) convertNekoStatsToResults(stats *NekoWebRTCStats) *WebRTCLiveViewResults {
+	// Get CPU and memory measurements
+	cpuUsage := 0.0
+	memBaseline := 0.0
+	memPerViewer := 0.0
+
+	// Try to measure current resource usage
+	if cpuStats, err := GetProcessCPUStats(); err == nil {
+		time.Sleep(100 * time.Millisecond)
+		if cpuStatsAfter, err := GetProcessCPUStats(); err == nil {
+			cpuUsage = CalculateCPUPercent(cpuStats, cpuStatsAfter)
+		}
+	}
+
+	if rss, err := GetProcessRSSMemoryMB(); err == nil {
+		memBaseline = rss
+		if stats.ConcurrentViewers > 0 {
+			memPerViewer = rss / float64(stats.ConcurrentViewers)
+		}
+	}
+
 	return &WebRTCLiveViewResults{
+		ConnectionState:    stats.ConnectionState,
+		IceConnectionState: stats.IceConnectionState,
 		FrameRateFPS: FrameRateMetrics{
 			Target:   stats.FrameRateFPS.Target,
 			Achieved: stats.FrameRateFPS.Achieved,
@@ -112,15 +134,47 @@ func (b *WebRTCBenchmark) convertNekoStatsToResults(stats *NekoWebRTCStats) *Web
 			P99: stats.FrameLatencyMS.P99,
 		},
 		BitrateKbps: BitrateMetrics{
-			Target: stats.BitrateKbps.Target,
-			Actual: stats.BitrateKbps.Actual,
+			Video: stats.BitrateKbps.Video,
+			Audio: stats.BitrateKbps.Audio,
+			Total: stats.BitrateKbps.Total,
 		},
-		ConnectionSetupMS: stats.ConnectionSetupMS,
+		Packets: PacketMetrics{
+			VideoReceived: stats.Packets.VideoReceived,
+			VideoLost:     stats.Packets.VideoLost,
+			AudioReceived: stats.Packets.AudioReceived,
+			AudioLost:     stats.Packets.AudioLost,
+			LossPercent:   stats.Packets.LossPercent,
+		},
+		Frames: FrameMetrics{
+			Received:         stats.Frames.Received,
+			Dropped:          stats.Frames.Dropped,
+			Decoded:          stats.Frames.Decoded,
+			Corrupted:        stats.Frames.Corrupted,
+			KeyFramesDecoded: stats.Frames.KeyFramesDecoded,
+		},
+		JitterMS: JitterMetrics{
+			Video: stats.JitterMS.Video,
+			Audio: stats.JitterMS.Audio,
+		},
+		Network: NetworkMetrics{
+			RTTMS:                        stats.Network.RTTMS,
+			AvailableOutgoingBitrateKbps: stats.Network.AvailableOutgoingBitrateKbps,
+			BytesReceived:                stats.Network.BytesReceived,
+			BytesSent:                    stats.Network.BytesSent,
+		},
+		Codecs: CodecMetrics{
+			Video: stats.Codecs.Video,
+			Audio: stats.Codecs.Audio,
+		},
+		Resolution: ResolutionMetrics{
+			Width:  stats.Resolution.Width,
+			Height: stats.Resolution.Height,
+		},
 		ConcurrentViewers: stats.ConcurrentViewers,
-		CPUUsagePercent:   stats.CPUUsagePercent,
+		CPUUsagePercent:   cpuUsage,
 		MemoryMB: MemoryMetrics{
-			Baseline:  stats.MemoryMB.Baseline,
-			PerViewer: stats.MemoryMB.PerViewer,
+			Baseline:  memBaseline,
+			PerViewer: memPerViewer,
 		},
 	}
 }
@@ -138,6 +192,8 @@ func (b *WebRTCBenchmark) measureWebRTCFallback(ctx context.Context, duration ti
 		b.logger.Warn("failed to query neko stats API, returning minimal results", "err", err)
 		// Return minimal results indicating WebRTC is not measurable
 		return &WebRTCLiveViewResults{
+			ConnectionState:    "unknown",
+			IceConnectionState: "unknown",
 			FrameRateFPS: FrameRateMetrics{
 				Target:   30.0,
 				Achieved: 0.0, // Unknown
@@ -150,10 +206,25 @@ func (b *WebRTCBenchmark) measureWebRTCFallback(ctx context.Context, duration ti
 				P99: 0.0,
 			},
 			BitrateKbps: BitrateMetrics{
-				Target: 2500.0,
-				Actual: 0.0, // Unknown
+				Video: 0.0,
+				Audio: 0.0,
+				Total: 0.0,
 			},
-			ConnectionSetupMS: 0.0,
+			Packets: PacketMetrics{},
+			Frames:  FrameMetrics{},
+			JitterMS: JitterMetrics{
+				Video: 0.0,
+				Audio: 0.0,
+			},
+			Network: NetworkMetrics{},
+			Codecs: CodecMetrics{
+				Video: "unknown",
+				Audio: "unknown",
+			},
+			Resolution: ResolutionMetrics{
+				Width:  0,
+				Height: 0,
+			},
 			ConcurrentViewers: 0,
 			CPUUsagePercent:   0.0,
 			MemoryMB: MemoryMetrics{
@@ -193,8 +264,10 @@ func (b *WebRTCBenchmark) queryNekoStatsAPI(ctx context.Context) (*WebRTCLiveVie
 		return nil, fmt.Errorf("failed to decode stats: %w", err)
 	}
 
-	// Build approximate results from available data
+	// Build approximate results from available data (legacy fallback)
 	return &WebRTCLiveViewResults{
+		ConnectionState:    "connected",
+		IceConnectionState: "connected",
 		FrameRateFPS: FrameRateMetrics{
 			Target:   30.0,
 			Achieved: 28.0, // Estimated
@@ -207,10 +280,42 @@ func (b *WebRTCBenchmark) queryNekoStatsAPI(ctx context.Context) (*WebRTCLiveVie
 			P99: 70.0,
 		},
 		BitrateKbps: BitrateMetrics{
-			Target: 2500.0,
-			Actual: 2400.0, // Estimated
+			Video: 2400.0, // Estimated
+			Audio: 128.0,  // Estimated
+			Total: 2528.0,
 		},
-		ConnectionSetupMS: 300.0, // Estimated
+		Packets: PacketMetrics{
+			VideoReceived: 0,
+			VideoLost:     0,
+			AudioReceived: 0,
+			AudioLost:     0,
+			LossPercent:   0.0,
+		},
+		Frames: FrameMetrics{
+			Received:         0,
+			Dropped:          0,
+			Decoded:          0,
+			Corrupted:        0,
+			KeyFramesDecoded: 0,
+		},
+		JitterMS: JitterMetrics{
+			Video: 10.0, // Estimated
+			Audio: 5.0,  // Estimated
+		},
+		Network: NetworkMetrics{
+			RTTMS:                        50.0, // Estimated
+			AvailableOutgoingBitrateKbps: 5000.0,
+			BytesReceived:                0,
+			BytesSent:                    0,
+		},
+		Codecs: CodecMetrics{
+			Video: "video/VP8",
+			Audio: "audio/opus",
+		},
+		Resolution: ResolutionMetrics{
+			Width:  1920,
+			Height: 1080,
+		},
 		ConcurrentViewers: nekoStats.TotalUsers,
 		CPUUsagePercent:   5.0 + float64(nekoStats.TotalUsers)*7.0, // Estimated
 		MemoryMB: MemoryMetrics{
@@ -262,16 +367,21 @@ func (b *WebRTCBenchmark) readNekoStats(ctx context.Context) (*NekoWebRTCStats, 
 	return nil, fmt.Errorf("failed to read neko stats after retries: %w", lastErr)
 }
 
-// NekoWebRTCStats represents the stats format exported by neko
+// NekoWebRTCStats represents the comprehensive stats format exported by neko from client
 type NekoWebRTCStats struct {
-	Timestamp         time.Time                 `json:"timestamp"`
-	FrameRateFPS      NekoFrameRateMetrics      `json:"frame_rate_fps"`
-	FrameLatencyMS    NekoLatencyMetrics        `json:"frame_latency_ms"`
-	BitrateKbps       NekoBitrateMetrics        `json:"bitrate_kbps"`
-	ConnectionSetupMS float64                   `json:"connection_setup_ms"`
-	ConcurrentViewers int                       `json:"concurrent_viewers"`
-	CPUUsagePercent   float64                   `json:"cpu_usage_percent"`
-	MemoryMB          NekoMemoryMetrics         `json:"memory_mb"`
+	Timestamp          time.Time                 `json:"timestamp"`
+	ConnectionState    string                    `json:"connection_state"`
+	IceConnectionState string                    `json:"ice_connection_state"`
+	FrameRateFPS       NekoFrameRateMetrics      `json:"frame_rate_fps"`
+	FrameLatencyMS     NekoLatencyMetrics        `json:"frame_latency_ms"`
+	BitrateKbps        NekoBitrateMetrics        `json:"bitrate_kbps"`
+	Packets            NekoPacketMetrics         `json:"packets"`
+	Frames             NekoFrameMetrics          `json:"frames"`
+	JitterMS           NekoJitterMetrics         `json:"jitter_ms"`
+	Network            NekoNetworkMetrics        `json:"network"`
+	Codecs             NekoCodecMetrics          `json:"codecs"`
+	Resolution         NekoResolutionMetrics     `json:"resolution"`
+	ConcurrentViewers  int                       `json:"concurrent_viewers"`
 }
 
 type NekoFrameRateMetrics struct {
@@ -288,8 +398,47 @@ type NekoLatencyMetrics struct {
 }
 
 type NekoBitrateMetrics struct {
-	Target float64 `json:"target"`
-	Actual float64 `json:"actual"`
+	Video float64 `json:"video"`
+	Audio float64 `json:"audio"`
+	Total float64 `json:"total"`
+}
+
+type NekoPacketMetrics struct {
+	VideoReceived int64   `json:"video_received"`
+	VideoLost     int64   `json:"video_lost"`
+	AudioReceived int64   `json:"audio_received"`
+	AudioLost     int64   `json:"audio_lost"`
+	LossPercent   float64 `json:"loss_percent"`
+}
+
+type NekoFrameMetrics struct {
+	Received         int64 `json:"received"`
+	Dropped          int64 `json:"dropped"`
+	Decoded          int64 `json:"decoded"`
+	Corrupted        int64 `json:"corrupted"`
+	KeyFramesDecoded int64 `json:"key_frames_decoded"`
+}
+
+type NekoJitterMetrics struct {
+	Video float64 `json:"video"`
+	Audio float64 `json:"audio"`
+}
+
+type NekoNetworkMetrics struct {
+	RTTMS                        float64 `json:"rtt_ms"`
+	AvailableOutgoingBitrateKbps float64 `json:"available_outgoing_bitrate_kbps"`
+	BytesReceived                int64   `json:"bytes_received"`
+	BytesSent                    int64   `json:"bytes_sent"`
+}
+
+type NekoCodecMetrics struct {
+	Video string `json:"video"`
+	Audio string `json:"audio"`
+}
+
+type NekoResolutionMetrics struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 type NekoMemoryMetrics struct {

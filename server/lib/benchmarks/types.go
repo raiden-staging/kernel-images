@@ -59,15 +59,22 @@ type CDPScenarioResult struct {
 	SuccessRate          float64          `json:"success_rate"`
 }
 
-// WebRTCLiveViewResults contains WebRTC live view benchmark results
+// WebRTCLiveViewResults contains comprehensive WebRTC live view benchmark results
 type WebRTCLiveViewResults struct {
-	FrameRateFPS          FrameRateMetrics       `json:"frame_rate_fps"`
-	FrameLatencyMS        LatencyMetrics         `json:"frame_latency_ms"`
-	BitrateKbps           BitrateMetrics         `json:"bitrate_kbps"`
-	ConnectionSetupMS     float64                `json:"connection_setup_ms"`
-	ConcurrentViewers     int                    `json:"concurrent_viewers"`
-	CPUUsagePercent       float64                `json:"cpu_usage_percent"`
-	MemoryMB              MemoryMetrics          `json:"memory_mb"`
+	ConnectionState    string                 `json:"connection_state"`
+	IceConnectionState string                 `json:"ice_connection_state"`
+	FrameRateFPS       FrameRateMetrics       `json:"frame_rate_fps"`
+	FrameLatencyMS     LatencyMetrics         `json:"frame_latency_ms"`
+	BitrateKbps        BitrateMetrics         `json:"bitrate_kbps"`
+	Packets            PacketMetrics          `json:"packets"`
+	Frames             FrameMetrics           `json:"frames"`
+	JitterMS           JitterMetrics          `json:"jitter_ms"`
+	Network            NetworkMetrics         `json:"network"`
+	Codecs             CodecMetrics           `json:"codecs"`
+	Resolution         ResolutionMetrics      `json:"resolution"`
+	ConcurrentViewers  int                    `json:"concurrent_viewers"`
+	CPUUsagePercent    float64                `json:"cpu_usage_percent"`
+	MemoryMB           MemoryMetrics          `json:"memory_mb"`
 }
 
 // RecordingResults contains recording benchmark results
@@ -106,8 +113,53 @@ type FrameRateMetrics struct {
 
 // BitrateMetrics contains bitrate statistics
 type BitrateMetrics struct {
-	Target float64 `json:"target"`
-	Actual float64 `json:"actual"`
+	Video float64 `json:"video"`
+	Audio float64 `json:"audio"`
+	Total float64 `json:"total"`
+}
+
+// PacketMetrics contains packet statistics
+type PacketMetrics struct {
+	VideoReceived int64   `json:"video_received"`
+	VideoLost     int64   `json:"video_lost"`
+	AudioReceived int64   `json:"audio_received"`
+	AudioLost     int64   `json:"audio_lost"`
+	LossPercent   float64 `json:"loss_percent"`
+}
+
+// FrameMetrics contains frame statistics
+type FrameMetrics struct {
+	Received         int64 `json:"received"`
+	Dropped          int64 `json:"dropped"`
+	Decoded          int64 `json:"decoded"`
+	Corrupted        int64 `json:"corrupted"`
+	KeyFramesDecoded int64 `json:"key_frames_decoded"`
+}
+
+// JitterMetrics contains jitter statistics
+type JitterMetrics struct {
+	Video float64 `json:"video"`
+	Audio float64 `json:"audio"`
+}
+
+// NetworkMetrics contains network statistics
+type NetworkMetrics struct {
+	RTTMS                        float64 `json:"rtt_ms"`
+	AvailableOutgoingBitrateKbps float64 `json:"available_outgoing_bitrate_kbps"`
+	BytesReceived                int64   `json:"bytes_received"`
+	BytesSent                    int64   `json:"bytes_sent"`
+}
+
+// CodecMetrics contains codec information
+type CodecMetrics struct {
+	Video string `json:"video"`
+	Audio string `json:"audio"`
+}
+
+// ResolutionMetrics contains resolution information
+type ResolutionMetrics struct {
+	Width  int `json:"width"`
+	Height int `json:"height"`
 }
 
 // MemoryMetrics contains memory usage statistics
