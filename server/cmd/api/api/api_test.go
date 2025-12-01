@@ -186,6 +186,60 @@ func TestApiService_DownloadRecording(t *testing.T) {
 	})
 }
 
+func TestApiService_StreamLifecycle(t *testing.T) {
+	ctx := context.Background()
+	mgr := recorder.NewFFmpegManager()
+	svc := newApiServiceForTest(t, mgr)
+
+	mode := "internal"
+	resp, err := svc.StartStream(ctx, oapi.StartStreamRequestObject{
+		Body: &oapi.StartStreamJSONRequestBody{Mode: &mode},
+	})
+	require.NoError(t, err)
+	created, ok := resp.(oapi.StartStream201JSONResponse)
+	require.True(t, ok, "expected start stream response")
+	assert.Equal(t, "internal", created.Mode)
+	assert.True(t, created.IsStreaming)
+
+	streamer, exists := svc.streamManager.GetStream("default")
+	require.True(t, exists)
+	assert.True(t, streamer.IsStreaming(ctx))
+
+	listResp, err := svc.ListStreams(ctx, oapi.ListStreamsRequestObject{})
+	require.NoError(t, err)
+	listTyped, ok := listResp.(oapi.ListStreams200JSONResponse)
+	require.True(t, ok)
+	require.Len(t, listTyped, 1)
+	assert.Equal(t, "internal", listTyped[0].Mode)
+
+	stopResp, err := svc.StopStream(ctx, oapi.StopStreamRequestObject{})
+	require.NoError(t, err)
+	require.IsType(t, oapi.StopStream200Response{}, stopResp)
+}
+
+func TestApiService_StartStream_RemoteValidation(t *testing.T) {
+	ctx := context.Background()
+	mgr := recorder.NewFFmpegManager()
+	svc := newApiServiceForTest(t, mgr)
+
+	mode := "remote"
+	resp, err := svc.StartStream(ctx, oapi.StartStreamRequestObject{
+		Body: &oapi.StartStreamJSONRequestBody{Mode: &mode},
+	})
+	require.NoError(t, err)
+	require.IsType(t, oapi.StartStream400JSONResponse{}, resp)
+}
+
+func TestApiService_StopStream_NotFound(t *testing.T) {
+	ctx := context.Background()
+	mgr := recorder.NewFFmpegManager()
+	svc := newApiServiceForTest(t, mgr)
+
+	resp, err := svc.StopStream(ctx, oapi.StopStreamRequestObject{})
+	require.NoError(t, err)
+	require.IsType(t, oapi.StopStream404JSONResponse{}, resp)
+}
+
 func TestApiService_Shutdown(t *testing.T) {
 	ctx := context.Background()
 	mgr := recorder.NewFFmpegManager()

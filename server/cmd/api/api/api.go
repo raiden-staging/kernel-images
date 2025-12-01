@@ -382,7 +382,10 @@ func streamMetadataToOAPI(meta stream.Metadata, isStreaming bool) oapi.StreamInf
 
 func requestHost(r *http.Request) string {
 	if r == nil {
-		return ""
+		return "127.0.0.1"
+	}
+	if r.Host == "" {
+		return "127.0.0.1"
 	}
 	return r.Host
 }

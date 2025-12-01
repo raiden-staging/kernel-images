@@ -84,6 +84,9 @@ func mergeParams(defaults Params, overrides Params) Params {
 	if overrides.SecurePlaybackURL != nil {
 		out.SecurePlaybackURL = overrides.SecurePlaybackURL
 	}
+	if out.Mode == "" {
+		out.Mode = ModeInternal
+	}
 	return out
 }
 

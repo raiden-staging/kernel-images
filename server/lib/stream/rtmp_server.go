@@ -16,8 +16,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aler9/rtmp/format/rtmp"
-	"github.com/aler9/rtmp/pubsub"
+	"github.com/notedit/rtmp/format/rtmp"
+	"github.com/notedit/rtmp/pubsub"
 )
 
 // RTMPServer implements an internal RTMP/RTMPS server backed by pubsub.
@@ -50,6 +50,9 @@ func (s *RTMPServer) Start(ctx context.Context) error {
 	if s.running {
 		s.mu.Unlock()
 		return nil
+	}
+	if s.streams == nil {
+		s.streams = make(map[string]*pubsub.PubSub)
 	}
 
 	rtmpListener, err := net.Listen("tcp", s.rtmpAddr)
