@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"net"
 	"os"
@@ -196,18 +197,19 @@ func buildTargetURLs(id string, params FFmpegStreamParams) (string, string) {
 type FFmpegStreamer struct {
 	mu sync.Mutex
 
-	id          string
-	binaryPath  string
-	cmd         *exec.Cmd
-	params      FFmpegStreamParams
-	targetURL   string
-	relativeURL string
-	startTime   time.Time
-	endTime     time.Time
-	ffmpegErr   error
-	exitCode    int
-	exited      chan struct{}
-	stz         *scaletozero.Oncer
+	id            string
+	binaryPath    string
+	cmd           *exec.Cmd
+	params        FFmpegStreamParams
+	targetURL     string
+	relativeURL   string
+	startTime     time.Time
+	endTime       time.Time
+	ffmpegErr     error
+	exitCode      int
+	exited        chan struct{}
+	stz           *scaletozero.Oncer
+	stopRequested bool
 }
 
 func (fs *FFmpegStreamer) ID() string { return fs.id }
@@ -228,48 +230,30 @@ func (fs *FFmpegStreamer) Start(ctx context.Context) error {
 
 	fs.ffmpegErr = nil
 	fs.exitCode = exitCodeInitValue
-	fs.startTime = time.Now()
 	fs.exited = make(chan struct{})
-
-	args, err := ffmpegStreamArgs(fs.params, fs.targetURL)
-	if err != nil {
-		_ = fs.stz.Enable(context.WithoutCancel(ctx))
-		fs.cmd = nil
-		close(fs.exited)
-		fs.mu.Unlock()
-		return err
-	}
-
-	log.Info(fmt.Sprintf("%s %s", fs.binaryPath, strings.Join(args, " ")))
-	cmd := exec.Command(fs.binaryPath, args...)
-	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	fs.cmd = cmd
+	fs.stopRequested = false
+	fs.startTime = time.Now()
 	fs.mu.Unlock()
 
-	if err := cmd.Start(); err != nil {
-		_ = fs.stz.Enable(context.WithoutCancel(ctx))
-		fs.mu.Lock()
-		fs.ffmpegErr = err
-		fs.cmd = nil
-		close(fs.exited)
-		fs.mu.Unlock()
-		return fmt.Errorf("failed to start ffmpeg process: %w", err)
-	}
-
-	go fs.waitForCommand(ctx)
+	go fs.runLoop(ctx, log)
 
 	if err := waitForChan(ctx, 250*time.Millisecond, fs.exited); err == nil {
 		fs.mu.Lock()
 		defer fs.mu.Unlock()
-		return fmt.Errorf("failed to start ffmpeg process: %w", fs.ffmpegErr)
+		if fs.ffmpegErr != nil {
+			return fmt.Errorf("failed to start ffmpeg process: %w", fs.ffmpegErr)
+		}
+		return fmt.Errorf("failed to start ffmpeg process")
 	}
 
 	return nil
 }
 
 func (fs *FFmpegStreamer) Stop(ctx context.Context) error {
+	fs.mu.Lock()
+	fs.stopRequested = true
+	fs.mu.Unlock()
+
 	defer fs.stz.Enable(context.WithoutCancel(ctx))
 	err := fs.shutdownInPhases(ctx, []shutdownPhase{
 		{"wake_and_interrupt", []syscall.Signal{syscall.SIGINT}, time.Minute, "graceful stop"},
@@ -280,6 +264,10 @@ func (fs *FFmpegStreamer) Stop(ctx context.Context) error {
 }
 
 func (fs *FFmpegStreamer) ForceStop(ctx context.Context) error {
+	fs.mu.Lock()
+	fs.stopRequested = true
+	fs.mu.Unlock()
+
 	defer fs.stz.Enable(context.WithoutCancel(ctx))
 	return fs.shutdownInPhases(ctx, []shutdownPhase{
 		{"kill", []syscall.Signal{syscall.SIGKILL}, 100 * time.Millisecond, "immediate kill"},
@@ -353,25 +341,106 @@ func ffmpegStreamArgs(params FFmpegStreamParams, targetURL string) ([]string, er
 	return args, nil
 }
 
-func (fs *FFmpegStreamer) waitForCommand(ctx context.Context) {
+func (fs *FFmpegStreamer) runLoop(ctx context.Context, log *slog.Logger) {
 	defer fs.stz.Enable(context.WithoutCancel(ctx))
 
-	log := logger.FromContext(ctx)
+	for {
+		if err := fs.launchOnce(ctx, log); err != nil {
+			fs.mu.Lock()
+			fs.ffmpegErr = err
+			fs.exitCode = exitCodeProcessDoneMinValue
+			fs.endTime = time.Now()
+			select {
+			case <-fs.exited:
+			default:
+				close(fs.exited)
+			}
+			fs.mu.Unlock()
+			return
+		}
 
-	err := fs.cmd.Wait()
+		fs.mu.Lock()
+		exitCode := fs.exitCode
+		stopRequested := fs.stopRequested
+		mode := fs.params.Mode
+		if fs.endTime.IsZero() {
+			fs.endTime = time.Now()
+		}
+		fs.mu.Unlock()
+
+		if stopRequested || mode != StreamModeInternal {
+			fs.mu.Lock()
+			select {
+			case <-fs.exited:
+			default:
+				close(fs.exited)
+			}
+			fs.mu.Unlock()
+			return
+		}
+
+		log.Warn("ffmpeg stream process exited unexpectedly; restarting", "exitCode", exitCode)
+		time.Sleep(500 * time.Millisecond)
+	}
+}
+
+func (fs *FFmpegStreamer) launchOnce(ctx context.Context, log *slog.Logger) error {
+	fs.mu.Lock()
+	args, err := ffmpegStreamArgs(fs.params, fs.targetURL)
+	if err != nil {
+		_ = fs.stz.Enable(context.WithoutCancel(ctx))
+		fs.cmd = nil
+		select {
+		case <-fs.exited:
+		default:
+			close(fs.exited)
+		}
+		fs.mu.Unlock()
+		return err
+	}
+
+	log.Info(fmt.Sprintf("%s %s", fs.binaryPath, strings.Join(args, " ")))
+	cmd := exec.Command(fs.binaryPath, args...)
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	fs.exitCode = exitCodeInitValue
+	fs.cmd = cmd
+	fs.mu.Unlock()
+
+	if err := cmd.Start(); err != nil {
+		_ = fs.stz.Enable(context.WithoutCancel(ctx))
+		fs.mu.Lock()
+		fs.ffmpegErr = err
+		fs.cmd = nil
+		select {
+		case <-fs.exited:
+		default:
+			close(fs.exited)
+		}
+		fs.mu.Unlock()
+		return fmt.Errorf("failed to start ffmpeg process: %w", err)
+	}
+
+	err = cmd.Wait()
 
 	fs.mu.Lock()
-	defer fs.mu.Unlock()
 	fs.ffmpegErr = err
-	fs.exitCode = fs.cmd.ProcessState.ExitCode()
-	fs.endTime = time.Now()
-	close(fs.exited)
+	if cmd.ProcessState != nil {
+		fs.exitCode = cmd.ProcessState.ExitCode()
+	} else {
+		fs.exitCode = exitCodeProcessDoneMinValue
+	}
+	fs.cmd = nil
+	fs.mu.Unlock()
 
 	if err != nil {
 		log.Info("ffmpeg stream process completed with error", "err", err, "exitCode", fs.exitCode)
 	} else {
 		log.Info("ffmpeg stream process completed successfully", "exitCode", fs.exitCode)
 	}
+
+	return nil
 }
 
 type shutdownPhase struct {
