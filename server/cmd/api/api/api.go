@@ -14,14 +14,20 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/stream"
 )
 
 type ApiService struct {
 	// defaultRecorderID is used whenever the caller doesn't specify an explicit ID.
 	defaultRecorderID string
+	defaultStreamID   string
 
 	recordManager recorder.RecordManager
 	factory       recorder.FFmpegRecorderFactory
+	streamManager stream.Manager
+	streamFactory stream.FFmpegStreamerFactory
+	rtmpServer    stream.InternalServer
+	streamDefaults stream.Params
 	// Filesystem watch management
 	watchMu sync.RWMutex
 	watches map[string]*fsWatch
@@ -46,7 +52,7 @@ type ApiService struct {
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
 
-func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient) (*ApiService, error) {
+func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient, streamManager stream.Manager, streamFactory stream.FFmpegStreamerFactory, rtmpServer stream.InternalServer, streamDefaults stream.Params) (*ApiService, error) {
 	switch {
 	case recordManager == nil:
 		return nil, fmt.Errorf("recordManager cannot be nil")
@@ -56,12 +62,26 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		return nil, fmt.Errorf("upstreamMgr cannot be nil")
 	case nekoAuthClient == nil:
 		return nil, fmt.Errorf("nekoAuthClient cannot be nil")
+	case streamManager == nil:
+		return nil, fmt.Errorf("streamManager cannot be nil")
+	case streamFactory == nil:
+		return nil, fmt.Errorf("streamFactory cannot be nil")
+	case rtmpServer == nil:
+		return nil, fmt.Errorf("rtmpServer cannot be nil")
+	}
+	if streamDefaults.FrameRate == nil || streamDefaults.DisplayNum == nil {
+		return nil, fmt.Errorf("streamDefaults must include frame rate and display number")
 	}
 
 	return &ApiService{
 		recordManager:     recordManager,
 		factory:           factory,
 		defaultRecorderID: "default",
+		streamManager:     streamManager,
+		streamFactory:     streamFactory,
+		rtmpServer:        rtmpServer,
+		streamDefaults:    streamDefaults,
+		defaultStreamID:   "default",
 		watches:           make(map[string]*fsWatch),
 		procs:             make(map[string]*processHandle),
 		upstreamMgr:       upstreamMgr,
