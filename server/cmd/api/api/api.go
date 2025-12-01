@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -23,11 +22,11 @@ type ApiService struct {
 	defaultRecorderID string
 	defaultStreamID   string
 
-	recordManager recorder.RecordManager
-	factory       recorder.FFmpegRecorderFactory
-	streamManager stream.Manager
-	streamFactory stream.FFmpegStreamerFactory
-	rtmpServer    stream.InternalServer
+	recordManager  recorder.RecordManager
+	factory        recorder.FFmpegRecorderFactory
+	streamManager  stream.Manager
+	streamFactory  stream.FFmpegStreamerFactory
+	rtmpServer     stream.InternalServer
 	streamDefaults stream.Params
 	// Filesystem watch management
 	watchMu sync.RWMutex
@@ -302,7 +301,7 @@ func (s *ApiService) StartStream(ctx context.Context, req oapi.StartStreamReques
 		}
 		s.rtmpServer.EnsureStream(streamPath)
 		ingestURL = s.rtmpServer.IngestURL(streamPath)
-		playbackURL, securePlaybackURL = s.rtmpServer.PlaybackURLs(requestHost(req.HTTPRequest), streamPath)
+		playbackURL, securePlaybackURL = s.rtmpServer.PlaybackURLs("", streamPath)
 	case stream.ModeRemote:
 		if req.Body.TargetUrl == nil || *req.Body.TargetUrl == "" {
 			return oapi.StartStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "target_url is required for remote streaming"}}, nil
@@ -371,23 +370,13 @@ func (s *ApiService) ListStreams(ctx context.Context, _ oapi.ListStreamsRequestO
 func streamMetadataToOAPI(meta stream.Metadata, isStreaming bool) oapi.StreamInfo {
 	return oapi.StreamInfo{
 		Id:                meta.ID,
-		Mode:              string(meta.Mode),
+		Mode:              oapi.StreamInfoMode(meta.Mode),
 		IngestUrl:         meta.IngestURL,
 		PlaybackUrl:       meta.PlaybackURL,
 		SecurePlaybackUrl: meta.SecurePlaybackURL,
 		StartedAt:         meta.StartedAt,
 		IsStreaming:       isStreaming,
 	}
-}
-
-func requestHost(r *http.Request) string {
-	if r == nil {
-		return "127.0.0.1"
-	}
-	if r.Host == "" {
-		return "127.0.0.1"
-	}
-	return r.Host
 }
 
 // ListRecorders returns a list of all registered recorders and whether each one is currently recording.

@@ -198,7 +198,7 @@ func TestApiService_StreamLifecycle(t *testing.T) {
 	require.NoError(t, err)
 	created, ok := resp.(oapi.StartStream201JSONResponse)
 	require.True(t, ok, "expected start stream response")
-	assert.Equal(t, "internal", created.Mode)
+	assert.Equal(t, oapi.StreamInfoModeInternal, created.Mode)
 	assert.True(t, created.IsStreaming)
 
 	streamer, exists := svc.streamManager.GetStream("default")
@@ -210,7 +210,7 @@ func TestApiService_StreamLifecycle(t *testing.T) {
 	listTyped, ok := listResp.(oapi.ListStreams200JSONResponse)
 	require.True(t, ok)
 	require.Len(t, listTyped, 1)
-	assert.Equal(t, "internal", listTyped[0].Mode)
+	assert.Equal(t, oapi.StreamInfoModeInternal, listTyped[0].Mode)
 
 	stopResp, err := svc.StopStream(ctx, oapi.StopStreamRequestObject{})
 	require.NoError(t, err)
@@ -378,7 +378,7 @@ func (m *mockStreamer) Metadata() stream.Metadata {
 type mockRTMPServer struct{}
 
 func (mockRTMPServer) Start(ctx context.Context) error { return nil }
-func (mockRTMPServer) EnsureStream(path string)       {}
+func (mockRTMPServer) EnsureStream(path string)        {}
 func (mockRTMPServer) IngestURL(path string) string {
 	return "rtmp://internal/" + path
 }

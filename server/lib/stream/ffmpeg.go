@@ -31,12 +31,12 @@ type FFmpegStreamer struct {
 	binaryPath string
 	params     Params
 
-	cmd        *exec.Cmd
-	exited     chan struct{}
-	ffmpegErr  error
-	exitCode   int
-	startedAt  time.Time
-	stz        *scaletozero.Oncer
+	cmd       *exec.Cmd
+	exited    chan struct{}
+	ffmpegErr error
+	exitCode  int
+	startedAt time.Time
+	stz       *scaletozero.Oncer
 }
 
 // NewFFmpegStreamerFactory builds an FFmpeg-backed streamer factory.
