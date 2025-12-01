@@ -56,6 +56,7 @@ func TestApiService_StartRecording(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
 		svc := newApiServiceForTest(t, mgr)
 
+		var err error
 		for i := 0; i < 5; i++ {
 			customID := fmt.Sprintf("rec-%d", i)
 			resp, err := svc.StartRecording(ctx, oapi.StartRecordingRequestObject{Body: &oapi.StartRecordingJSONRequestBody{Id: &customID}})
@@ -191,7 +192,7 @@ func TestApiService_StreamLifecycle(t *testing.T) {
 	mgr := recorder.NewFFmpegManager()
 	svc := newApiServiceForTest(t, mgr)
 
-	mode := "internal"
+	mode := oapi.StartStreamRequestModeInternal
 	resp, err := svc.StartStream(ctx, oapi.StartStreamRequestObject{
 		Body: &oapi.StartStreamJSONRequestBody{Mode: &mode},
 	})
@@ -222,7 +223,7 @@ func TestApiService_StartStream_RemoteValidation(t *testing.T) {
 	mgr := recorder.NewFFmpegManager()
 	svc := newApiServiceForTest(t, mgr)
 
-	mode := "remote"
+	mode := oapi.StartStreamRequestModeRemote
 	resp, err := svc.StartStream(ctx, oapi.StartStreamRequestObject{
 		Body: &oapi.StartStreamJSONRequestBody{Mode: &mode},
 	})
