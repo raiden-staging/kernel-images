@@ -379,6 +379,11 @@ func (fs *FFmpegStreamer) runLoop(ctx context.Context, log *slog.Logger) {
 			return
 		}
 
+		fs.mu.Lock()
+		fs.startTime = time.Now()
+		fs.endTime = time.Time{}
+		fs.mu.Unlock()
+
 		log.Warn("ffmpeg stream process exited unexpectedly; restarting", "exitCode", exitCode)
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -530,9 +535,7 @@ func (fm *FFmpegStreamManager) ListActiveStreams(ctx context.Context) []Streamer
 
 	streams := make([]Streamer, 0, len(fm.streams))
 	for _, s := range fm.streams {
-		if s.IsStreaming(ctx) {
-			streams = append(streams, s)
-		}
+		streams = append(streams, s)
 	}
 	return streams
 }
