@@ -23,6 +23,62 @@ paths:
           $ref: "#/components/responses/ConflictError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /stream/start:
+    post:
+      summary: Start a live stream using the active display
+      operationId: startStream
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartStreamRequest"
+      responses:
+        "201":
+          description: Stream started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StartStreamResult"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "409":
+          description: A stream is already in progress for this id
+          $ref: "#/components/responses/ConflictError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /stream/stop:
+    post:
+      summary: Stop an active live stream
+      operationId: stopStream
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StopStreamRequest"
+      responses:
+        "200":
+          description: Stream stopped
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /stream/list:
+    get:
+      summary: List active streams
+      operationId: listStreams
+      responses:
+        "200":
+          description: List of streams
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/StreamInfo"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /process/exec:
     post:
       summary: Execute a command synchronously
@@ -1034,6 +1090,115 @@ components:
           type: [string, "null"]
           format: date-time
           description: Timestamp when recording finished
+    StartStreamRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Optional identifier for the stream session. Alphanumeric or hyphen.
+          pattern: "^[a-zA-Z0-9-]+$"
+        mode:
+          type: string
+          description: Where to send the stream. Internal hosts a local RTMP(S) endpoint; remote pushes to the provided targetUrl.
+          enum: [internal, remote]
+          default: internal
+        protocol:
+          type: string
+          description: Streaming protocol to use.
+          enum: [rtmp, rtmps]
+          default: rtmp
+        targetUrl:
+          type: string
+          description: Full RTMP(S) URL to push to when mode is remote. Ignored for internal mode.
+        listenHost:
+          type: string
+          description: Host/interface to bind the internal RTMP(S) server to.
+          default: 0.0.0.0
+        listenPort:
+          type: integer
+          description: Port to bind the internal RTMP(S) server to.
+          minimum: 1
+          maximum: 65535
+          default: 1935
+        app:
+          type: string
+          description: RTMP application/path segment used for the internal stream (e.g. /live/<id>).
+          default: live
+        framerate:
+          type: integer
+          description: Stream framerate in fps (overrides server default)
+          minimum: 1
+          maximum: 20
+        displayNum:
+          type: integer
+          description: Display/screen number to capture
+          minimum: 0
+        tlsCertPath:
+          type: string
+          description: Path to TLS certificate for internal RTMPS servers.
+        tlsKeyPath:
+          type: string
+          description: Path to TLS private key for internal RTMPS servers.
+      additionalProperties: false
+    StartStreamResult:
+      type: object
+      required: [id, url, mode, protocol]
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          description: RTMP(S) URL the encoder is serving or pushing to.
+        relativeUrl:
+          type: string
+          description: Path-only URL segment for internal streams, useful when callers need a host-relative URL.
+        mode:
+          type: string
+          enum: [internal, remote]
+        protocol:
+          type: string
+          enum: [rtmp, rtmps]
+        started_at:
+          type: [string, "null"]
+          format: date-time
+    StopStreamRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          description: Identifier of the stream to stop. Alphanumeric or hyphen.
+          pattern: "^[a-zA-Z0-9-]+$"
+        forceStop:
+          type: boolean
+          description: Immediately stop without graceful shutdown.
+          default: false
+      additionalProperties: false
+    StreamInfo:
+      type: object
+      required: [id, url, mode, protocol, isStreaming]
+      properties:
+        id:
+          type: string
+        url:
+          type: string
+          description: RTMP(S) URL the encoder is serving or pushing to.
+        relativeUrl:
+          type: string
+          description: Path-only URL segment for internal streams.
+        mode:
+          type: string
+          enum: [internal, remote]
+        protocol:
+          type: string
+          enum: [rtmp, rtmps]
+        isStreaming:
+          type: boolean
+        started_at:
+          type: [string, "null"]
+          format: date-time
+        finished_at:
+          type: [string, "null"]
+          format: date-time
     ClickMouseRequest:
       type: object
       required:

@@ -16,6 +16,7 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/streamer"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -25,8 +26,7 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 
 		resp, err := svc.StartRecording(ctx, oapi.StartRecordingRequestObject{})
 		require.NoError(t, err)
@@ -39,11 +39,10 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("already recording", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 
 		// First start should succeed
-		_, err = svc.StartRecording(ctx, oapi.StartRecordingRequestObject{})
+		_, err := svc.StartRecording(ctx, oapi.StartRecordingRequestObject{})
 		require.NoError(t, err)
 
 		// Second start should return conflict
@@ -54,8 +53,7 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("custom ids don't collide", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 
 		for i := 0; i < 5; i++ {
 			customID := fmt.Sprintf("rec-%d", i)
@@ -74,7 +72,7 @@ func TestApiService_StartRecording(t *testing.T) {
 			assert.NotEqual(t, "default", rec.ID())
 		}
 
-		err = mgr.StopAll(ctx)
+		err := mgr.StopAll(ctx)
 		require.NoError(t, err)
 
 		out = mgr.ListActiveRecorders(ctx)
@@ -87,8 +85,7 @@ func TestApiService_StopRecording(t *testing.T) {
 
 	t.Run("no active recording", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 
 		resp, err := svc.StopRecording(ctx, oapi.StopRecordingRequestObject{})
 		require.NoError(t, err)
@@ -100,8 +97,7 @@ func TestApiService_StopRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", isRecordingFlag: true}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 		resp, err := svc.StopRecording(ctx, oapi.StopRecordingRequestObject{})
 		require.NoError(t, err)
 		require.IsType(t, oapi.StopRecording200Response{}, resp)
@@ -115,8 +111,7 @@ func TestApiService_StopRecording(t *testing.T) {
 
 		force := true
 		req := oapi.StopRecordingRequestObject{Body: &oapi.StopRecordingJSONRequestBody{ForceStop: &force}}
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 		resp, err := svc.StopRecording(ctx, req)
 		require.NoError(t, err)
 		require.IsType(t, oapi.StopRecording200Response{}, resp)
@@ -129,8 +124,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
 		require.NoError(t, err)
 		require.IsType(t, oapi.DownloadRecording404JSONResponse{}, resp)
@@ -149,8 +143,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", isRecordingFlag: true, recordingData: randomBytes(minRecordingSizeInBytes - 1)}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 		// will return a 202 when the recording is too small
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
 		require.NoError(t, err)
@@ -179,8 +172,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", recordingData: data}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestService(t, mgr)
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
 		require.NoError(t, err)
 		r, ok := resp.(oapi.DownloadRecording200Videomp4Response)
@@ -199,11 +191,84 @@ func TestApiService_Shutdown(t *testing.T) {
 	rec := &mockRecorder{id: "default", isRecordingFlag: true}
 	require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-	require.NoError(t, err)
+	svc, streamMgr := newTestService(t, mgr)
+	_ = streamMgr.RegisterStream(ctx, &mockStreamer{id: "default-stream", isStreaming: true})
 
 	require.NoError(t, svc.Shutdown(ctx))
 	require.True(t, rec.stopCalled, "Shutdown should have stopped active recorder")
+}
+
+func TestApiService_StreamEndpoints(t *testing.T) {
+	t.Run("start stream", func(t *testing.T) {
+		ctx := context.Background()
+		mgr := recorder.NewFFmpegManager()
+		svc, streamMgr := newTestService(t, mgr)
+
+		resp, err := svc.StartStream(ctx, oapi.StartStreamRequestObject{})
+		require.NoError(t, err)
+		require.IsType(t, oapi.StartStream201JSONResponse{}, resp)
+
+		str, exists := streamMgr.GetStream("default-stream")
+		require.True(t, exists)
+		require.True(t, str.IsStreaming(ctx))
+	})
+
+	t.Run("start conflict", func(t *testing.T) {
+		ctx := context.Background()
+		mgr := recorder.NewFFmpegManager()
+		svc, streamMgr := newTestService(t, mgr)
+
+		conflictStream := &mockStreamer{id: "dup", isStreaming: true}
+		require.NoError(t, streamMgr.RegisterStream(ctx, conflictStream))
+
+		bodyID := "dup"
+		resp, err := svc.StartStream(ctx, oapi.StartStreamRequestObject{Body: &oapi.StartStreamJSONRequestBody{Id: &bodyID}})
+		require.NoError(t, err)
+		require.IsType(t, oapi.StartStream409JSONResponse{}, resp)
+	})
+
+	t.Run("stop stream", func(t *testing.T) {
+		ctx := context.Background()
+		mgr := recorder.NewFFmpegManager()
+		svc, streamMgr := newTestService(t, mgr)
+
+		str := &mockStreamer{id: "stop-me", isStreaming: true}
+		require.NoError(t, streamMgr.RegisterStream(ctx, str))
+
+		id := str.id
+		req := oapi.StopStreamRequestObject{Body: &oapi.StopStreamJSONRequestBody{Id: &id}}
+		resp, err := svc.StopStream(ctx, req)
+		require.NoError(t, err)
+		require.IsType(t, oapi.StopStream200Response{}, resp)
+		require.True(t, str.stopCalled)
+
+		_, exists := streamMgr.GetStream("stop-me")
+		require.False(t, exists)
+	})
+
+	t.Run("list streams", func(t *testing.T) {
+		ctx := context.Background()
+		mgr := recorder.NewFFmpegManager()
+		svc, streamMgr := newTestService(t, mgr)
+
+		active := &mockStreamer{
+			id:          "listed",
+			isStreaming: true,
+			meta: streamer.StreamMetadata{
+				URL:         "rtmp://example.com/live/listed",
+				RelativeURL: "/live/listed",
+				Mode:        streamer.StreamModeInternal,
+				Protocol:    streamer.StreamProtocolRTMP,
+			},
+		}
+		require.NoError(t, streamMgr.RegisterStream(ctx, active))
+
+		resp, err := svc.ListStreams(ctx, oapi.ListStreamsRequestObject{})
+		require.NoError(t, err)
+		out, ok := resp.(oapi.ListStreams200JSONResponse)
+		require.True(t, ok)
+		require.GreaterOrEqual(t, len(out), 1)
+	})
 }
 
 // mockRecorder is a lightweight stand-in for recorder.Recorder used in unit tests. It purposefully
@@ -283,11 +348,76 @@ func (m *mockRecorder) Delete(ctx context.Context) error {
 
 func (m *mockRecorder) IsDeleted(ctx context.Context) bool { return m.deleted }
 
-func newMockFactory() recorder.FFmpegRecorderFactory {
+func newMockRecorderFactory() recorder.FFmpegRecorderFactory {
 	return func(id string, _ recorder.FFmpegRecordingParams) (recorder.Recorder, error) {
 		rec := &mockRecorder{id: id}
 		return rec, nil
 	}
+}
+
+type mockStreamer struct {
+	id              string
+	isStreaming     bool
+	startCalled     bool
+	stopCalled      bool
+	forceStopCalled bool
+	meta            streamer.StreamMetadata
+	startErr        error
+	stopErr         error
+	forceErr        error
+}
+
+func (m *mockStreamer) ID() string { return m.id }
+
+func (m *mockStreamer) Start(ctx context.Context) error {
+	m.startCalled = true
+	if m.startErr != nil {
+		return m.startErr
+	}
+	m.isStreaming = true
+	return nil
+}
+
+func (m *mockStreamer) Stop(ctx context.Context) error {
+	m.stopCalled = true
+	if m.stopErr != nil {
+		return m.stopErr
+	}
+	m.isStreaming = false
+	return nil
+}
+
+func (m *mockStreamer) ForceStop(ctx context.Context) error {
+	m.forceStopCalled = true
+	if m.forceErr != nil {
+		return m.forceErr
+	}
+	m.isStreaming = false
+	return nil
+}
+
+func (m *mockStreamer) IsStreaming(ctx context.Context) bool { return m.isStreaming }
+
+func (m *mockStreamer) Metadata() *streamer.StreamMetadata {
+	return &m.meta
+}
+
+func newMockStreamFactory() streamer.FFmpegStreamerFactory {
+	return func(id string, _ streamer.FFmpegStreamOverrides) (streamer.Streamer, error) {
+		return &mockStreamer{
+			id:          id,
+			meta:        streamer.StreamMetadata{URL: fmt.Sprintf("rtmp://example.com/live/%s", id), RelativeURL: "/live/" + id, Mode: streamer.StreamModeInternal, Protocol: streamer.StreamProtocolRTMP},
+			isStreaming: false,
+		}, nil
+	}
+}
+
+func newTestService(t *testing.T, mgr recorder.RecordManager) (*ApiService, *streamer.FFmpegStreamManager) {
+	t.Helper()
+	streamMgr := streamer.NewFFmpegStreamManager()
+	svc, err := New(mgr, newMockRecorderFactory(), streamMgr, newMockStreamFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+	require.NoError(t, err)
+	return svc, streamMgr
 }
 
 func newTestUpstreamManager() *devtoolsproxy.UpstreamManager {
@@ -306,8 +436,7 @@ func newMockNekoClient(t *testing.T) *nekoclient.AuthClient {
 func TestApiService_PatchChromiumFlags(t *testing.T) {
 	ctx := context.Background()
 	mgr := recorder.NewFFmpegManager()
-	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-	require.NoError(t, err)
+	svc, _ := newTestService(t, mgr)
 
 	// Test with valid flags
 	flags := []string{"--kiosk", "--start-maximized"}

@@ -14,14 +14,18 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/streamer"
 )
 
 type ApiService struct {
 	// defaultRecorderID is used whenever the caller doesn't specify an explicit ID.
 	defaultRecorderID string
+	defaultStreamID   string
 
 	recordManager recorder.RecordManager
 	factory       recorder.FFmpegRecorderFactory
+	streamManager streamer.StreamManager
+	streamFactory streamer.FFmpegStreamerFactory
 	// Filesystem watch management
 	watchMu sync.RWMutex
 	watches map[string]*fsWatch
@@ -46,12 +50,16 @@ type ApiService struct {
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
 
-func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient) (*ApiService, error) {
+func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, streamManager streamer.StreamManager, streamFactory streamer.FFmpegStreamerFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient) (*ApiService, error) {
 	switch {
 	case recordManager == nil:
 		return nil, fmt.Errorf("recordManager cannot be nil")
 	case factory == nil:
 		return nil, fmt.Errorf("factory cannot be nil")
+	case streamManager == nil:
+		return nil, fmt.Errorf("streamManager cannot be nil")
+	case streamFactory == nil:
+		return nil, fmt.Errorf("streamFactory cannot be nil")
 	case upstreamMgr == nil:
 		return nil, fmt.Errorf("upstreamMgr cannot be nil")
 	case nekoAuthClient == nil:
@@ -62,12 +70,29 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		recordManager:     recordManager,
 		factory:           factory,
 		defaultRecorderID: "default",
+		defaultStreamID:   "default-stream",
+		streamManager:     streamManager,
+		streamFactory:     streamFactory,
 		watches:           make(map[string]*fsWatch),
 		procs:             make(map[string]*processHandle),
 		upstreamMgr:       upstreamMgr,
 		stz:               stz,
 		nekoAuthClient:    nekoAuthClient,
 	}, nil
+}
+
+func timeOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+	return &t
+}
+
+func nilIfEmpty(value string) *string {
+	if value == "" {
+		return nil
+	}
+	return ptrOf(value)
 }
 
 func (s *ApiService) StartRecording(ctx context.Context, req oapi.StartRecordingRequestObject) (oapi.StartRecordingResponseObject, error) {
@@ -240,13 +265,6 @@ func (s *ApiService) DeleteRecording(ctx context.Context, req oapi.DeleteRecordi
 func (s *ApiService) ListRecorders(ctx context.Context, _ oapi.ListRecordersRequestObject) (oapi.ListRecordersResponseObject, error) {
 	infos := []oapi.RecorderInfo{}
 
-	timeOrNil := func(t time.Time) *time.Time {
-		if t.IsZero() {
-			return nil
-		}
-		return &t
-	}
-
 	recs := s.recordManager.ListActiveRecorders(ctx)
 	for _, r := range recs {
 		m := r.Metadata()
@@ -260,6 +278,142 @@ func (s *ApiService) ListRecorders(ctx context.Context, _ oapi.ListRecordersRequ
 	return oapi.ListRecorders200JSONResponse(infos), nil
 }
 
+func (s *ApiService) StartStream(ctx context.Context, req oapi.StartStreamRequestObject) (oapi.StartStreamResponseObject, error) {
+	log := logger.FromContext(ctx)
+
+	streamID := s.defaultStreamID
+	var overrides streamer.FFmpegStreamOverrides
+	if req.Body != nil {
+		if req.Body.Id != nil && *req.Body.Id != "" {
+			streamID = *req.Body.Id
+		}
+		overrides.FrameRate = req.Body.Framerate
+		overrides.DisplayNum = req.Body.DisplayNum
+		if req.Body.Mode != nil {
+			mode := streamer.StreamMode(*req.Body.Mode)
+			overrides.Mode = &mode
+		}
+		if req.Body.Protocol != nil {
+			proto := streamer.StreamProtocol(*req.Body.Protocol)
+			overrides.Protocol = &proto
+		}
+		overrides.ListenHost = req.Body.ListenHost
+		overrides.ListenPort = req.Body.ListenPort
+		overrides.App = req.Body.App
+		overrides.TargetURL = req.Body.TargetUrl
+		overrides.TLSCert = req.Body.TlsCertPath
+		overrides.TLSKey = req.Body.TlsKeyPath
+	}
+
+	str, err := s.streamFactory(streamID, overrides)
+	if err != nil {
+		log.Error("failed to create stream", "err", err, "stream_id", streamID)
+		return oapi.StartStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "invalid stream parameters"}}, nil
+	}
+
+	if err := s.streamManager.RegisterStream(ctx, str); err != nil {
+		if existing, exists := s.streamManager.GetStream(streamID); exists {
+			if existing.IsStreaming(ctx) {
+				log.Error("attempted to start stream while one is already active", "stream_id", streamID)
+				return oapi.StartStream409JSONResponse{ConflictErrorJSONResponse: oapi.ConflictErrorJSONResponse{Message: "stream already in progress"}}, nil
+			}
+			_ = s.streamManager.DeregisterStream(ctx, existing)
+			if err := s.streamManager.RegisterStream(ctx, str); err != nil {
+				log.Error("failed to register stream after cleanup", "err", err, "stream_id", streamID)
+				return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to register stream"}}, nil
+			}
+		} else {
+			log.Error("failed to register stream", "err", err, "stream_id", streamID)
+			return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to register stream"}}, nil
+		}
+	}
+
+	if err := str.Start(ctx); err != nil {
+		log.Error("failed to start stream", "err", err, "stream_id", streamID)
+		defer s.streamManager.DeregisterStream(ctx, str)
+		return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to start stream"}}, nil
+	}
+
+	meta := str.Metadata()
+	var relativeURL *string
+	if meta.RelativeURL != "" {
+		relativeURL = ptrOf(meta.RelativeURL)
+	}
+	return oapi.StartStream201JSONResponse(oapi.StartStreamResult{
+		Id:          streamID,
+		Url:         meta.URL,
+		RelativeUrl: relativeURL,
+		Mode:        oapi.StartStreamResultMode(meta.Mode),
+		Protocol:    oapi.StartStreamResultProtocol(meta.Protocol),
+		StartedAt:   timeOrNil(meta.StartTime),
+	}), nil
+}
+
+func (s *ApiService) StopStream(ctx context.Context, req oapi.StopStreamRequestObject) (oapi.StopStreamResponseObject, error) {
+	log := logger.FromContext(ctx)
+
+	streamID := s.defaultStreamID
+	if req.Body != nil && req.Body.Id != nil && *req.Body.Id != "" {
+		streamID = *req.Body.Id
+	}
+
+	str, exists := s.streamManager.GetStream(streamID)
+	if !exists {
+		log.Error("attempted to stop stream when none is active", "stream_id", streamID)
+		return oapi.StopStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "no active stream to stop"}}, nil
+	}
+
+	forceStop := false
+	if req.Body != nil && req.Body.ForceStop != nil {
+		forceStop = *req.Body.ForceStop
+	}
+
+	var err error
+	if forceStop {
+		log.Info("force stopping stream", "stream_id", streamID)
+		err = str.ForceStop(ctx)
+	} else {
+		log.Info("gracefully stopping stream", "stream_id", streamID)
+		err = str.Stop(ctx)
+	}
+
+	if err != nil {
+		log.Error("error occurred while stopping stream", "err", err, "force", forceStop, "stream_id", streamID)
+	}
+
+	_ = s.streamManager.DeregisterStream(ctx, str)
+
+	return oapi.StopStream200Response{}, nil
+}
+
+func (s *ApiService) ListStreams(ctx context.Context, _ oapi.ListStreamsRequestObject) (oapi.ListStreamsResponseObject, error) {
+	streams := s.streamManager.ListActiveStreams(ctx)
+	infos := make([]oapi.StreamInfo, 0, len(streams))
+
+	for _, stream := range streams {
+		meta := stream.Metadata()
+		infos = append(infos, oapi.StreamInfo{
+			Id:          stream.ID(),
+			Url:         meta.URL,
+			RelativeUrl: nilIfEmpty(meta.RelativeURL),
+			Mode:        oapi.StreamInfoMode(meta.Mode),
+			Protocol:    oapi.StreamInfoProtocol(meta.Protocol),
+			IsStreaming: stream.IsStreaming(ctx),
+			StartedAt:   timeOrNil(meta.StartTime),
+			FinishedAt:  timeOrNil(meta.EndTime),
+		})
+	}
+
+	return oapi.ListStreams200JSONResponse(infos), nil
+}
+
 func (s *ApiService) Shutdown(ctx context.Context) error {
-	return s.recordManager.StopAll(ctx)
+	var errs []error
+	if err := s.streamManager.StopAll(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if err := s.recordManager.StopAll(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	return errors.Join(errs...)
 }

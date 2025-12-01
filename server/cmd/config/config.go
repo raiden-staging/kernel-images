@@ -22,6 +22,14 @@ type Config struct {
 
 	// DevTools proxy configuration
 	LogCDPMessages bool `envconfig:"LOG_CDP_MESSAGES" default:"false"`
+
+	// Streaming configuration
+	StreamHost     string `envconfig:"STREAM_HOST" default:"0.0.0.0"`
+	StreamPort     int    `envconfig:"STREAM_PORT" default:"1935"`
+	StreamApp      string `envconfig:"STREAM_APP" default:"live"`
+	StreamProtocol string `envconfig:"STREAM_PROTOCOL" default:"rtmp"`
+	StreamTLSCert  string `envconfig:"STREAM_TLS_CERT_PATH" default:""`
+	StreamTLSKey   string `envconfig:"STREAM_TLS_KEY_PATH" default:""`
 }
 
 // Load loads configuration from environment variables
@@ -52,6 +60,20 @@ func validate(config *Config) error {
 	}
 	if config.PathToFFmpeg == "" {
 		return fmt.Errorf("FFMPEG_PATH is required")
+	}
+	if config.StreamHost == "" {
+		return fmt.Errorf("STREAM_HOST is required")
+	}
+	if config.StreamPort <= 0 || config.StreamPort > 65535 {
+		return fmt.Errorf("STREAM_PORT must be between 1 and 65535")
+	}
+	if config.StreamApp == "" {
+		return fmt.Errorf("STREAM_APP is required")
+	}
+	switch config.StreamProtocol {
+	case "rtmp", "rtmps":
+	default:
+		return fmt.Errorf("STREAM_PROTOCOL must be either rtmp or rtmps")
 	}
 
 	return nil

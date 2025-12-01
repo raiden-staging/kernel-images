@@ -27,6 +27,7 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/streamer"
 )
 
 func main() {
@@ -72,6 +73,22 @@ func main() {
 		os.Exit(1)
 	}
 
+	defaultStreamParams := streamer.FFmpegStreamParams{
+		DisplayNum: &config.DisplayNum,
+		FrameRate:  &config.FrameRate,
+		Protocol:   streamer.StreamProtocol(config.StreamProtocol),
+		Mode:       streamer.StreamModeInternal,
+		ListenHost: config.StreamHost,
+		ListenPort: config.StreamPort,
+		App:        config.StreamApp,
+		TLSCert:    config.StreamTLSCert,
+		TLSKey:     config.StreamTLSKey,
+	}
+	if err := defaultStreamParams.Validate(); err != nil {
+		slogger.Error("invalid default streaming parameters", "err", err)
+		os.Exit(1)
+	}
+
 	// DevTools WebSocket upstream manager: tail Chromium supervisord log
 	const chromiumLogPath = "/var/log/supervisord/chromium"
 	upstreamMgr := devtoolsproxy.NewUpstreamManager(chromiumLogPath, slogger)
@@ -91,6 +108,8 @@ func main() {
 	apiService, err := api.New(
 		recorder.NewFFmpegManager(),
 		recorder.NewFFmpegRecorderFactory(config.PathToFFmpeg, defaultParams, stz),
+		streamer.NewFFmpegStreamManager(),
+		streamer.NewFFmpegStreamerFactory(config.PathToFFmpeg, defaultStreamParams, stz),
 		upstreamMgr,
 		stz,
 		nekoAuthClient,
