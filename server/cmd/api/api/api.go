@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"sync"
 	"time"
@@ -256,6 +257,136 @@ func (s *ApiService) DeleteRecording(ctx context.Context, req oapi.DeleteRecordi
 	return oapi.DeleteRecording200Response{}, nil
 }
 
+func (s *ApiService) StartStream(ctx context.Context, req oapi.StartStreamRequestObject) (oapi.StartStreamResponseObject, error) {
+	log := logger.FromContext(ctx)
+
+	if req.Body == nil {
+		return oapi.StartStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "request body required"}}, nil
+	}
+
+	streamID := s.defaultStreamID
+	if req.Body.Id != nil && *req.Body.Id != "" {
+		streamID = *req.Body.Id
+	}
+
+	mode := stream.ModeInternal
+	if req.Body.Mode != nil && *req.Body.Mode != "" {
+		mode = stream.Mode(*req.Body.Mode)
+	}
+	if mode != stream.ModeInternal && mode != stream.ModeRemote {
+		return oapi.StartStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "invalid stream mode"}}, nil
+	}
+
+	frameRate := s.streamDefaults.FrameRate
+	if req.Body.Framerate != nil {
+		frameRate = req.Body.Framerate
+	}
+
+	if existing, ok := s.streamManager.GetStream(streamID); ok {
+		if existing.IsStreaming(ctx) {
+			return oapi.StartStream409JSONResponse{ConflictErrorJSONResponse: oapi.ConflictErrorJSONResponse{Message: "stream already in progress"}}, nil
+		}
+		_ = s.streamManager.DeregisterStream(ctx, existing)
+	}
+
+	var ingestURL string
+	var playbackURL *string
+	var securePlaybackURL *string
+	streamPath := fmt.Sprintf("live/%s", streamID)
+
+	switch mode {
+	case stream.ModeInternal:
+		if err := s.rtmpServer.Start(ctx); err != nil {
+			log.Error("failed to start internal rtmp server", "err", err)
+			return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to start internal streaming server"}}, nil
+		}
+		s.rtmpServer.EnsureStream(streamPath)
+		ingestURL = s.rtmpServer.IngestURL(streamPath)
+		playbackURL, securePlaybackURL = s.rtmpServer.PlaybackURLs(requestHost(req.HTTPRequest), streamPath)
+	case stream.ModeRemote:
+		if req.Body.TargetUrl == nil || *req.Body.TargetUrl == "" {
+			return oapi.StartStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "target_url is required for remote streaming"}}, nil
+		}
+		ingestURL = *req.Body.TargetUrl
+		playbackURL = &ingestURL
+	}
+
+	params := stream.Params{
+		FrameRate:         frameRate,
+		DisplayNum:        s.streamDefaults.DisplayNum,
+		Mode:              mode,
+		IngestURL:         ingestURL,
+		PlaybackURL:       playbackURL,
+		SecurePlaybackURL: securePlaybackURL,
+	}
+
+	streamer, err := s.streamFactory(streamID, params)
+	if err != nil {
+		log.Error("failed to create streamer", "err", err, "stream_id", streamID)
+		return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to create streamer"}}, nil
+	}
+	if err := s.streamManager.RegisterStream(ctx, streamer); err != nil {
+		log.Error("failed to register stream", "err", err, "stream_id", streamID)
+		return oapi.StartStream409JSONResponse{ConflictErrorJSONResponse: oapi.ConflictErrorJSONResponse{Message: "stream already exists"}}, nil
+	}
+	if err := streamer.Start(ctx); err != nil {
+		log.Error("failed to start stream", "err", err, "stream_id", streamID)
+		_ = s.streamManager.DeregisterStream(ctx, streamer)
+		return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to start stream"}}, nil
+	}
+
+	return oapi.StartStream201JSONResponse(streamMetadataToOAPI(streamer.Metadata(), streamer.IsStreaming(ctx))), nil
+}
+
+func (s *ApiService) StopStream(ctx context.Context, req oapi.StopStreamRequestObject) (oapi.StopStreamResponseObject, error) {
+	log := logger.FromContext(ctx)
+
+	streamID := s.defaultStreamID
+	if req.Body != nil && req.Body.Id != nil && *req.Body.Id != "" {
+		streamID = *req.Body.Id
+	}
+
+	streamer, ok := s.streamManager.GetStream(streamID)
+	if !ok {
+		return oapi.StopStream404JSONResponse{NotFoundErrorJSONResponse: oapi.NotFoundErrorJSONResponse{Message: "stream not found"}}, nil
+	}
+
+	if err := streamer.Stop(ctx); err != nil {
+		log.Error("failed to stop stream", "err", err, "stream_id", streamID)
+	}
+	_ = s.streamManager.DeregisterStream(ctx, streamer)
+
+	return oapi.StopStream200Response{}, nil
+}
+
+func (s *ApiService) ListStreams(ctx context.Context, _ oapi.ListStreamsRequestObject) (oapi.ListStreamsResponseObject, error) {
+	streams := s.streamManager.ListStreams(ctx)
+	infos := make([]oapi.StreamInfo, 0, len(streams))
+	for _, st := range streams {
+		infos = append(infos, streamMetadataToOAPI(st.Metadata(), st.IsStreaming(ctx)))
+	}
+	return oapi.ListStreams200JSONResponse(infos), nil
+}
+
+func streamMetadataToOAPI(meta stream.Metadata, isStreaming bool) oapi.StreamInfo {
+	return oapi.StreamInfo{
+		Id:                meta.ID,
+		Mode:              string(meta.Mode),
+		IngestUrl:         meta.IngestURL,
+		PlaybackUrl:       meta.PlaybackURL,
+		SecurePlaybackUrl: meta.SecurePlaybackURL,
+		StartedAt:         meta.StartedAt,
+		IsStreaming:       isStreaming,
+	}
+}
+
+func requestHost(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	return r.Host
+}
+
 // ListRecorders returns a list of all registered recorders and whether each one is currently recording.
 func (s *ApiService) ListRecorders(ctx context.Context, _ oapi.ListRecordersRequestObject) (oapi.ListRecordersResponseObject, error) {
 	infos := []oapi.RecorderInfo{}
@@ -281,5 +412,19 @@ func (s *ApiService) ListRecorders(ctx context.Context, _ oapi.ListRecordersRequ
 }
 
 func (s *ApiService) Shutdown(ctx context.Context) error {
-	return s.recordManager.StopAll(ctx)
+	var errs []error
+	if err := s.recordManager.StopAll(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if err := s.streamManager.StopAll(ctx); err != nil {
+		errs = append(errs, err)
+	}
+	if err := s.rtmpServer.Close(ctx); err != nil {
+		errs = append(errs, err)
+	}
+
+	if len(errs) > 0 {
+		return errors.Join(errs...)
+	}
+	return nil
 }
