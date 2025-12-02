@@ -20,7 +20,7 @@ func (s *ApiService) StartVirtualMedia(ctx context.Context, request oapi.StartVi
 		return oapi.StartVirtualMedia400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "request body required"}}, nil
 	}
 
-	cfg, err := s.parseVirtualMediaConfig(request.Body)
+	cfg, err := parseVirtualMediaConfig(request.Body)
 	if err != nil {
 		return oapi.StartVirtualMedia400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: err.Error()}}, nil
 	}
