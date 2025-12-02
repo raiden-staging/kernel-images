@@ -229,7 +229,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-ap
     x11-xserver-utils \
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
-    gstreamer1.0-pulseaudio gstreamer1.0-omx; \
+    gstreamer1.0-pulseaudio gstreamer1.0-omx \
+    v4l2loopback-dkms v4l2loopback-utils; \
     #
     # install libxcvt0 (not available in debian:bullseye)
     ARCH=$(dpkg --print-architecture); \
