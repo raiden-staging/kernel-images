@@ -304,6 +304,43 @@ func newMockNekoClient(t *testing.T) *nekoclient.AuthClient {
 	return client
 }
 
+type mockVirtualMedia struct {
+	status   virtualmedia.Status
+	startErr error
+	pauseErr error
+	stopErr  error
+}
+
+func newMockVirtualMedia() *mockVirtualMedia {
+	return &mockVirtualMedia{status: virtualmedia.Status{State: virtualmedia.StateIdle}}
+}
+
+func (m *mockVirtualMedia) Start(_ context.Context, cfg virtualmedia.StartConfig) (virtualmedia.Status, error) {
+	m.status.State = virtualmedia.StateRunning
+	m.status.SourceURL = cfg.SourceURL
+	return m.status, m.startErr
+}
+
+func (m *mockVirtualMedia) SetPaused(_ context.Context, paused bool) (virtualmedia.Status, error) {
+	m.status.Paused = paused
+	if paused {
+		m.status.State = virtualmedia.StatePaused
+	} else {
+		m.status.State = virtualmedia.StateRunning
+	}
+	return m.status, m.pauseErr
+}
+
+func (m *mockVirtualMedia) Stop(context.Context) (virtualmedia.Status, error) {
+	m.status = virtualmedia.Status{State: virtualmedia.StateIdle}
+	return m.status, m.stopErr
+}
+
+func (m *mockVirtualMedia) Status() virtualmedia.Status { return m.status }
+func (m *mockVirtualMedia) Shutdown(context.Context) error {
+	return nil
+}
+
 func TestApiService_PatchChromiumFlags(t *testing.T) {
 	ctx := context.Background()
 	mgr := recorder.NewFFmpegManager()
