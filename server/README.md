@@ -72,6 +72,16 @@ export OUTPUT_DIR=/tmp/recordings
 - **YAML Spec**: `GET /spec.yaml`
 - **JSON Spec**: `GET /spec.json`
 
+## 🎥 Virtual Camera + Microphone Inputs
+
+The API can relay remote media into a virtual camera and microphone inside the container:
+
+- `PUT /virtual_media` to start/update sources (stream or file, optional loop)
+- `POST /virtual_media/pause` and `/virtual_media/resume`
+- `DELETE /virtual_media` to stop, `GET /virtual_media` for status
+
+Video is published to a v4l2loopback device (default `/dev/video20`) and audio is sent to the `audio_input` PulseAudio sink (virtual mic). Ensure the host kernel has the `v4l2loopback` module available.
+
 ## 🔧 Development
 
 ### Code Generation

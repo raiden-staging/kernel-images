@@ -26,7 +26,7 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 
 		resp, err := svc.StartRecording(ctx, oapi.StartRecordingRequestObject{})
@@ -40,7 +40,7 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("already recording", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 
 		// First start should succeed
@@ -55,7 +55,7 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("custom ids don't collide", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 
 		for i := 0; i < 5; i++ {
@@ -88,7 +88,7 @@ func TestApiService_StopRecording(t *testing.T) {
 
 	t.Run("no active recording", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 
 		resp, err := svc.StopRecording(ctx, oapi.StopRecordingRequestObject{})
@@ -101,7 +101,7 @@ func TestApiService_StopRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", isRecordingFlag: true}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 		resp, err := svc.StopRecording(ctx, oapi.StopRecordingRequestObject{})
 		require.NoError(t, err)
@@ -116,7 +116,7 @@ func TestApiService_StopRecording(t *testing.T) {
 
 		force := true
 		req := oapi.StopRecordingRequestObject{Body: &oapi.StopRecordingJSONRequestBody{ForceStop: &force}}
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 		resp, err := svc.StopRecording(ctx, req)
 		require.NoError(t, err)
@@ -130,7 +130,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
 		require.NoError(t, err)
@@ -150,7 +150,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", isRecordingFlag: true, recordingData: randomBytes(minRecordingSizeInBytes - 1)}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 		// will return a 202 when the recording is too small
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
@@ -180,7 +180,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", recordingData: data}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 		require.NoError(t, err)
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
 		require.NoError(t, err)
@@ -200,7 +200,7 @@ func TestApiService_Shutdown(t *testing.T) {
 	rec := &mockRecorder{id: "default", isRecordingFlag: true}
 	require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 	require.NoError(t, err)
 
 	require.NoError(t, svc.Shutdown(ctx))
@@ -284,6 +284,44 @@ func (m *mockRecorder) Delete(ctx context.Context) error {
 
 func (m *mockRecorder) IsDeleted(ctx context.Context) bool { return m.deleted }
 
+type mockVirtualMedia struct {
+	status    virtualmedia.Status
+	setErr    error
+	pauseErr  error
+	resumeErr error
+	stopErr   error
+}
+
+func newMockVirtualMedia() *mockVirtualMedia {
+	return &mockVirtualMedia{status: virtualmedia.Status{State: virtualmedia.StateStopped}}
+}
+
+func (m *mockVirtualMedia) SetSources(ctx context.Context, cfg virtualmedia.Config) (virtualmedia.Status, error) {
+	return m.status, m.setErr
+}
+
+func (m *mockVirtualMedia) Pause(ctx context.Context) (virtualmedia.Status, error) {
+	return m.status, m.pauseErr
+}
+
+func (m *mockVirtualMedia) Resume(ctx context.Context) (virtualmedia.Status, error) {
+	return m.status, m.resumeErr
+}
+
+func (m *mockVirtualMedia) Stop(ctx context.Context) (virtualmedia.Status, error) {
+	m.status.State = virtualmedia.StateStopped
+	return m.status, m.stopErr
+}
+
+func (m *mockVirtualMedia) Status(ctx context.Context) virtualmedia.Status {
+	return m.status
+}
+
+func (m *mockVirtualMedia) Shutdown(ctx context.Context) error {
+	_, err := m.Stop(ctx)
+	return err
+}
+
 func newMockFactory() recorder.FFmpegRecorderFactory {
 	return func(id string, _ recorder.FFmpegRecordingParams) (recorder.Recorder, error) {
 		rec := &mockRecorder{id: id}
@@ -304,10 +342,51 @@ func newMockNekoClient(t *testing.T) *nekoclient.AuthClient {
 	return client
 }
 
+func TestApiService_VirtualMediaHandlers(t *testing.T) {
+	ctx := context.Background()
+	mgr := recorder.NewFFmpegManager()
+	vm := newMockVirtualMedia()
+	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), vm)
+	require.NoError(t, err)
+
+	t.Run("status returns 200", func(t *testing.T) {
+		vm.status = virtualmedia.Status{
+			State: virtualmedia.StateRunning,
+			Video: virtualmedia.PipelineStatus{
+				State:  virtualmedia.StateRunning,
+				PID:    123,
+				Source: &virtualmedia.Source{URL: "http://example.com/stream", Type: virtualmedia.SourceTypeStream},
+			},
+		}
+		resp, err := svc.GetVirtualMediaStatus(ctx, oapi.GetVirtualMediaStatusRequestObject{})
+		require.NoError(t, err)
+		out, ok := resp.(oapi.GetVirtualMediaStatus200JSONResponse)
+		require.True(t, ok)
+		require.Equal(t, oapi.VirtualMediaStatusStateRunning, out.State)
+		require.NotNil(t, out.Video)
+		require.Equal(t, 123, *out.Video.Pid)
+	})
+
+	t.Run("set requires body", func(t *testing.T) {
+		resp, err := svc.SetVirtualMedia(ctx, oapi.SetVirtualMediaRequestObject{})
+		require.NoError(t, err)
+		_, ok := resp.(oapi.SetVirtualMedia400JSONResponse)
+		require.True(t, ok)
+	})
+
+	t.Run("pause bad request", func(t *testing.T) {
+		vm.pauseErr = virtualmedia.ErrNotRunning
+		resp, err := svc.PauseVirtualMedia(ctx, oapi.PauseVirtualMediaRequestObject{})
+		require.NoError(t, err)
+		_, ok := resp.(oapi.PauseVirtualMedia400JSONResponse)
+		require.True(t, ok)
+	})
+}
+
 func TestApiService_PatchChromiumFlags(t *testing.T) {
 	ctx := context.Background()
 	mgr := recorder.NewFFmpegManager()
-	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
+	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), newMockVirtualMedia())
 	require.NoError(t, err)
 
 	// Test with valid flags
