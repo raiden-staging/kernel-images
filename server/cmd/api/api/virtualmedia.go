@@ -12,7 +12,10 @@ import (
 	"github.com/onkernel/kernel-images/server/lib/virtualmedia"
 )
 
-const chromiumFlagsPath = "/chromium/flags"
+const (
+	chromiumFlagsPath        = "/chromium/flags"
+	chromiumRuntimeFlagsPath = "/chromium/runtime-flags"
+)
 
 func (s *ApiService) StartVirtualMedia(ctx context.Context, request oapi.StartVirtualMediaRequestObject) (oapi.StartVirtualMediaResponseObject, error) {
 	log := logger.FromContext(ctx)
@@ -145,10 +148,10 @@ func (s *ApiService) VirtualMediaStatus(ctx context.Context, _ oapi.VirtualMedia
 func (s *ApiService) replaceVirtualMediaFlags(ctx context.Context, newFlags []string) ([]string, error) {
 	log := logger.FromContext(ctx)
 
-	existingTokens, err := chromiumflags.ReadOptionalFlagFile(chromiumFlagsPath)
+	existingTokens, err := chromiumflags.ReadOptionalFlagFile(chromiumRuntimeFlagsPath)
 	if err != nil {
-		log.Error("failed to read existing chromium flags", "error", err)
-		return nil, fmt.Errorf("failed to read existing chromium flags: %w", err)
+		log.Error("failed to read existing chromium runtime flags", "error", err)
+		return nil, fmt.Errorf("failed to read existing chromium runtime flags: %w", err)
 	}
 
 	filtered := filterTokens(existingTokens, s.virtualMediaFlags)
@@ -159,9 +162,9 @@ func (s *ApiService) replaceVirtualMediaFlags(ctx context.Context, newFlags []st
 		return nil, fmt.Errorf("failed to create chromium dir: %w", err)
 	}
 
-	if err := chromiumflags.WriteFlagFile(chromiumFlagsPath, merged); err != nil {
-		log.Error("failed to write chromium flags", "error", err)
-		return nil, fmt.Errorf("failed to write chromium flags: %w", err)
+	if err := chromiumflags.WriteFlagFile(chromiumRuntimeFlagsPath, merged); err != nil {
+		log.Error("failed to write chromium runtime flags", "error", err)
+		return nil, fmt.Errorf("failed to write chromium runtime flags: %w", err)
 	}
 
 	if len(newFlags) == 0 {

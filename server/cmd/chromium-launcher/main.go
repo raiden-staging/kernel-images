@@ -16,6 +16,7 @@ func main() {
 	headless := flag.Bool("headless", false, "Run Chromium with headless flags")
 	chromiumPath := flag.String("chromium", "chromium", "Chromium binary path (default: chromium)")
 	runtimeFlagsPath := flag.String("runtime-flags", "/chromium/flags", "Path to runtime flags overlay file")
+	extraRuntimeFlagsPath := flag.String("runtime-flags-extra", "/chromium/runtime-flags", "Path to additional runtime flags overlay file")
 	flag.Parse()
 
 	// Inputs
@@ -29,11 +30,18 @@ func main() {
 		fmt.Fprintf(os.Stderr, "failed reading runtime flags: %v\n", err)
 		os.Exit(1)
 	}
-	final := chromiumflags.MergeFlagsWithRuntimeTokens(baseFlags, runtimeTokens)
+	extraTokens, err := chromiumflags.ReadOptionalFlagFile(*extraRuntimeFlagsPath)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "failed reading extra runtime flags: %v\n", err)
+		os.Exit(1)
+	}
+	combinedRuntime := chromiumflags.MergeFlags(runtimeTokens, extraTokens)
+	final := chromiumflags.MergeFlagsWithRuntimeTokens(baseFlags, combinedRuntime)
 
 	// Diagnostics for parity with previous scripts
 	fmt.Printf("BASE_FLAGS: %s\n", baseFlags)
 	fmt.Printf("RUNTIME_FLAGS: %s\n", strings.Join(runtimeTokens, " "))
+	fmt.Printf("EXTRA_RUNTIME_FLAGS: %s\n", strings.Join(extraTokens, " "))
 	fmt.Printf("FINAL_FLAGS: %s\n", strings.Join(final, " "))
 
 	// flags we send no matter what

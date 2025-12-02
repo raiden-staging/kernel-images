@@ -259,7 +259,7 @@ func (m *Manager) stopAllLocked(ctx context.Context) error {
 }
 
 func (m *Manager) buildArgs(source Source, outputPath string, isVideo bool) []string {
-	args := []string{"-nostdin", "-loglevel", "error"}
+	args := []string{"-nostdin", "-loglevel", "error", "-y"}
 	if source.Kind == SourceKindFile && source.Loop {
 		args = append(args, "-stream_loop", "-1")
 	}
