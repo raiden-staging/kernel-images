@@ -80,6 +80,8 @@ type process struct {
 	lastErr    error
 }
 
+const stopTimeout = 5 * time.Second
+
 // NewManager returns a Manager writing media artifacts under baseDir.
 func NewManager(baseDir, ffmpegPath string) *Manager {
 	path := ffmpegPath
@@ -97,6 +99,9 @@ func NewManager(baseDir, ffmpegPath string) *Manager {
 func (m *Manager) Configure(ctx context.Context, cfg Config) (Paths, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	ctx, cancel := ensureTimeout(ctx, stopTimeout)
+	defer cancel()
 
 	if err := m.ensureBaseDir(); err != nil {
 		return Paths{}, err
@@ -135,6 +140,8 @@ func (m *Manager) Configure(ctx context.Context, cfg Config) (Paths, error) {
 func (m *Manager) Stop(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	ctx, cancel := ensureTimeout(ctx, stopTimeout)
+	defer cancel()
 	return m.stopAllLocked(ctx)
 }
 
@@ -380,6 +387,16 @@ func stopProcess(ctx context.Context, p *process) error {
 
 	_ = os.Remove(p.outputPath)
 	return nil
+}
+
+func ensureTimeout(ctx context.Context, d time.Duration) (context.Context, context.CancelFunc) {
+	if ctx == nil {
+		return context.WithTimeout(context.Background(), d)
+	}
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(context.WithoutCancel(ctx), d)
 }
 
 func prepareFIFO(path string) error {
