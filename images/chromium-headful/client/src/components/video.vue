@@ -497,17 +497,16 @@
       if (this.hasInteracted || !this.muted) {
         return
       }
-
       this.hasInteracted = true
       this.unmute()
       this.$accessor.video.setVolume(100)
-
       // Clean up global listeners if they were set
       if (this.unmuteHandler) {
         document.documentElement.removeEventListener('mousedown', this.unmuteHandler)
         document.documentElement.removeEventListener('keydown', this.unmuteHandler)
       }
     }
+
 
     mounted() {
       this._container.addEventListener('resize', this.onResize)
@@ -577,6 +576,7 @@
       this.unmuteHandler = this._unmuteOnFirstInteraction.bind(this)
       document.documentElement.addEventListener('mousedown', this.unmuteHandler, { once: true })
       document.documentElement.addEventListener('keydown', this.unmuteHandler, { once: true })
+
     }
 
     beforeDestroy() {

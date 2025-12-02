@@ -3,7 +3,7 @@
 # Move to the script's directory so relative paths work regardless of the caller CWD
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 cd "$SCRIPT_DIR"
-source "$SCRIPT_DIR/../../shared/ensure-common-build-run-vars.sh" chromium-headful
+source "$SCRIPT_DIR/../../shared/ensure-common-build-run-vars.sh" chromium-headful require-ukc-vars
 source "$SCRIPT_DIR/../../shared/erofs-utils.sh"
 
 # Ensure the mkfs.erofs tool is available
@@ -24,6 +24,8 @@ docker create --platform linux/amd64 --name cnt-"$app_name" "$IMAGE" /bin/sh
 docker cp cnt-"$app_name":/ ./.rootfs
 rm -f initrd || true
 sudo mkfs.erofs --all-root -d2 -E noinline_data -b 4096 initrd ./.rootfs
+
+echo "Image index/name: $UKC_INDEX/$IMAGE"
 
 # Package the unikernel (and the new initrd) to KraftCloud
 kraft pkg \

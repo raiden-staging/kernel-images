@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/onkernel/kernel-images/server/lib/logger"
@@ -62,7 +63,7 @@ func (s *ApiService) MoveMouse(ctx context.Context, request oapi.MoveMouseReques
 	}
 
 	// Move the cursor to the desired coordinates
-	args = append(args, "mousemove", "--sync", strconv.Itoa(body.X), strconv.Itoa(body.Y))
+	args = append(args, "mousemove", strconv.Itoa(body.X), strconv.Itoa(body.Y))
 
 	// Release modifier keys (keyup)
 	if body.HoldKeys != nil {
@@ -156,7 +157,7 @@ func (s *ApiService) ClickMouse(ctx context.Context, request oapi.ClickMouseRequ
 	}
 
 	// Move the cursor
-	args = append(args, "mousemove", "--sync", strconv.Itoa(body.X), strconv.Itoa(body.Y))
+	args = append(args, "mousemove", strconv.Itoa(body.X), strconv.Itoa(body.Y))
 
 	// click type defaults to click
 	clickType := oapi.Click
@@ -362,6 +363,71 @@ func (s *ApiService) TypeText(ctx context.Context, request oapi.TypeTextRequestO
 	return oapi.TypeText200Response{}, nil
 }
 
+const (
+
+	// Unclutter configuration for cursor hiding
+	// Setting idle to 0 hides the cursor immediately
+	unclutterIdleSeconds = "0"
+
+	// A very large jitter value (9 million pixels) ensures that all mouse
+	// movements are treated as "noise", keeping the cursor permanently hidden
+	// when combined with idle=0
+	unclutterJitterPixels = "9000000"
+)
+
+func (s *ApiService) SetCursor(ctx context.Context, request oapi.SetCursorRequestObject) (oapi.SetCursorResponseObject, error) {
+	log := logger.FromContext(ctx)
+
+	// serialize input operations to avoid overlapping commands
+	s.inputMu.Lock()
+	defer s.inputMu.Unlock()
+
+	// Validate request body
+	if request.Body == nil {
+		return oapi.SetCursor400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{
+			Message: "request body is required"},
+		}, nil
+	}
+	body := *request.Body
+
+	// Kill any existing unclutter processes first
+	pkillCmd := exec.CommandContext(ctx, "pkill", "unclutter")
+	pkillCmd.SysProcAttr = &syscall.SysProcAttr{
+		Credential: &syscall.Credential{Uid: 0, Gid: 0},
+	}
+
+	if err := pkillCmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+			log.Error("failed to kill existing unclutter processes", "err", err)
+			return oapi.SetCursor500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
+				Message: "failed to kill existing unclutter processes"},
+			}, nil
+		}
+	}
+
+	if body.Hidden {
+		display := s.resolveDisplayFromEnv()
+		unclutterCmd := exec.CommandContext(context.Background(),
+			"unclutter",
+			"-idle", unclutterIdleSeconds,
+			"-jitter", unclutterJitterPixels,
+		)
+		unclutterCmd.Env = append(os.Environ(), fmt.Sprintf("DISPLAY=%s", display))
+		unclutterCmd.SysProcAttr = &syscall.SysProcAttr{
+			Credential: &syscall.Credential{Uid: 0, Gid: 0},
+		}
+
+		if err := unclutterCmd.Start(); err != nil {
+			log.Error("failed to start unclutter", "err", err)
+			return oapi.SetCursor500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
+				Message: "failed to start unclutter"},
+			}, nil
+		}
+	}
+
+	return oapi.SetCursor200JSONResponse{Ok: true}, nil
+}
+
 func (s *ApiService) PressKey(ctx context.Context, request oapi.PressKeyRequestObject) (oapi.PressKeyResponseObject, error) {
 	log := logger.FromContext(ctx)
 
@@ -515,7 +581,7 @@ func (s *ApiService) Scroll(ctx context.Context, request oapi.ScrollRequestObjec
 			args = append(args, "keydown", key)
 		}
 	}
-	args = append(args, "mousemove", "--sync", strconv.Itoa(body.X), strconv.Itoa(body.Y))
+	args = append(args, "mousemove", strconv.Itoa(body.X), strconv.Itoa(body.Y))
 
 	// Apply vertical ticks first (sequential as specified)
 	if body.DeltaY != nil && *body.DeltaY != 0 {
@@ -626,7 +692,7 @@ func (s *ApiService) DragMouse(ctx context.Context, request oapi.DragMouseReques
 		}
 	}
 	start := body.Path[0]
-	args1 = append(args1, "mousemove", "--sync", strconv.Itoa(start[0]), strconv.Itoa(start[1]))
+	args1 = append(args1, "mousemove", strconv.Itoa(start[0]), strconv.Itoa(start[1]))
 	args1 = append(args1, "mousedown", btn)
 	log.Info("executing xdotool (drag start)", "args", args1)
 	if output, err := defaultXdoTool.Run(ctx, args1...); err != nil {
