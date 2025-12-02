@@ -213,17 +213,15 @@ func (s *FFmpegStreamer) buildFFmpegArgs(config StreamConfig) ([]string, error) 
 		)
 
 	case MediaTypeBoth:
-		// Both video and audio
+		// Both video and audio - use map to split streams
 		// Video output to v4l2loopback
 		args = append(args,
+			"-map", "0:v:0", // Map first video stream
 			"-f", "v4l2",
 			"-pix_fmt", "yuv420p",
 			"-vcodec", "rawvideo",
 			config.VideoDevice,
-		)
-		// Audio output to PulseAudio
-		// Use the -f flag with multiple outputs
-		args = append(args,
+			"-map", "0:a:0", // Map first audio stream
 			"-f", "pulse",
 			"-ac", "2",
 			"-ar", "48000",
