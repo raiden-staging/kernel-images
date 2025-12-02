@@ -10,6 +10,7 @@ import (
 
 	"github.com/onkernel/kernel-images/server/lib/devtoolsproxy"
 	"github.com/onkernel/kernel-images/server/lib/logger"
+	"github.com/onkernel/kernel-images/server/lib/mediastreamer"
 	"github.com/onkernel/kernel-images/server/lib/nekoclient"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
@@ -42,6 +43,9 @@ type ApiService struct {
 
 	// playwrightMu serializes Playwright code execution (only one execution at a time)
 	playwrightMu sync.Mutex
+
+	// mediaStreamer manages virtual media input streaming
+	mediaStreamer mediastreamer.MediaStreamer
 }
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
@@ -67,6 +71,7 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		upstreamMgr:       upstreamMgr,
 		stz:               stz,
 		nekoAuthClient:    nekoAuthClient,
+		mediaStreamer:     mediastreamer.NewFFmpegStreamer(),
 	}, nil
 }
 
