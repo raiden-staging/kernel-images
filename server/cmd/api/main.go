@@ -27,6 +27,7 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/virtualmedia"
 )
 
 func main() {
@@ -88,12 +89,29 @@ func main() {
 		os.Exit(1)
 	}
 
+	vmOpts := virtualmedia.Options{
+		VideoDevice: os.Getenv("VIRTUAL_CAMERA_DEVICE"),
+		VideoModule: os.Getenv("VIRTUAL_CAMERA_MODULE"),
+		AudioSink:   os.Getenv("VIRTUAL_AUDIO_SINK"),
+		PulseServer: os.Getenv("PULSE_SERVER"),
+		User:        os.Getenv("VIRTUAL_MEDIA_USER"),
+	}
+	if vmOpts.User == "" {
+		vmOpts.User = "kernel"
+	}
+	virtualInputs, err := virtualmedia.NewController(vmOpts)
+	if err != nil {
+		slogger.Error("failed to create virtual media controller", "err", err)
+		os.Exit(1)
+	}
+
 	apiService, err := api.New(
 		recorder.NewFFmpegManager(),
 		recorder.NewFFmpegRecorderFactory(config.PathToFFmpeg, defaultParams, stz),
 		upstreamMgr,
 		stz,
 		nekoAuthClient,
+		virtualInputs,
 	)
 	if err != nil {
 		slogger.Error("failed to create api service", "err", err)
