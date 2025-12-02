@@ -976,6 +976,74 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /virtual_media/start:
+    post:
+      summary: Start or replace the virtual media input session
+      operationId: startVirtualMedia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartVirtualMediaRequest"
+      responses:
+        "200":
+          description: Virtual media session started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_media/pause:
+    post:
+      summary: Pause or resume the virtual media session
+      operationId: pauseVirtualMedia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PauseVirtualMediaRequest"
+      responses:
+        "200":
+          description: Updated virtual media status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_media/stop:
+    post:
+      summary: Stop the current virtual media session
+      operationId: stopVirtualMedia
+      responses:
+        "200":
+          description: Virtual media session stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_media/status:
+    get:
+      summary: Get virtual media status
+      operationId: getVirtualMediaStatus
+      responses:
+        "200":
+          description: Current virtual media status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   schemas:
     StartRecordingRequest:
@@ -1578,6 +1646,67 @@ components:
         stderr:
           type: string
           description: Standard error from the execution
+      additionalProperties: false
+    VirtualMediaState:
+      type: string
+      enum: [idle, starting, running, paused, error]
+    VirtualMediaSourceType:
+      type: string
+      enum: [stream, file]
+    StartVirtualMediaRequest:
+      type: object
+      required: [source_url, source_type]
+      properties:
+        source_url:
+          type: string
+          format: uri
+          description: Media source URL (e.g., HLS/DASH/RTMP streams or file URL)
+        source_type:
+          $ref: "#/components/schemas/VirtualMediaSourceType"
+        loop:
+          type: boolean
+          description: When true, loop file inputs indefinitely (only valid for file sources)
+          default: false
+        enable_video:
+          type: boolean
+          description: Enable routing video into the virtual camera device
+          default: true
+        enable_audio:
+          type: boolean
+          description: Enable routing audio into the virtual microphone sink
+          default: true
+      additionalProperties: false
+    PauseVirtualMediaRequest:
+      type: object
+      required: [pause]
+      properties:
+        pause:
+          type: boolean
+          description: Set to true to pause playback or false to resume
+      additionalProperties: false
+    VirtualMediaStatus:
+      type: object
+      required: [state, paused]
+      properties:
+        state:
+          $ref: "#/components/schemas/VirtualMediaState"
+        source_url:
+          type: string
+        source_type:
+          $ref: "#/components/schemas/VirtualMediaSourceType"
+        loop:
+          type: boolean
+        video_enabled:
+          type: boolean
+        audio_enabled:
+          type: boolean
+        paused:
+          type: boolean
+        started_at:
+          type: [string, "null"]
+          format: date-time
+        last_error:
+          type: string
       additionalProperties: false
   responses:
     BadRequestError:

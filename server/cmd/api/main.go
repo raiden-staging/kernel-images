@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/virtualmedia"
 )
 
 func main() {
@@ -45,7 +47,7 @@ func main() {
 	defer stop()
 
 	// ensure ffmpeg is available
-	mustFFmpeg()
+	mustFFmpeg(config.PathToFFmpeg)
 
 	stz := scaletozero.NewDebouncedController(scaletozero.NewUnikraftCloudController())
 	r := chi.NewRouter()
@@ -88,12 +90,23 @@ func main() {
 		os.Exit(1)
 	}
 
+	videoDevice := strings.TrimSpace(os.Getenv("VIRTUAL_MEDIA_VIDEO_DEVICE"))
+	if videoDevice == "" {
+		videoDevice = "/dev/video0"
+	}
+	audioSink := strings.TrimSpace(os.Getenv("VIRTUAL_MEDIA_AUDIO_SINK"))
+	if audioSink == "" {
+		audioSink = "audio_input"
+	}
+	virtualMediaManager := virtualmedia.NewManager(config.PathToFFmpeg, videoDevice, audioSink, slogger)
+
 	apiService, err := api.New(
 		recorder.NewFFmpegManager(),
 		recorder.NewFFmpegRecorderFactory(config.PathToFFmpeg, defaultParams, stz),
 		upstreamMgr,
 		stz,
 		nekoAuthClient,
+		virtualMediaManager,
 	)
 	if err != nil {
 		slogger.Error("failed to create api service", "err", err)
@@ -206,8 +219,8 @@ func main() {
 	}
 }
 
-func mustFFmpeg() {
-	cmd := exec.Command("ffmpeg", "-version")
+func mustFFmpeg(ffmpegPath string) {
+	cmd := exec.Command(ffmpegPath, "-version")
 	if err := cmd.Run(); err != nil {
 		panic(fmt.Errorf("ffmpeg not found or not executable: %w", err))
 	}
