@@ -976,6 +976,98 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /virtual_media/start:
+    post:
+      summary: Configure virtual camera and microphone inputs
+      description: |
+        Starts virtual media inputs backed by remote streams or media files and updates Chromium to
+        use them via fake capture devices. Existing virtual media pipelines are replaced.
+      operationId: startVirtualMedia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VirtualMediaStartRequest"
+      responses:
+        "200":
+          description: Virtual media configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_media/stop:
+    post:
+      summary: Stop all virtual media inputs and clear Chromium flags
+      operationId: stopVirtualMedia
+      responses:
+        "200":
+          description: Virtual media stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_media/pause:
+    post:
+      summary: Pause virtual media streams without removing them
+      operationId: pauseVirtualMedia
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VirtualMediaControlRequest"
+      responses:
+        "200":
+          description: Virtual media paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_media/resume:
+    post:
+      summary: Resume previously paused virtual media streams
+      operationId: resumeVirtualMedia
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VirtualMediaControlRequest"
+      responses:
+        "200":
+          description: Virtual media resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_media/status:
+    get:
+      summary: Get current virtual media pipeline status
+      operationId: virtualMediaStatus
+      responses:
+        "200":
+          description: Current virtual media status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualMediaStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   schemas:
     StartRecordingRequest:
@@ -1578,6 +1670,82 @@ components:
         stderr:
           type: string
           description: Standard error from the execution
+      additionalProperties: false
+    VirtualMediaStartRequest:
+      type: object
+      description: Sources to feed into the virtual camera and microphone
+      properties:
+        video:
+          $ref: "#/components/schemas/VirtualMediaSource"
+        audio:
+          $ref: "#/components/schemas/VirtualMediaSource"
+      additionalProperties: false
+    VirtualMediaControlRequest:
+      type: object
+      description: Target selection for pause/resume operations. Defaults to all active tracks.
+      properties:
+        targets:
+          type: array
+          minItems: 1
+          items:
+            type: string
+            enum: [video, audio]
+      additionalProperties: false
+    VirtualMediaSource:
+      type: object
+      description: Remote media source to ingest into a virtual device.
+      required: [url, kind]
+      properties:
+        url:
+          type: string
+          description: Media URL (HLS, RTMP(S), DASH, or direct file URL)
+        kind:
+          type: string
+          description: Input type
+          enum: [stream, file]
+        loop:
+          type: boolean
+          description: Loop file inputs. Ignored for streaming inputs.
+          default: false
+      additionalProperties: false
+    VirtualMediaTrackStatus:
+      type: object
+      required: [active, paused]
+      properties:
+        active:
+          type: boolean
+          description: Whether the pipeline is running
+        paused:
+          type: boolean
+          description: Whether the pipeline is paused (SIGSTOP)
+        pid:
+          type: integer
+          description: PID of the ffmpeg process driving this track
+        source:
+          $ref: "#/components/schemas/VirtualMediaSource"
+        output_path:
+          type: string
+          description: Path backing Chromium's fake capture device
+        started_at:
+          type: string
+          format: date-time
+          description: When the pipeline was last started
+        last_error:
+          type: string
+          description: Last observed process error, if any
+      additionalProperties: false
+    VirtualMediaStatus:
+      type: object
+      properties:
+        video:
+          $ref: "#/components/schemas/VirtualMediaTrackStatus"
+        audio:
+          $ref: "#/components/schemas/VirtualMediaTrackStatus"
+        chromium_flags:
+          type: array
+          description: Chromium flags applied for virtual media
+          items:
+            type: string
       additionalProperties: false
   responses:
     BadRequestError:
