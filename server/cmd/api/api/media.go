@@ -160,13 +160,13 @@ func (s *ApiService) GetMediaInputStatus(ctx context.Context, req oapi.GetMediaI
 	var apiState oapi.MediaInputStatusState
 	switch status.State {
 	case mediastreamer.StateStopped:
-		apiState = oapi.MediaInputStatusStateStopped
+		apiState = oapi.Stopped
 	case mediastreamer.StatePlaying:
-		apiState = oapi.MediaInputStatusStatePlaying
+		apiState = oapi.Playing
 	case mediastreamer.StatePaused:
-		apiState = oapi.MediaInputStatusStatePaused
+		apiState = oapi.Paused
 	default:
-		apiState = oapi.MediaInputStatusStateStopped
+		apiState = oapi.Stopped
 	}
 
 	response := oapi.MediaInputStatus{
