@@ -976,6 +976,40 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /virtual-media/start:
+    post:
+      summary: Start a virtual media input stream
+      operationId: startVirtualMedia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartVirtualMediaRequest"
+      responses:
+        "200":
+          description: Virtual media started
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual-media/stop:
+    post:
+      summary: Stop a virtual media input stream
+      operationId: stopVirtualMedia
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StopVirtualMediaRequest"
+      responses:
+        "200":
+          description: Virtual media stopped
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   schemas:
     StartRecordingRequest:
@@ -1578,6 +1612,35 @@ components:
         stderr:
           type: string
           description: Standard error from the execution
+      additionalProperties: false
+    StartVirtualMediaRequest:
+      type: object
+      required: [media_type, source_url]
+      properties:
+        media_type:
+          type: string
+          enum: [audio, video]
+          description: Type of media to stream
+        source_url:
+          type: string
+          description: URL or file path of the media source
+        loop:
+          type: boolean
+          default: false
+          description: Whether to loop the media
+        restart:
+          type: boolean
+          default: false
+          description: Whether to restart the stream if it's already running
+      additionalProperties: false
+    StopVirtualMediaRequest:
+      type: object
+      required: [media_type]
+      properties:
+        media_type:
+          type: string
+          enum: [audio, video]
+          description: Type of media to stop
       additionalProperties: false
   responses:
     BadRequestError:
