@@ -14,6 +14,7 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/virtualmedia"
 )
 
 type ApiService struct {
@@ -42,11 +43,16 @@ type ApiService struct {
 
 	// playwrightMu serializes Playwright code execution (only one execution at a time)
 	playwrightMu sync.Mutex
+
+	// virtual media
+	virtualMedia      *virtualmedia.Manager
+	virtualMediaMu    sync.Mutex
+	virtualMediaFlags []string
 }
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
 
-func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient) (*ApiService, error) {
+func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient, virtualMedia *virtualmedia.Manager) (*ApiService, error) {
 	switch {
 	case recordManager == nil:
 		return nil, fmt.Errorf("recordManager cannot be nil")
@@ -56,6 +62,8 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		return nil, fmt.Errorf("upstreamMgr cannot be nil")
 	case nekoAuthClient == nil:
 		return nil, fmt.Errorf("nekoAuthClient cannot be nil")
+	case virtualMedia == nil:
+		return nil, fmt.Errorf("virtualMedia cannot be nil")
 	}
 
 	return &ApiService{
@@ -67,6 +75,7 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		upstreamMgr:       upstreamMgr,
 		stz:               stz,
 		nekoAuthClient:    nekoAuthClient,
+		virtualMedia:      virtualMedia,
 	}, nil
 }
 
@@ -261,5 +270,8 @@ func (s *ApiService) ListRecorders(ctx context.Context, _ oapi.ListRecordersRequ
 }
 
 func (s *ApiService) Shutdown(ctx context.Context) error {
-	return s.recordManager.StopAll(ctx)
+	if err := s.recordManager.StopAll(ctx); err != nil {
+		return err
+	}
+	return s.virtualMedia.Stop(ctx)
 }

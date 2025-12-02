@@ -27,6 +27,7 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/virtualmedia"
 )
 
 func main() {
@@ -88,12 +89,15 @@ func main() {
 		os.Exit(1)
 	}
 
+	vmManager := virtualmedia.NewManager("/chromium/virtual-media", config.PathToFFmpeg)
+
 	apiService, err := api.New(
 		recorder.NewFFmpegManager(),
 		recorder.NewFFmpegRecorderFactory(config.PathToFFmpeg, defaultParams, stz),
 		upstreamMgr,
 		stz,
 		nekoAuthClient,
+		vmManager,
 	)
 	if err != nil {
 		slogger.Error("failed to create api service", "err", err)

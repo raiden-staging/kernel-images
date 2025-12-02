@@ -210,7 +210,6 @@ func (m *Manager) startLocked(ctx context.Context, source Source, outputPath str
 	if err != nil {
 		return nil, fmt.Errorf("open fifo reader: %w", err)
 	}
-	m.readerPipes = append(m.readerPipes, reader)
 
 	args := m.buildArgs(source, outputPath, isVideo)
 	cmd := m.commandFn(context.WithoutCancel(ctx), m.ffmpegPath, args...)
@@ -219,9 +218,11 @@ func (m *Manager) startLocked(ctx context.Context, source Source, outputPath str
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
+		_ = reader.Close()
 		_ = os.Remove(outputPath)
 		return nil, fmt.Errorf("start ffmpeg: %w", err)
 	}
+	m.readerPipes = append(m.readerPipes, reader)
 
 	proc := &process{
 		cmd:        cmd,
