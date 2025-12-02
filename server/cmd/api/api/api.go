@@ -42,6 +42,10 @@ type ApiService struct {
 
 	// playwrightMu serializes Playwright code execution (only one execution at a time)
 	playwrightMu sync.Mutex
+
+	// Virtual media management
+	mediaMu      sync.Mutex
+	mediaCancels map[string]context.CancelFunc
 }
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
@@ -67,6 +71,7 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		upstreamMgr:       upstreamMgr,
 		stz:               stz,
 		nekoAuthClient:    nekoAuthClient,
+		mediaCancels:      make(map[string]context.CancelFunc),
 	}, nil
 }
 
