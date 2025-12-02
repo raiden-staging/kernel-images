@@ -300,7 +300,8 @@ COPY --from=xorg-deps /usr/local/lib/xorg/modules/input/neko_drv.so /usr/lib/xor
 
 COPY images/chromium-headful/image-chromium/ /
 COPY images/chromium-headful/start-pulseaudio.sh /images/chromium-headful/start-pulseaudio.sh
-RUN chmod +x /images/chromium-headful/start-pulseaudio.sh
+COPY images/chromium-headful/setup-virtual-camera.sh /images/chromium-headful/setup-virtual-camera.sh
+RUN chmod +x /images/chromium-headful/start-pulseaudio.sh /images/chromium-headful/setup-virtual-camera.sh
 COPY images/chromium-headful/wrapper.sh /wrapper.sh
 COPY images/chromium-headful/supervisord.conf /etc/supervisor/supervisord.conf
 COPY images/chromium-headful/supervisor/services/ /etc/supervisor/conf.d/services/

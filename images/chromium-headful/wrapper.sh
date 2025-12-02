@@ -124,6 +124,9 @@ start_dynamic_log_aggregator
 
 export DISPLAY=:1
 
+# Setup virtual camera device
+/images/chromium-headful/setup-virtual-camera.sh
+
 # Predefine ports and export for services
 export INTERNAL_PORT="${INTERNAL_PORT:-9223}"
 export CHROME_PORT="${CHROME_PORT:-9222}"
