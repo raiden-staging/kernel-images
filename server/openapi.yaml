@@ -955,6 +955,97 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /media/input/start:
+    post:
+      summary: Start streaming media to virtual input devices
+      description: |
+        Start streaming video and/or audio from a URL (HLS, RTMP, DASH) or file URL
+        to the virtual camera and/or microphone devices. Only one stream can be active at a time.
+      operationId: startMediaInput
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StartMediaInputRequest"
+      responses:
+        "201":
+          description: Media input started successfully
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "409":
+          description: A media input stream is already active
+          $ref: "#/components/responses/ConflictError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /media/input/stop:
+    post:
+      summary: Stop the active media input stream
+      operationId: stopMediaInput
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: Media input stopped successfully
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /media/input/pause:
+    post:
+      summary: Pause the active media input stream
+      description: Only works for file-based inputs. Live streams cannot be paused.
+      operationId: pauseMediaInput
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: Media input paused successfully
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /media/input/resume:
+    post:
+      summary: Resume a paused media input stream
+      operationId: resumeMediaInput
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+      responses:
+        "200":
+          description: Media input resumed successfully
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /media/input/status:
+    get:
+      summary: Get the status of virtual media input
+      operationId: getMediaInputStatus
+      responses:
+        "200":
+          description: Current media input status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MediaInputStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   schemas:
     StartRecordingRequest:
@@ -1548,6 +1639,57 @@ components:
         stderr:
           type: string
           description: Standard error from the execution
+      additionalProperties: false
+    StartMediaInputRequest:
+      type: object
+      description: Request to start media input streaming
+      required: [url, mediaType]
+      properties:
+        url:
+          type: string
+          description: |
+            Media source URL. Supports:
+            - Streaming protocols: HLS (http://example.com/stream.m3u8), RTMP (rtmp://example.com/live/stream), DASH (http://example.com/manifest.mpd)
+            - File URLs: http://example.com/video.mp4, file:///path/to/video.mp4
+        mediaType:
+          type: string
+          enum: [video, audio, both]
+          description: Type of media to stream (video only, audio only, or both)
+        loop:
+          type: boolean
+          description: Loop the media (only works for file inputs, not live streams)
+          default: false
+        videoDevice:
+          type: string
+          description: Virtual video device path. Defaults to /dev/video10
+          default: /dev/video10
+      additionalProperties: false
+    MediaInputStatus:
+      type: object
+      description: Current status of virtual media input
+      required: [active, state]
+      properties:
+        active:
+          type: boolean
+          description: Whether a media input stream is currently active
+        state:
+          type: string
+          enum: [stopped, playing, paused]
+          description: Current playback state
+        url:
+          type: string
+          description: URL of the current stream (if active)
+        mediaType:
+          type: string
+          enum: [video, audio, both]
+          description: Type of media being streamed
+        loop:
+          type: boolean
+          description: Whether looping is enabled
+        startedAt:
+          type: string
+          format: date-time
+          description: Timestamp when the stream started
       additionalProperties: false
   responses:
     BadRequestError:

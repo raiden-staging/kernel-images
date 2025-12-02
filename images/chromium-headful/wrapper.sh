@@ -43,6 +43,12 @@ if [[ -z "${WITHDOCKER:-}" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
+# Setup virtual video and audio input devices ---------------------------------
+# -----------------------------------------------------------------------------
+echo "[wrapper] Setting up virtual input devices"
+/images/chromium-headful/setup-virtual-devices.sh || echo "[wrapper] Warning: Virtual device setup encountered errors"
+
+# -----------------------------------------------------------------------------
 # House-keeping for the unprivileged "kernel" user --------------------------------
 # Some Chromium subsystems want to create files under $HOME (NSS cert DB, dconf
 # cache).  If those directories are missing or owned by root Chromium emits

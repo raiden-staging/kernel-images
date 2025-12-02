@@ -167,7 +167,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=private,id=ubuntu2204-aptca
     x11-xserver-utils \
     gstreamer1.0-plugins-base gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly \
-    gstreamer1.0-pulseaudio gstreamer1.0-omx; \
+    gstreamer1.0-pulseaudio gstreamer1.0-omx \
+    v4l2loopback-dkms v4l-utils; \
     #
     # install libxcvt0 (not available in debian:bullseye)
     ARCH=$(dpkg --print-architecture); \
@@ -238,6 +239,8 @@ COPY --from=xorg-deps /usr/local/lib/xorg/modules/input/neko_drv.so /usr/lib/xor
 COPY images/chromium-headful/image-chromium/ /
 COPY images/chromium-headful/start-pulseaudio.sh /images/chromium-headful/start-pulseaudio.sh
 RUN chmod +x /images/chromium-headful/start-pulseaudio.sh
+COPY images/chromium-headful/setup-virtual-devices.sh /images/chromium-headful/setup-virtual-devices.sh
+RUN chmod +x /images/chromium-headful/setup-virtual-devices.sh
 COPY images/chromium-headful/wrapper.sh /wrapper.sh
 COPY images/chromium-headful/supervisord.conf /etc/supervisor/supervisord.conf
 COPY images/chromium-headful/supervisor/services/ /etc/supervisor/conf.d/services/
