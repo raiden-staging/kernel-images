@@ -154,6 +154,18 @@ install_v4l2loopback() {
 
   if ! modinfo v4l2loopback >/dev/null 2>&1; then
     echo "[virtual-media] v4l2loopback module still not present after installation" >&2
+    local media_reason
+    media_reason="$(media_support_reason || true)"
+    if [[ -n "$media_reason" ]]; then
+      echo "[virtual-media] Attempting to build media stack from source (media_build) to supply V4L2 core; reason: ${media_reason}"
+      if install_media_stack_from_source "$kernel_ver"; then
+        DKMS_FORCE=1 dkms autoinstall -k "${kernel_ver}" || true
+      fi
+    fi
+  fi
+
+  if ! modinfo v4l2loopback >/dev/null 2>&1; then
+    echo "[virtual-media] v4l2loopback module still not present after media stack build" >&2
     return 1
   fi
   return 0
@@ -198,6 +210,26 @@ patch_v4l2loopback_dkms() {
     echo "[virtual-media] Patching v4l2loopback dkms.conf to allow build on minimal kernels"
     sed -i '/BUILD_EXCLUSIVE_KERNEL/d' "$conf"
   fi
+}
+
+install_media_stack_from_source() {
+  local kernel_ver="$1"
+  local workdir="/tmp/media-build"
+
+  rm -rf "$workdir"
+  if ! git clone --depth=1 https://git.linuxtv.org/media_build.git "$workdir"; then
+    echo "[virtual-media] Failed to clone media_build" >&2
+    return 1
+  fi
+
+  # Build and install the media stack (includes videodev) for the running kernel.
+  if ! (cd "$workdir" && ./build --no-prompt && make install); then
+    echo "[virtual-media] media_build compilation failed" >&2
+    return 1
+  fi
+
+  depmod "${kernel_ver}" || true
+  return 0
 }
 
 set_pulse_defaults() {
