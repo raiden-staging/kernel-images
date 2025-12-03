@@ -417,7 +417,10 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 	}
 
 	if processAlive(pid) {
-		return fmt.Errorf("ffmpeg process %d did not exit", pid)
+		// Fallback cleanup: nuke any lingering ffmpeg instances to avoid stuck state.
+		_ = m.execCommand("pkill", "-TERM", "ffmpeg").Run()
+		time.Sleep(200 * time.Millisecond)
+		_ = m.execCommand("pkill", "-KILL", "ffmpeg").Run()
 	}
 
 	m.cmd = nil

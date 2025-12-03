@@ -74,29 +74,29 @@ export OUTPUT_DIR=/tmp/recordings
 
 ## 🎥 Virtual Media Inputs
 
-The server exposes virtual webcam/microphone control under `/virtual_inputs/*`. Media is injected into a v4l2loopback camera and a PulseAudio sink so Chromium (and Neko) see real devices at the OS level.
+The server exposes virtual webcam/microphone control under `/input/devices/virtual/*`. Media is injected into a v4l2loopback camera when available, or piped into Chromium’s virtual capture flags so Chromium/Neko see OS-level devices.
 
 ### Defaults
 
 Environment variables control the virtual devices and output shape:
 
-| Variable                         | Default          | Description                                                     |
-| -------------------------------- | ---------------- | --------------------------------------------------------------- |
-| `VIRTUAL_INPUT_VIDEO_DEVICE`     | `/dev/video20`   | v4l2loopback device used for the virtual camera                 |
-| `VIRTUAL_INPUT_AUDIO_SINK`       | `audio_input`    | PulseAudio sink that receives injected audio                    |
-| `VIRTUAL_INPUT_MICROPHONE_SOURCE`| `microphone`     | PulseAudio source clients should select as the microphone       |
-| `VIRTUAL_INPUT_WIDTH`            | `1280`           | Output width for the virtual camera                             |
-| `VIRTUAL_INPUT_HEIGHT`           | `720`            | Output height for the virtual camera                            |
-| `VIRTUAL_INPUT_FRAME_RATE`       | `30`             | Output frame rate for the virtual camera                        |
+| Variable                          | Default          | Description                                                     |
+| --------------------------------- | ---------------- | --------------------------------------------------------------- |
+| `VIRTUAL_INPUT_VIDEO_DEVICE`      | `/dev/video20`   | v4l2loopback device used for the virtual camera                 |
+| `VIRTUAL_INPUT_AUDIO_SINK`        | `audio_input`    | PulseAudio sink that receives injected audio                    |
+| `VIRTUAL_INPUT_MICROPHONE_SOURCE` | `microphone`     | PulseAudio source clients should select as the microphone       |
+| `VIRTUAL_INPUT_WIDTH`             | `1280`           | Output width for the virtual camera                             |
+| `VIRTUAL_INPUT_HEIGHT`            | `720`            | Output height for the virtual camera                            |
+| `VIRTUAL_INPUT_FRAME_RATE`        | `30`             | Output frame rate for the virtual camera                        |
 
-If the host kernel cannot load `v4l2loopback`, the server automatically falls back to streaming into Chromium’s fake capture flags using Y4M/WAV pipes under `/tmp/virtual-inputs/*` and restarts Chromium to pick them up.
+If the host kernel cannot load `v4l2loopback`, the server automatically falls back to streaming into Chromium’s virtual capture flags using Y4M/WAV pipes under `/tmp/virtual-inputs/*` and restarts Chromium to pick them up.
 
 ### Useful Requests
 
 Configure a virtual webcam + mic from mixed sources (looping the audio file):
 
 ```bash
-curl -X POST http://localhost:10001/virtual_inputs/configure \
+curl -X POST http://localhost:10001/input/devices/virtual/configure \
   -H "Content-Type: application/json" \
   -d '{
     "video": {"type": "stream", "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"},
@@ -110,15 +110,15 @@ curl -X POST http://localhost:10001/virtual_inputs/configure \
 Pause/resume or stop the feed:
 
 ```bash
-curl -X POST http://localhost:10001/virtual_inputs/pause
-curl -X POST http://localhost:10001/virtual_inputs/resume
-curl -X POST http://localhost:10001/virtual_inputs/stop
+curl -X POST http://localhost:10001/input/devices/virtual/pause
+curl -X POST http://localhost:10001/input/devices/virtual/resume
+curl -X POST http://localhost:10001/input/devices/virtual/stop
 ```
 
 Check the active state and sources:
 
 ```bash
-curl http://localhost:10001/virtual_inputs/status | jq
+curl http://localhost:10001/input/devices/virtual/status | jq
 ```
 
 Use `start_paused: true` in the configure body to begin with black video/silence, then resume when ready to expose the media.
