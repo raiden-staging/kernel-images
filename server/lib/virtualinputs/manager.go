@@ -29,6 +29,18 @@ const (
 	statePaused  = "paused"
 )
 
+var (
+	ErrMissingSources    = errors.New("either video or audio source must be provided")
+	ErrVideoURLRequired  = errors.New("video URL must be provided when video source is set")
+	ErrAudioURLRequired  = errors.New("audio URL must be provided when audio source is set")
+	ErrVideoTypeRequired = errors.New("video source type is required")
+	ErrAudioTypeRequired = errors.New("audio source type is required")
+
+	ErrPauseWithoutSession = errors.New("no active virtual input session to pause")
+	ErrNoConfigToPause     = errors.New("no previous configuration to pause")
+	ErrNoConfigToResume    = errors.New("no virtual input configuration to resume")
+)
+
 // SourceType enumerates supported input types.
 type SourceType string
 
@@ -188,13 +200,13 @@ func (m *Manager) Pause(ctx context.Context) (Status, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.state == stateIdle && m.lastCfg == nil {
-		return m.statusLocked(), errors.New("no active virtual input session to pause")
+		return m.statusLocked(), ErrPauseWithoutSession
 	}
 	if m.state == statePaused {
 		return m.statusLocked(), nil
 	}
 	if m.lastCfg == nil {
-		return m.statusLocked(), errors.New("no previous configuration to pause")
+		return m.statusLocked(), ErrNoConfigToPause
 	}
 
 	if err := m.stopLocked(ctx); err != nil {
@@ -219,7 +231,7 @@ func (m *Manager) Resume(ctx context.Context) (Status, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.lastCfg == nil {
-		return m.statusLocked(), errors.New("no virtual input configuration to resume")
+		return m.statusLocked(), ErrNoConfigToResume
 	}
 	if m.state == stateRunning {
 		return m.statusLocked(), nil
@@ -287,19 +299,19 @@ func (m *Manager) statusLocked() Status {
 
 func (m *Manager) normalizeConfig(cfg Config) (Config, error) {
 	if cfg.Video == nil && cfg.Audio == nil {
-		return Config{}, errors.New("either video or audio source must be provided")
+		return Config{}, ErrMissingSources
 	}
 	if cfg.Video != nil && cfg.Video.URL == "" {
-		return Config{}, errors.New("video URL must be provided when video source is set")
+		return Config{}, ErrVideoURLRequired
 	}
 	if cfg.Audio != nil && cfg.Audio.URL == "" {
-		return Config{}, errors.New("audio URL must be provided when audio source is set")
+		return Config{}, ErrAudioURLRequired
 	}
 	if cfg.Video != nil && cfg.Video.Type == "" {
-		return Config{}, errors.New("video source type is required")
+		return Config{}, ErrVideoTypeRequired
 	}
 	if cfg.Audio != nil && cfg.Audio.Type == "" {
-		return Config{}, errors.New("audio source type is required")
+		return Config{}, ErrAudioTypeRequired
 	}
 
 	out := cfg

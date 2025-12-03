@@ -16,9 +16,17 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/virtualinputs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func newTestApiService(t *testing.T, mgr recorder.RecordManager) (*ApiService, *mockVirtualInputsManager) {
+	vimgr := newMockVirtualInputsManager()
+	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), vimgr)
+	require.NoError(t, err)
+	return svc, vimgr
+}
 
 func TestApiService_StartRecording(t *testing.T) {
 	ctx := context.Background()
