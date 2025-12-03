@@ -21,12 +21,12 @@ type Config struct {
 	PathToFFmpeg string `envconfig:"FFMPEG_PATH" default:"ffmpeg"`
 
 	// Virtual input defaults
-	VirtualVideoDevice     string `envconfig:"VIRTUAL_INPUT_VIDEO_DEVICE" default:"/dev/video20"`
-	VirtualAudioSink       string `envconfig:"VIRTUAL_INPUT_AUDIO_SINK" default:"audio_input"`
+	VirtualVideoDevice      string `envconfig:"VIRTUAL_INPUT_VIDEO_DEVICE" default:"/dev/video20"`
+	VirtualAudioSink        string `envconfig:"VIRTUAL_INPUT_AUDIO_SINK" default:"audio_input"`
 	VirtualMicrophoneSource string `envconfig:"VIRTUAL_INPUT_MICROPHONE_SOURCE" default:"microphone"`
-	VirtualInputWidth      int    `envconfig:"VIRTUAL_INPUT_WIDTH" default:"1280"`
-	VirtualInputHeight     int    `envconfig:"VIRTUAL_INPUT_HEIGHT" default:"720"`
-	VirtualInputFrameRate  int    `envconfig:"VIRTUAL_INPUT_FRAME_RATE" default:"30"`
+	VirtualInputWidth       int    `envconfig:"VIRTUAL_INPUT_WIDTH" default:"1280"`
+	VirtualInputHeight      int    `envconfig:"VIRTUAL_INPUT_HEIGHT" default:"720"`
+	VirtualInputFrameRate   int    `envconfig:"VIRTUAL_INPUT_FRAME_RATE" default:"30"`
 
 	// DevTools proxy configuration
 	LogCDPMessages bool `envconfig:"LOG_CDP_MESSAGES" default:"false"`
