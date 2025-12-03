@@ -57,6 +57,31 @@ func TestLoad(t *testing.T) {
 			},
 		},
 		{
+			name: "custom virtual input env",
+			env: map[string]string{
+				"VIRTUAL_INPUT_VIDEO_DEVICE":      "/dev/video42",
+				"VIRTUAL_INPUT_AUDIO_SINK":        "custom_sink",
+				"VIRTUAL_INPUT_MICROPHONE_SOURCE": "custom_mic",
+				"VIRTUAL_INPUT_WIDTH":             "800",
+				"VIRTUAL_INPUT_HEIGHT":            "600",
+				"VIRTUAL_INPUT_FRAME_RATE":        "25",
+			},
+			wantCfg: &Config{
+				Port:                    10001,
+				FrameRate:               10,
+				DisplayNum:              1,
+				MaxSizeInMB:             500,
+				OutputDir:               ".",
+				PathToFFmpeg:            "ffmpeg",
+				VirtualVideoDevice:      "/dev/video42",
+				VirtualAudioSink:        "custom_sink",
+				VirtualMicrophoneSource: "custom_mic",
+				VirtualInputWidth:       800,
+				VirtualInputHeight:      600,
+				VirtualInputFrameRate:   25,
+			},
+		},
+		{
 			name: "negative display num",
 			env: map[string]string{
 				"DISPLAY_NUM": "-1",
