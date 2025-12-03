@@ -247,6 +247,9 @@ func toManagerSource(src *oapi.VirtualMediaSource) (*virtualmedia.Source, error)
 	if src.Loop != nil {
 		loop = *src.Loop
 	}
+	if kind == virtualmedia.SourceKindStream && loop {
+		return nil, fmt.Errorf("loop is only supported for file sources")
+	}
 	if strings.TrimSpace(src.Url) == "" {
 		return nil, fmt.Errorf("source url is required")
 	}
