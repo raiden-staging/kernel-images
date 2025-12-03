@@ -136,12 +136,15 @@ install_v4l2loopback() {
   echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security bookworm-security main contrib non-free-firmware" >> "$bookworm_list"
   echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware" >> "$bookworm_list"
 
+  ensure_kernel_media_modules "$kernel_ver" || true
+  patch_v4l2loopback_dkms || true
+
   if apt-get update; then
     if ! apt-get --no-install-recommends -y install "linux-headers-${kernel_ver}" v4l2loopback-dkms v4l2loopback-utils v4l-utils; then
       echo "[virtual-media] Failed to install v4l2loopback packages for ${kernel_ver}, trying meta packages" >&2
       apt-get --no-install-recommends -y install linux-headers-cloud-amd64 linux-headers-amd64 v4l2loopback-dkms v4l2loopback-utils v4l-utils || true
     fi
-    dkms autoinstall -k "${kernel_ver}" || true
+    DKMS_FORCE=1 dkms autoinstall -k "${kernel_ver}" || true
     depmod "${kernel_ver}" || true
   else
     echo "[virtual-media] Unable to update apt with Debian mirrors" >&2
@@ -154,6 +157,47 @@ install_v4l2loopback() {
     return 1
   fi
   return 0
+}
+
+ensure_kernel_media_modules() {
+  local kernel_ver="$1"
+  local tried=()
+  local candidates=(
+    "linux-modules-extra-${kernel_ver}"
+    "linux-modules-${kernel_ver}"
+    "linux-modules-extra-cloud-amd64"
+  )
+
+  for pkg in "${candidates[@]}"; do
+    tried+=("$pkg")
+    if dpkg -s "$pkg" >/dev/null 2>&1; then
+      echo "[virtual-media] Kernel media modules already installed via ${pkg}"
+      return 0
+    fi
+    if apt-get --no-install-recommends -y install "$pkg"; then
+      echo "[virtual-media] Installed ${pkg} for kernel media support"
+      return 0
+    fi
+  done
+
+  echo "[virtual-media] Unable to install kernel media support packages (tried: ${tried[*]})" >&2
+  return 1
+}
+
+patch_v4l2loopback_dkms() {
+  local src_dir conf
+  src_dir="$(find /usr/src -maxdepth 1 -type d -name 'v4l2loopback-*' | head -n1 || true)"
+  if [[ -z "$src_dir" ]]; then
+    return 0
+  fi
+  conf="${src_dir}/dkms.conf"
+  if [[ ! -f "$conf" ]]; then
+    return 0
+  fi
+  if grep -q 'BUILD_EXCLUSIVE_KERNEL' "$conf"; then
+    echo "[virtual-media] Patching v4l2loopback dkms.conf to allow build on minimal kernels"
+    sed -i '/BUILD_EXCLUSIVE_KERNEL/d' "$conf"
+  fi
 }
 
 set_pulse_defaults() {

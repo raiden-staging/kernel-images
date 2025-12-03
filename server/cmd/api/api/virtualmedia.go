@@ -23,15 +23,15 @@ func (s *ApiService) StartVirtualMedia(ctx context.Context, request oapi.StartVi
 		return oapi.StartVirtualMedia400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "request body required"}}, nil
 	}
 
+	videoUnavailableReason := strings.TrimSpace(os.Getenv("VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON"))
+
 	cfg, err := parseVirtualMediaConfig(request.Body)
 	if err != nil {
 		return oapi.StartVirtualMedia400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: err.Error()}}, nil
 	}
 
-	if cfg.Video != nil {
-		if reason := strings.TrimSpace(os.Getenv("VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON")); reason != "" {
-			return oapi.StartVirtualMedia500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: fmt.Sprintf("virtual camera unavailable: %s", reason)}}, nil
-		}
+	if cfg.Video != nil && videoUnavailableReason != "" {
+		log.Warn("virtual camera reported unavailable; will attempt configure anyway", "reason", videoUnavailableReason)
 	}
 
 	s.virtualMediaMu.Lock()
@@ -39,8 +39,12 @@ func (s *ApiService) StartVirtualMedia(ctx context.Context, request oapi.StartVi
 
 	paths, err := s.virtualMedia.Configure(ctx, cfg)
 	if err != nil {
-		log.Error("failed to configure virtual media", "error", err)
-		return oapi.StartVirtualMedia500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to configure virtual media"}}, nil
+		log.Error("failed to configure virtual media", "error", err, "video_unavailable_reason", videoUnavailableReason)
+		message := "failed to configure virtual media"
+		if cfg.Video != nil && videoUnavailableReason != "" {
+			message = fmt.Sprintf("%s: %s", message, videoUnavailableReason)
+		}
+		return oapi.StartVirtualMedia500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: message}}, nil
 	}
 
 	flags := buildVirtualMediaFlags(paths)
@@ -53,6 +57,11 @@ func (s *ApiService) StartVirtualMedia(ctx context.Context, request oapi.StartVi
 	if err := s.restartChromiumAndWait(ctx, "virtual media start"); err != nil {
 		log.Error("failed to restart chromium after configuring virtual media", "error", err)
 		return oapi.StartVirtualMedia500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to restart chromium"}}, nil
+	}
+
+	if cfg.Video != nil && videoUnavailableReason != "" {
+		log.Info("virtual media video configured; clearing previous unavailable reason", "reason", videoUnavailableReason)
+		_ = os.Unsetenv("VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON")
 	}
 
 	status := s.virtualMedia.Status()
