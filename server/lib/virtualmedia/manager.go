@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -135,7 +136,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config) (Paths, error) {
 
 	var paths Paths
 	if cfg.Video != nil {
-		if err := m.ensureVideoTarget(); err != nil {
+		if err := m.ensureVideoTarget(ctx); err != nil {
 			return Paths{}, err
 		}
 		proc, err := m.startVideoLocked(ctx, *cfg.Video)
@@ -224,16 +225,47 @@ func (m *Manager) Status() Status {
 	}
 }
 
-func (m *Manager) ensureVideoTarget() error {
+func (m *Manager) ensureVideoTarget(ctx context.Context) error {
 	if m.videoDevice == "" {
 		return errors.New("video device is required")
 	}
 	info, err := os.Stat(m.videoDevice)
+	if err != nil && errors.Is(err, os.ErrNotExist) && strings.HasPrefix(m.videoDevice, "/dev/video") {
+		if loadErr := m.loadV4L2Loopback(ctx); loadErr != nil {
+			return fmt.Errorf("video device not available at %s: %w", m.videoDevice, loadErr)
+		}
+		info, err = os.Stat(m.videoDevice)
+	}
 	if err != nil {
 		return fmt.Errorf("video device not available at %s: %w", m.videoDevice, err)
 	}
 	if info.Mode()&os.ModeDevice == 0 {
 		return fmt.Errorf("video target %s is not a device", m.videoDevice)
+	}
+	return nil
+}
+
+func (m *Manager) loadV4L2Loopback(ctx context.Context) error {
+	modprobePath, err := exec.LookPath("modprobe")
+	if err != nil {
+		return fmt.Errorf("modprobe not available: %w", err)
+	}
+
+	args := []string{"v4l2loopback", "exclusive_caps=1"}
+	if videoNr := strings.TrimPrefix(m.videoDevice, "/dev/video"); videoNr != "" {
+		if _, err := strconv.Atoi(videoNr); err == nil {
+			args = append(args, "video_nr="+videoNr)
+		}
+	}
+	if label := strings.TrimSpace(os.Getenv("VIRTUAL_CAMERA_LABEL")); label != "" {
+		args = append(args, "card_label="+label)
+	}
+
+	cmdCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+
+	if out, err := exec.CommandContext(cmdCtx, modprobePath, args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("modprobe v4l2loopback failed: %w (output: %s)", err, strings.TrimSpace(string(out)))
 	}
 	return nil
 }
