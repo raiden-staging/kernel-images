@@ -33,8 +33,7 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 
 		resp, err := svc.StartRecording(ctx, oapi.StartRecordingRequestObject{})
 		require.NoError(t, err)
@@ -47,8 +46,7 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("already recording", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 
 		// First start should succeed
 		_, err = svc.StartRecording(ctx, oapi.StartRecordingRequestObject{})
@@ -62,8 +60,7 @@ func TestApiService_StartRecording(t *testing.T) {
 
 	t.Run("custom ids don't collide", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 
 		for i := 0; i < 5; i++ {
 			customID := fmt.Sprintf("rec-%d", i)
@@ -95,8 +92,7 @@ func TestApiService_StopRecording(t *testing.T) {
 
 	t.Run("no active recording", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 
 		resp, err := svc.StopRecording(ctx, oapi.StopRecordingRequestObject{})
 		require.NoError(t, err)
@@ -108,8 +104,7 @@ func TestApiService_StopRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", isRecordingFlag: true}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 		resp, err := svc.StopRecording(ctx, oapi.StopRecordingRequestObject{})
 		require.NoError(t, err)
 		require.IsType(t, oapi.StopRecording200Response{}, resp)
@@ -123,8 +118,7 @@ func TestApiService_StopRecording(t *testing.T) {
 
 		force := true
 		req := oapi.StopRecordingRequestObject{Body: &oapi.StopRecordingJSONRequestBody{ForceStop: &force}}
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 		resp, err := svc.StopRecording(ctx, req)
 		require.NoError(t, err)
 		require.IsType(t, oapi.StopRecording200Response{}, resp)
@@ -137,8 +131,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 
 	t.Run("not found", func(t *testing.T) {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
 		require.NoError(t, err)
 		require.IsType(t, oapi.DownloadRecording404JSONResponse{}, resp)
@@ -157,8 +150,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", isRecordingFlag: true, recordingData: randomBytes(minRecordingSizeInBytes - 1)}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 		// will return a 202 when the recording is too small
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
 		require.NoError(t, err)
@@ -187,8 +179,7 @@ func TestApiService_DownloadRecording(t *testing.T) {
 		rec := &mockRecorder{id: "default", recordingData: data}
 		require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-		require.NoError(t, err)
+		svc, _ := newTestApiService(t, mgr)
 		resp, err := svc.DownloadRecording(ctx, oapi.DownloadRecordingRequestObject{})
 		require.NoError(t, err)
 		r, ok := resp.(oapi.DownloadRecording200Videomp4Response)
@@ -207,11 +198,11 @@ func TestApiService_Shutdown(t *testing.T) {
 	rec := &mockRecorder{id: "default", isRecordingFlag: true}
 	require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
-	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-	require.NoError(t, err)
+	svc, vimgr := newTestApiService(t, mgr)
 
 	require.NoError(t, svc.Shutdown(ctx))
 	require.True(t, rec.stopCalled, "Shutdown should have stopped active recorder")
+	require.Equal(t, 1, vimgr.stopCalls)
 }
 
 // mockRecorder is a lightweight stand-in for recorder.Recorder used in unit tests. It purposefully
@@ -311,11 +302,97 @@ func newMockNekoClient(t *testing.T) *nekoclient.AuthClient {
 	return client
 }
 
+type mockVirtualInputsManager struct {
+	status         virtualinputs.Status
+	configureCalls []struct {
+		cfg    virtualinputs.Config
+		paused bool
+	}
+	configureErr error
+	pauseErr     error
+	resumeErr    error
+	stopErr      error
+	stopCalls    int
+}
+
+func newMockVirtualInputsManager() *mockVirtualInputsManager {
+	return &mockVirtualInputsManager{
+		status: virtualinputs.Status{
+			State:            "idle",
+			VideoDevice:      "/dev/video20",
+			AudioSink:        "audio_input",
+			MicrophoneSource: "microphone",
+			Width:            1280,
+			Height:           720,
+			FrameRate:        30,
+		},
+	}
+}
+
+func (m *mockVirtualInputsManager) Configure(ctx context.Context, cfg virtualinputs.Config, startPaused bool) (virtualinputs.Status, error) {
+	m.configureCalls = append(m.configureCalls, struct {
+		cfg    virtualinputs.Config
+		paused bool
+	}{cfg: cfg, paused: startPaused})
+	if m.configureErr != nil {
+		return m.status, m.configureErr
+	}
+	if startPaused {
+		m.status.State = "paused"
+	} else {
+		m.status.State = "running"
+	}
+	if cfg.Video != nil {
+		m.status.Video = cfg.Video
+	}
+	if cfg.Audio != nil {
+		m.status.Audio = cfg.Audio
+	}
+	if cfg.Width != 0 {
+		m.status.Width = cfg.Width
+	}
+	if cfg.Height != 0 {
+		m.status.Height = cfg.Height
+	}
+	if cfg.FrameRate != 0 {
+		m.status.FrameRate = cfg.FrameRate
+	}
+	return m.status, nil
+}
+
+func (m *mockVirtualInputsManager) Pause(ctx context.Context) (virtualinputs.Status, error) {
+	if m.pauseErr != nil {
+		return m.status, m.pauseErr
+	}
+	m.status.State = "paused"
+	return m.status, nil
+}
+
+func (m *mockVirtualInputsManager) Resume(ctx context.Context) (virtualinputs.Status, error) {
+	if m.resumeErr != nil {
+		return m.status, m.resumeErr
+	}
+	m.status.State = "running"
+	return m.status, nil
+}
+
+func (m *mockVirtualInputsManager) Stop(ctx context.Context) (virtualinputs.Status, error) {
+	m.stopCalls++
+	if m.stopErr != nil {
+		return m.status, m.stopErr
+	}
+	m.status.State = "idle"
+	return m.status, nil
+}
+
+func (m *mockVirtualInputsManager) Status(ctx context.Context) virtualinputs.Status {
+	return m.status
+}
+
 func TestApiService_PatchChromiumFlags(t *testing.T) {
 	ctx := context.Background()
 	mgr := recorder.NewFFmpegManager()
-	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t))
-	require.NoError(t, err)
+	svc, _ := newTestApiService(t, mgr)
 
 	// Test with valid flags
 	flags := []string{"--kiosk", "--start-maximized"}
