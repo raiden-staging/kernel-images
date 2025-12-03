@@ -177,12 +177,14 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 	if normalized.Video != nil {
 		if ok, err := m.ensureVideoDevice(ctx); err != nil || !ok {
 			useFakeMode = true
-			log.Warn("v4l2loopback unavailable, using fake capture files instead", "err", err)
+			log.Warn("v4l2loopback unavailable, using virtual capture files instead", "err", err)
 		}
 	}
 	if err := m.ensurePulseDevices(ctx); err != nil {
 		return m.statusLocked(), err
 	}
+
+	m.killAllFFmpeg()
 
 	if useFakeMode {
 		m.mode = modeVirtualFile
@@ -250,6 +252,7 @@ func (m *Manager) Pause(ctx context.Context) (Status, error) {
 	if err := m.stopLocked(ctx); err != nil {
 		return m.statusLocked(), err
 	}
+	m.killAllFFmpeg()
 	args, err := m.buildFFmpegArgs(*m.lastCfg, true)
 	if err != nil {
 		return m.statusLocked(), err
@@ -278,6 +281,7 @@ func (m *Manager) Resume(ctx context.Context) (Status, error) {
 	if err := m.stopLocked(ctx); err != nil {
 		return m.statusLocked(), err
 	}
+	m.killAllFFmpeg()
 	args, err := m.buildFFmpegArgs(*m.lastCfg, false)
 	if err != nil {
 		return m.statusLocked(), err
@@ -434,6 +438,12 @@ func processAlive(pid int) bool {
 		return false
 	}
 	return syscall.Kill(pid, 0) == nil
+}
+
+func (m *Manager) killAllFFmpeg() {
+	_ = m.execCommand("pkill", "-TERM", "ffmpeg").Run()
+	time.Sleep(150 * time.Millisecond)
+	_ = m.execCommand("pkill", "-KILL", "ffmpeg").Run()
 }
 
 func (m *Manager) ensureVideoDevice(ctx context.Context) (bool, error) {
