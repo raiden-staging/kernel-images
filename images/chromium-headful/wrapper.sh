@@ -21,6 +21,7 @@ export VIRTUAL_MEDIA_VIDEO_DEVICE VIRTUAL_MEDIA_AUDIO_SINK VIRTUAL_MEDIA_AUDIO_S
 
 ensure_virtual_camera() {
   local device_path="$VIRTUAL_MEDIA_VIDEO_DEVICE"
+  unset VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON
   if [[ -z "$device_path" ]]; then
     echo "[virtual-media] No virtual camera device configured; skipping v4l2loopback setup"
     return
@@ -38,14 +39,9 @@ ensure_virtual_camera() {
     return
   fi
 
-  if ! check_media_support; then
-    echo "[virtual-media] Host kernel missing CONFIG_MEDIA_SUPPORT; cannot create /dev/video* device" >&2
-    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="host kernel lacks CONFIG_MEDIA_SUPPORT; cannot load v4l2loopback"
-    return
-  fi
-
   if ! command -v modprobe >/dev/null 2>&1; then
     echo "[virtual-media] modprobe not available; cannot load v4l2loopback" >&2
+    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="modprobe not available to load v4l2loopback"
     return
   fi
 
@@ -58,6 +54,7 @@ ensure_virtual_camera() {
   echo "[virtual-media] Loading v4l2loopback for $device_path (video_nr=$video_nr)"
   if ! modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
     echo "[virtual-media] Failed to load v4l2loopback; camera will be unavailable" >&2
+    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="v4l2loopback could not be loaded"
     return
   fi
 
@@ -68,17 +65,11 @@ ensure_virtual_camera() {
       v4l2loopback-ctl set-fps "$device_path" 30 >/dev/null 2>&1 || true
     fi
     echo "[virtual-media] Virtual camera ready at $device_path"
+    unset VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON
   else
     echo "[virtual-media] v4l2loopback loaded but $device_path not found" >&2
+    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="v4l2loopback loaded but device missing"
   fi
-}
-
-check_media_support() {
-  local config_file="/lib/modules/$(uname -r)/build/.config"
-  if [[ -f "$config_file" ]] && grep -q '^CONFIG_MEDIA_SUPPORT=y' "$config_file"; then
-    return 0
-  fi
-  return 1
 }
 
 install_v4l2loopback() {
