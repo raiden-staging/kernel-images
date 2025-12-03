@@ -24,6 +24,12 @@ const (
 	defaultHeight    = 720
 	defaultFrameRate = 30
 
+	modeDevice   = "device"
+	modeFakeFile = "fake-file"
+
+	defaultVideoFile = "/tmp/virtual-inputs/video.y4m"
+	defaultAudioFile = "/tmp/virtual-inputs/audio.wav"
+
 	stateIdle    = "idle"
 	stateRunning = "running"
 	statePaused  = "paused"
@@ -78,6 +84,9 @@ type Status struct {
 	FrameRate        int
 	StartedAt        *time.Time
 	LastError        string
+	Mode             string
+	VideoFile        string
+	AudioFile        string
 }
 
 // Manager coordinates FFmpeg pipelines that feed virtual camera and microphone devices.
@@ -98,7 +107,10 @@ type Manager struct {
 	lastError string
 	lastCfg   *Config
 	state     string
+	mode      string
 	startedAt *time.Time
+	videoFile string
+	audioFile string
 
 	stz           *scaletozero.Oncer
 	scaleDisabled bool
@@ -138,6 +150,7 @@ func NewManager(ffmpegPath, videoDevice, audioSink, microphoneSource string, wid
 		defaultHeight:    height,
 		defaultFrameRate: frameRate,
 		state:            stateIdle,
+		mode:             modeDevice,
 		stz:              scaletozero.NewOncer(stz),
 		execCommand:      exec.Command,
 	}
@@ -160,11 +173,36 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 		return m.statusLocked(), err
 	}
 
-	if err := m.ensureVideoDevice(ctx); err != nil {
-		return m.statusLocked(), err
+	useFakeMode := false
+	if normalized.Video != nil {
+		if ok, err := m.ensureVideoDevice(ctx); err != nil || !ok {
+			useFakeMode = true
+			log.Warn("v4l2loopback unavailable, using fake capture files instead", "err", err)
+		}
 	}
 	if err := m.ensurePulseDevices(ctx); err != nil {
 		return m.statusLocked(), err
+	}
+
+	if useFakeMode {
+		m.mode = modeFakeFile
+		m.videoFile = defaultVideoFile
+		m.audioFile = ""
+		if normalized.Audio != nil {
+			m.audioFile = defaultAudioFile
+		}
+		if err := prepareFifo(m.videoFile); err != nil {
+			return m.statusLocked(), fmt.Errorf("prepare video fifo: %w", err)
+		}
+		if m.audioFile != "" {
+			if err := prepareFifo(m.audioFile); err != nil {
+				return m.statusLocked(), fmt.Errorf("prepare audio fifo: %w", err)
+			}
+		}
+	} else {
+		m.mode = modeDevice
+		m.videoFile = ""
+		m.audioFile = ""
 	}
 
 	args, err := m.buildFFmpegArgs(normalized, startPaused)
@@ -181,7 +219,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 			return statePaused
 		}
 		return stateRunning
-	}(), "video_device", m.videoDevice, "audio_sink", m.audioSink)
+	}(), "video_device", m.videoDevice, "audio_sink", m.audioSink, "mode", m.mode, "video_file", m.videoFile, "audio_file", m.audioFile)
 
 	m.lastCfg = &normalized
 	if startPaused {
@@ -286,6 +324,9 @@ func (m *Manager) statusLocked() Status {
 		Height:           m.defaultHeight,
 		FrameRate:        m.defaultFrameRate,
 		StartedAt:        m.startedAt,
+		Mode:             m.mode,
+		VideoFile:        m.videoFile,
+		AudioFile:        m.audioFile,
 	}
 	if m.lastCfg != nil {
 		status.Width = m.lastCfg.Width
