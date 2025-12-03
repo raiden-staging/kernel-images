@@ -1,9 +1,11 @@
 package virtualmedia
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strconv"
@@ -93,9 +95,11 @@ type process struct {
 	startedAt  time.Time
 	done       chan struct{}
 	lastErr    error
+	stderrBuf  *bytes.Buffer
 }
 
 const stopTimeout = 5 * time.Second
+const startupProbeTimeout = 2 * time.Second
 
 // NewManager returns a Manager writing into OS-level virtual devices.
 func NewManager(opts Options) *Manager {
@@ -144,6 +148,10 @@ func (m *Manager) Configure(ctx context.Context, cfg Config) (Paths, error) {
 			_ = m.stopAllLocked(ctx)
 			return Paths{}, err
 		}
+		if err := waitForHealthyStart(proc); err != nil {
+			_ = m.stopAllLocked(ctx)
+			return Paths{}, fmt.Errorf("video pipeline failed to start: %w", err)
+		}
 		m.video = proc
 		paths.VideoPath = m.videoDevice
 	}
@@ -155,6 +163,10 @@ func (m *Manager) Configure(ctx context.Context, cfg Config) (Paths, error) {
 		if err != nil {
 			_ = m.stopAllLocked(ctx)
 			return Paths{}, err
+		}
+		if err := waitForHealthyStart(proc); err != nil {
+			_ = m.stopAllLocked(ctx)
+			return Paths{}, fmt.Errorf("audio pipeline failed to start: %w", err)
 		}
 		m.audio = proc
 		paths.AudioPath = fmt.Sprintf("pulse:%s", m.audioSink)
@@ -320,8 +332,9 @@ func (m *Manager) startProcess(ctx context.Context, source Source, target string
 
 	cmd := m.commandFn(context.WithoutCancel(ctx), m.ffmpegPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	stderrBuf := &bytes.Buffer{}
 	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = io.MultiWriter(os.Stderr, stderrBuf)
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start ffmpeg: %w", err)
@@ -333,6 +346,7 @@ func (m *Manager) startProcess(ctx context.Context, source Source, target string
 		outputPath: target,
 		startedAt:  time.Now(),
 		done:       make(chan struct{}),
+		stderrBuf:  stderrBuf,
 	}
 	go m.waitForProcess(proc)
 
@@ -341,8 +355,29 @@ func (m *Manager) startProcess(ctx context.Context, source Source, target string
 
 func (m *Manager) waitForProcess(p *process) {
 	err := p.cmd.Wait()
+	if err != nil && p.stderrBuf != nil {
+		if stderr := strings.TrimSpace(p.stderrBuf.String()); stderr != "" {
+			err = fmt.Errorf("%w: %s", err, stderr)
+		}
+	}
 	p.lastErr = err
 	close(p.done)
+}
+
+func waitForHealthyStart(p *process) error {
+	if p == nil || p.done == nil {
+		return errors.New("process not started")
+	}
+
+	select {
+	case <-p.done:
+		if p.lastErr != nil {
+			return fmt.Errorf("ffmpeg exited early: %w", p.lastErr)
+		}
+		return errors.New("ffmpeg exited before becoming ready")
+	case <-time.After(startupProbeTimeout):
+		return nil
+	}
 }
 
 func (m *Manager) stopAllLocked(ctx context.Context) error {
@@ -384,11 +419,20 @@ func buildAudioArgs(source Source, sink string) []string {
 }
 
 func buildBaseArgs(source Source) []string {
-	args := []string{"-nostdin", "-loglevel", "error", "-y"}
-	if source.Kind == SourceKindFile && source.Loop {
-		args = append(args, "-stream_loop", "-1")
+	args := []string{"-nostdin", "-loglevel", "error", "-y", "-fflags", "+genpts"}
+	if source.Kind == SourceKindFile {
+		args = append(args, "-re")
+		if source.Loop {
+			args = append(args, "-stream_loop", "-1")
+		}
 	}
-	args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2", "-i", source.URL)
+	args = append(args,
+		"-thread_queue_size", "512",
+		"-reconnect", "1",
+		"-reconnect_streamed", "1",
+		"-reconnect_delay_max", "2",
+		"-i", source.URL,
+	)
 	return args
 }
 
@@ -398,6 +442,9 @@ func validateSource(source Source) error {
 	}
 	switch source.Kind {
 	case SourceKindFile, SourceKindStream:
+		if source.Kind == SourceKindStream && source.Loop {
+			return errors.New("loop is only supported for file sources")
+		}
 	default:
 		return fmt.Errorf("unsupported source kind: %s", source.Kind)
 	}

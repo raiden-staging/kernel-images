@@ -181,13 +181,6 @@ func (s *ApiService) replaceVirtualMediaFlags(ctx context.Context, newFlags []st
 	return merged, nil
 }
 
-var legacyVirtualMediaFlagPrefixes = []string{
-	"--use-fake-device-for-media-stream",
-	"--use-file-for-fake-video-capture",
-	"--use-file-for-fake-audio-capture",
-	"--use-fake-ui-for-media-stream",
-}
-
 func filterTokens(tokens, toRemove []string) []string {
 	out := make([]string, 0, len(tokens))
 	remove := make(map[string]struct{}, len(toRemove))
@@ -204,21 +197,12 @@ func filterTokens(tokens, toRemove []string) []string {
 		if _, found := remove[trimmed]; found {
 			continue
 		}
-		if hasLegacyVirtualMediaPrefix(trimmed) {
+		if virtualmedia.IsLegacyChromiumFlag(trimmed) {
 			continue
 		}
 		out = append(out, trimmed)
 	}
 	return out
-}
-
-func hasLegacyVirtualMediaPrefix(token string) bool {
-	for _, prefix := range legacyVirtualMediaFlagPrefixes {
-		if strings.HasPrefix(token, prefix) {
-			return true
-		}
-	}
-	return false
 }
 
 func buildVirtualMediaFlags(paths virtualmedia.Paths) []string {

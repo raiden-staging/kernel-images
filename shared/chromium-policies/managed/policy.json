@@ -4,6 +4,6 @@
   "TranslateEnabled": false,
   "VideoCaptureAllowed": true,
   "AudioCaptureAllowed": true,
-  "DefaultCameraSetting": 2,
-  "DefaultMicrophoneSetting": 2
+  "DefaultCameraSetting": 1,
+  "DefaultMicrophoneSetting": 1
 }

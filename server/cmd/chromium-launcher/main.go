@@ -10,6 +10,7 @@ import (
 	"syscall"
 
 	"github.com/onkernel/kernel-images/server/lib/chromiumflags"
+	"github.com/onkernel/kernel-images/server/lib/virtualmedia"
 )
 
 func main() {
@@ -37,6 +38,7 @@ func main() {
 	}
 	combinedRuntime := chromiumflags.MergeFlags(runtimeTokens, extraTokens)
 	final := chromiumflags.MergeFlagsWithRuntimeTokens(baseFlags, combinedRuntime)
+	final = virtualmedia.FilterLegacyChromiumFlags(final)
 
 	// Diagnostics for parity with previous scripts
 	fmt.Printf("BASE_FLAGS: %s\n", baseFlags)
