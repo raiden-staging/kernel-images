@@ -17,5 +17,4 @@ load-module module-native-protocol-unix auth-anonymous=1
 load-module module-always-sink
 
 ### Default devices for virtual media IO
-set-default-sink audio_output
 set-default-source microphone
