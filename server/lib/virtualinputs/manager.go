@@ -102,15 +102,16 @@ type Manager struct {
 	defaultHeight    int
 	defaultFrameRate int
 
-	cmd       *exec.Cmd
-	exited    chan struct{}
-	lastError string
-	lastCfg   *Config
-	state     string
-	mode      string
-	startedAt *time.Time
-	videoFile string
-	audioFile string
+	cmd            *exec.Cmd
+	exited         chan struct{}
+	processGroupID int
+	lastError      string
+	lastCfg        *Config
+	state          string
+	mode           string
+	startedAt      *time.Time
+	videoFile      string
+	audioFile      string
 
 	stz           *scaletozero.Oncer
 	scaleDisabled bool
@@ -547,6 +548,24 @@ func (m *Manager) ensurePulseDevices(ctx context.Context) error {
 		}
 	}
 	return nil
+}
+
+func (m *Manager) setDefaultPulseDevices(ctx context.Context) {
+	log := logger.FromContext(ctx)
+	pulseEnv := append(os.Environ(), fmt.Sprintf("PULSE_SERVER=%s", os.Getenv("PULSE_SERVER")))
+
+	setDefault := func(kind, name string) error {
+		if name == "" {
+			return nil
+		}
+		cmd := m.execCommand("pactl", "set-default-"+kind, name)
+		cmd.Env = pulseEnv
+		return cmd.Run()
+	}
+
+	if err := setDefault("source", m.microphoneSource); err != nil {
+		log.Warn("failed to set default pulseaudio source", "err", err, "source", m.microphoneSource)
+	}
 }
 
 func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
