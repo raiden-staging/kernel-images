@@ -255,6 +255,7 @@ func (m *Manager) Pause(ctx context.Context) (Status, error) {
 		return m.statusLocked(), err
 	}
 	m.killAllFFmpeg()
+	m.setDefaultPulseDevices(ctx)
 	args, err := m.buildFFmpegArgs(*m.lastCfg, true)
 	if err != nil {
 		return m.statusLocked(), err
@@ -284,6 +285,7 @@ func (m *Manager) Resume(ctx context.Context) (Status, error) {
 		return m.statusLocked(), err
 	}
 	m.killAllFFmpeg()
+	m.setDefaultPulseDevices(ctx)
 	args, err := m.buildFFmpegArgs(*m.lastCfg, false)
 	if err != nil {
 		return m.statusLocked(), err
