@@ -126,7 +126,7 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 
 func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus {
 	resp := oapi.VirtualInputsStatus{
-		State:            status.State,
+		State:            oapi.VirtualInputsStatusState(status.State),
 		VideoDevice:      status.VideoDevice,
 		AudioSink:        status.AudioSink,
 		MicrophoneSource: status.MicrophoneSource,

@@ -50,7 +50,7 @@ func TestApiService_StartRecording(t *testing.T) {
 		svc, _ := newTestApiService(t, mgr)
 
 		// First start should succeed
-		_, err = svc.StartRecording(ctx, oapi.StartRecordingRequestObject{})
+		_, err := svc.StartRecording(ctx, oapi.StartRecordingRequestObject{})
 		require.NoError(t, err)
 
 		// Second start should return conflict
@@ -80,8 +80,7 @@ func TestApiService_StartRecording(t *testing.T) {
 			assert.NotEqual(t, "default", rec.ID())
 		}
 
-		err = mgr.StopAll(ctx)
-		require.NoError(t, err)
+		require.NoError(t, mgr.StopAll(ctx))
 
 		out = mgr.ListActiveRecorders(ctx)
 		assert.Equal(t, 5, len(out))
@@ -221,18 +220,18 @@ func TestApiService_VirtualInputs(t *testing.T) {
 		svc := newSvc(t, vimgr)
 		videoLoop := true
 		audioLoop := false
-		width := int64(640)
-		height := int64(480)
-		fr := int64(24)
+		width := 640
+		height := 480
+		fr := 24
 		startPaused := true
 		body := oapi.VirtualInputsRequest{
 			Video: &oapi.VirtualInputSource{
-				Type: oapi.VirtualInputTypeStream,
+				Type: oapi.Stream,
 				Url:  "https://example.com/vid.m3u8",
 				Loop: &videoLoop,
 			},
 			Audio: &oapi.VirtualInputSource{
-				Type: oapi.VirtualInputTypeFile,
+				Type: oapi.File,
 				Url:  "https://example.com/audio.mp3",
 				Loop: &audioLoop,
 			},
@@ -274,7 +273,7 @@ func TestApiService_VirtualInputs(t *testing.T) {
 		vimgr.configureErr = errors.New("boom")
 		svc := newSvc(t, vimgr)
 		reqBody := oapi.VirtualInputsRequest{
-			Audio: &oapi.VirtualInputSource{Type: oapi.VirtualInputTypeStream, Url: "http://a"},
+			Audio: &oapi.VirtualInputSource{Type: oapi.Stream, Url: "http://a"},
 		}
 		resp, err := svc.ConfigureVirtualInputs(ctx, oapi.ConfigureVirtualInputsRequestObject{Body: &reqBody})
 		require.NoError(t, err)
