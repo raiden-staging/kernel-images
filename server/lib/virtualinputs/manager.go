@@ -185,6 +185,8 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 		return m.statusLocked(), err
 	}
 
+	m.setDefaultPulseDevices(ctx)
+
 	m.killAllFFmpeg()
 
 	if useFakeMode {
@@ -381,6 +383,12 @@ func (m *Manager) normalizeConfig(cfg Config) (Config, error) {
 
 func (m *Manager) stopLocked(ctx context.Context) error {
 	if m.cmd == nil {
+		if m.processGroupID > 0 {
+			m.killAllFFmpeg()
+			if !processGroupAlive(m.processGroupID) {
+				m.processGroupID = 0
+			}
+		}
 		return nil
 	}
 	defer m.enableScaleToZero(ctx)
@@ -390,15 +398,17 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 		m.cmd = nil
 		m.exited = nil
 		m.state = stateIdle
+		if !processGroupAlive(m.processGroupID) {
+			m.processGroupID = 0
+		}
 		return nil
 	}
 
-	pgid, err := syscall.Getpgid(m.cmd.Process.Pid)
-	if err == nil {
-		_ = syscall.Kill(-pgid, syscall.SIGTERM)
-	} else {
-		_ = m.cmd.Process.Signal(syscall.SIGTERM)
+	pgid, _ := syscall.Getpgid(m.cmd.Process.Pid)
+	if pgid > 0 {
+		m.processGroupID = pgid
 	}
+	killProcessGroupOrPID(pgid, pid, syscall.SIGTERM)
 
 	waitCtx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
@@ -413,27 +423,23 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 	select {
 	case <-waitDone:
 	case <-waitCtx.Done():
-		if err == nil {
-			_ = syscall.Kill(-pgid, syscall.SIGKILL)
-		} else {
-			_ = m.cmd.Process.Kill()
-		}
+		killProcessGroupOrPID(pgid, pid, syscall.SIGKILL)
 		select {
 		case <-waitDone:
 		case <-time.After(2 * time.Second):
 		}
 	}
 
-	if processAlive(pid) {
-		// Fallback cleanup: nuke any lingering ffmpeg instances to avoid stuck state.
-		_ = m.execCommand("pkill", "-TERM", "ffmpeg").Run()
-		time.Sleep(200 * time.Millisecond)
-		_ = m.execCommand("pkill", "-KILL", "ffmpeg").Run()
+	if processAlive(pid) || processGroupAlive(m.processGroupID) {
+		m.killAllFFmpeg()
 	}
 
 	m.cmd = nil
 	m.exited = nil
 	m.state = stateIdle
+	if !processGroupAlive(m.processGroupID) {
+		m.processGroupID = 0
+	}
 	return nil
 }
 
@@ -444,41 +450,132 @@ func processAlive(pid int) bool {
 	return syscall.Kill(pid, 0) == nil
 }
 
+func processGroupAlive(pgid int) bool {
+	if pgid <= 0 {
+		return false
+	}
+	return syscall.Kill(-pgid, 0) == nil
+}
+
+func killProcessGroupOrPID(pgid int, pid int, sig syscall.Signal) {
+	if pgid > 0 {
+		_ = syscall.Kill(-pgid, sig)
+		return
+	}
+	if pid > 0 {
+		_ = syscall.Kill(pid, sig)
+	}
+}
+
 func (m *Manager) killAllFFmpeg() {
-	_ = m.execCommand("pkill", "-TERM", "ffmpeg").Run()
+	if m.processGroupID > 0 {
+		killProcessGroupOrPID(m.processGroupID, 0, syscall.SIGTERM)
+	}
+	m.killVirtualFFmpegProcesses()
 	time.Sleep(150 * time.Millisecond)
-	_ = m.execCommand("pkill", "-KILL", "ffmpeg").Run()
+	if m.processGroupID > 0 {
+		killProcessGroupOrPID(m.processGroupID, 0, syscall.SIGKILL)
+	}
+	m.killVirtualFFmpegProcesses()
 }
 
 func (m *Manager) ensureNoFFmpeg() error {
-	m.killAllFFmpeg()
-
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		running, err := m.ffmpegRunning()
-		if err != nil {
-			return err
-		}
-		if !running {
+		m.killAllFFmpeg()
+		if !m.ownedFFmpegRunning() {
+			m.processGroupID = 0
 			return nil
 		}
 		if time.Now().After(deadline) {
-			return errors.New("ffmpeg processes still running after stop")
+			return errors.New("virtual input ffmpeg processes still running after stop")
 		}
-		m.killAllFFmpeg()
 		time.Sleep(150 * time.Millisecond)
 	}
 }
 
-func (m *Manager) ffmpegRunning() (bool, error) {
-	cmd := m.execCommand("pgrep", "ffmpeg")
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return false, nil
-		}
-		return false, err
+func (m *Manager) ownedFFmpegRunning() bool {
+	if processGroupAlive(m.processGroupID) {
+		return true
 	}
-	return true, nil
+	procs, err := m.virtualFFmpegProcesses()
+	return err == nil && len(procs) > 0
+}
+
+type ffmpegProcess struct {
+	pid     int
+	cmdline string
+}
+
+func (m *Manager) virtualFFmpegProcesses() ([]ffmpegProcess, error) {
+	cmd := m.execCommand("pgrep", "-a", "ffmpeg")
+	var buf bytes.Buffer
+	cmd.Stdout = &buf
+	cmd.Stderr = io.Discard
+	err := cmd.Run()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	out := []ffmpegProcess{}
+	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) == 0 {
+			continue
+		}
+		pid, err := strconv.Atoi(parts[0])
+		if err != nil {
+			continue
+		}
+		cmdline := ""
+		if len(parts) > 1 {
+			cmdline = parts[1]
+		}
+		if m.isVirtualFFmpegCommand(cmdline) {
+			out = append(out, ffmpegProcess{pid: pid, cmdline: cmdline})
+		}
+	}
+	return out, nil
+}
+
+func (m *Manager) killVirtualFFmpegProcesses() {
+	procs, err := m.virtualFFmpegProcesses()
+	if err != nil || len(procs) == 0 {
+		return
+	}
+	for _, proc := range procs {
+		pgid, _ := syscall.Getpgid(proc.pid)
+		killProcessGroupOrPID(pgid, proc.pid, syscall.SIGTERM)
+	}
+	time.Sleep(100 * time.Millisecond)
+	for _, proc := range procs {
+		pgid, _ := syscall.Getpgid(proc.pid)
+		killProcessGroupOrPID(pgid, proc.pid, syscall.SIGKILL)
+	}
+}
+
+func (m *Manager) isVirtualFFmpegCommand(cmdline string) bool {
+	markers := []string{
+		m.videoDevice,
+		m.audioSink,
+		m.microphoneSource,
+		defaultVideoFile,
+		defaultAudioFile,
+		"/tmp/virtual-inputs",
+	}
+	for _, marker := range markers {
+		if marker != "" && strings.Contains(cmdline, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (m *Manager) ensureVideoDevice(ctx context.Context) (bool, error) {
@@ -705,6 +802,7 @@ func (m *Manager) startFFmpegLocked(ctx context.Context, args []string) error {
 		return fmt.Errorf("failed to start ffmpeg: %w", err)
 	}
 
+	m.processGroupID = cmd.Process.Pid
 	exited := make(chan struct{})
 	m.cmd = cmd
 	m.exited = exited
@@ -719,6 +817,7 @@ func (m *Manager) startFFmpegLocked(ctx context.Context, args []string) error {
 			m.startedAt = nil
 		}
 		m.cmd = nil
+		m.processGroupID = 0
 		close(exited)
 		m.enableScaleToZero(context.Background())
 	}()

@@ -188,6 +188,7 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 func (s *ApiService) applyChromiumCaptureFlags(ctx context.Context, status virtualinputs.Status) error {
 	const (
 		flagFakeDevice = "--use-fake-device-for-media-stream"
+		flagAutoAccept = "--auto-accept-camera-and-microphone-capture"
 		videoPrefix    = "--use-file-for-fake-video-capture="
 		audioPrefix    = "--use-file-for-fake-audio-capture="
 		flagsPath      = "/chromium/flags"
@@ -200,7 +201,7 @@ func (s *ApiService) applyChromiumCaptureFlags(ctx context.Context, status virtu
 	}
 
 	filtered := filterTokens(existing, []string{flagFakeDevice}, []string{videoPrefix, audioPrefix})
-	var required []string
+	required := []string{flagAutoAccept}
 	if shouldUseVirtual {
 		required = append(required, flagFakeDevice, videoPrefix+status.VideoFile)
 		if status.AudioFile != "" {
