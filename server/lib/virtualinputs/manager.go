@@ -483,7 +483,7 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 		videoIdx = -1
 		audioIdx = -1
 	)
-	args = append(args, "-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts", "-threads", "2")
+	args = append(args, "-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts", "-threads", "2", "-y")
 
 	// Build inputs and track indexes for mapping.
 	if paused {
