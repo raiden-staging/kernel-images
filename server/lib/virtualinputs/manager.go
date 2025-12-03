@@ -402,10 +402,8 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 		close(waitDone)
 	}()
 
-	exited := false
 	select {
 	case <-waitDone:
-		exited = true
 	case <-waitCtx.Done():
 		if err == nil {
 			_ = syscall.Kill(-pgid, syscall.SIGKILL)
@@ -414,13 +412,8 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 		}
 		select {
 		case <-waitDone:
-			exited = true
 		case <-time.After(2 * time.Second):
 		}
-	}
-
-	if !exited && processAlive(pid) {
-		return fmt.Errorf("ffmpeg process %d did not exit", pid)
 	}
 
 	m.cmd = nil
