@@ -38,6 +38,12 @@ ensure_virtual_camera() {
     return
   fi
 
+  if ! check_media_support; then
+    echo "[virtual-media] Host kernel missing CONFIG_MEDIA_SUPPORT; cannot create /dev/video* device" >&2
+    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="host kernel lacks CONFIG_MEDIA_SUPPORT; cannot load v4l2loopback"
+    return
+  fi
+
   if ! command -v modprobe >/dev/null 2>&1; then
     echo "[virtual-media] modprobe not available; cannot load v4l2loopback" >&2
     return
@@ -65,6 +71,14 @@ ensure_virtual_camera() {
   else
     echo "[virtual-media] v4l2loopback loaded but $device_path not found" >&2
   fi
+}
+
+check_media_support() {
+  local config_file="/lib/modules/$(uname -r)/build/.config"
+  if [[ -f "$config_file" ]] && grep -q '^CONFIG_MEDIA_SUPPORT=y' "$config_file"; then
+    return 0
+  fi
+  return 1
 }
 
 install_v4l2loopback() {

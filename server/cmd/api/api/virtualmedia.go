@@ -28,6 +28,12 @@ func (s *ApiService) StartVirtualMedia(ctx context.Context, request oapi.StartVi
 		return oapi.StartVirtualMedia400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: err.Error()}}, nil
 	}
 
+	if cfg.Video != nil {
+		if reason := strings.TrimSpace(os.Getenv("VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON")); reason != "" {
+			return oapi.StartVirtualMedia500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: fmt.Sprintf("virtual camera unavailable: %s", reason)}}, nil
+		}
+	}
+
 	s.virtualMediaMu.Lock()
 	defer s.virtualMediaMu.Unlock()
 
