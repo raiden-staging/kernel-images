@@ -89,7 +89,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	vmManager := virtualmedia.NewManager("/chromium/virtual-media", config.PathToFFmpeg)
+	vmManager := virtualmedia.NewManager(virtualmedia.Options{
+		FFmpegPath:      config.PathToFFmpeg,
+		VideoDevicePath: config.VirtualMediaVideoDevice,
+		AudioSinkName:   config.VirtualMediaAudioSink,
+	})
 
 	apiService, err := api.New(
 		recorder.NewFFmpegManager(),

@@ -20,6 +20,10 @@ type Config struct {
 	// Absolute or relative path to the ffmpeg binary. If empty the code falls back to "ffmpeg" on $PATH.
 	PathToFFmpeg string `envconfig:"FFMPEG_PATH" default:"ffmpeg"`
 
+	// Virtual media targets
+	VirtualMediaVideoDevice string `envconfig:"VIRTUAL_MEDIA_VIDEO_DEVICE" default:"/dev/video42"`
+	VirtualMediaAudioSink   string `envconfig:"VIRTUAL_MEDIA_AUDIO_SINK" default:"audio_input"`
+
 	// DevTools proxy configuration
 	LogCDPMessages bool `envconfig:"LOG_CDP_MESSAGES" default:"false"`
 }
@@ -52,6 +56,12 @@ func validate(config *Config) error {
 	}
 	if config.PathToFFmpeg == "" {
 		return fmt.Errorf("FFMPEG_PATH is required")
+	}
+	if config.VirtualMediaVideoDevice == "" {
+		return fmt.Errorf("VIRTUAL_MEDIA_VIDEO_DEVICE is required")
+	}
+	if config.VirtualMediaAudioSink == "" {
+		return fmt.Errorf("VIRTUAL_MEDIA_AUDIO_SINK is required")
 	}
 
 	return nil

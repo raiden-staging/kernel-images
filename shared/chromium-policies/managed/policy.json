@@ -1,5 +1,9 @@
 {
   "PasswordManagerEnabled": false,
   "AutofillCreditCardEnabled": false,
-  "TranslateEnabled": false
+  "TranslateEnabled": false,
+  "VideoCaptureAllowed": true,
+  "AudioCaptureAllowed": true,
+  "DefaultCameraSetting": 2,
+  "DefaultMicrophoneSetting": 2
 }

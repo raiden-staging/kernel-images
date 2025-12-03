@@ -23,7 +23,7 @@ import (
 
 func newTestVirtualMediaManager(t *testing.T) *virtualmedia.Manager {
 	t.Helper()
-	return virtualmedia.NewManager(t.TempDir(), "ffmpeg")
+	return virtualmedia.NewManager(virtualmedia.Options{FFmpegPath: "ffmpeg", VideoDevicePath: "/dev/null", AudioSinkName: "audio_input"})
 }
 
 func TestApiService_StartRecording(t *testing.T) {

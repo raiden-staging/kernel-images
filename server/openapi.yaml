@@ -980,8 +980,9 @@ paths:
     post:
       summary: Configure virtual camera and microphone inputs
       description: |
-        Starts virtual media inputs backed by remote streams or media files and updates Chromium to
-        use them via fake capture devices. Existing virtual media pipelines are replaced.
+        Starts virtual media inputs backed by remote streams or media files and routes them into
+        OS-level virtual camera/microphone devices (v4l2loopback + PulseAudio). Existing virtual
+        media pipelines are replaced.
       operationId: startVirtualMedia
       requestBody:
         required: true
@@ -1725,7 +1726,7 @@ components:
           $ref: "#/components/schemas/VirtualMediaSource"
         output_path:
           type: string
-          description: Path backing Chromium's fake capture device
+          description: Output target backing the virtual track (e.g., /dev/video* or pulse sink)
         started_at:
           type: string
           format: date-time

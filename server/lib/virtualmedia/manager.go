@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
-	"strings"
 )
 
 // SourceKind describes the type of upstream media input.

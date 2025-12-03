@@ -175,6 +175,13 @@ func (s *ApiService) replaceVirtualMediaFlags(ctx context.Context, newFlags []st
 	return merged, nil
 }
 
+var legacyVirtualMediaFlagPrefixes = []string{
+	"--use-fake-device-for-media-stream",
+	"--use-file-for-fake-video-capture",
+	"--use-file-for-fake-audio-capture",
+	"--use-fake-ui-for-media-stream",
+}
+
 func filterTokens(tokens, toRemove []string) []string {
 	out := make([]string, 0, len(tokens))
 	remove := make(map[string]struct{}, len(toRemove))
@@ -191,23 +198,26 @@ func filterTokens(tokens, toRemove []string) []string {
 		if _, found := remove[trimmed]; found {
 			continue
 		}
+		if hasLegacyVirtualMediaPrefix(trimmed) {
+			continue
+		}
 		out = append(out, trimmed)
 	}
 	return out
 }
 
+func hasLegacyVirtualMediaPrefix(token string) bool {
+	for _, prefix := range legacyVirtualMediaFlagPrefixes {
+		if strings.HasPrefix(token, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func buildVirtualMediaFlags(paths virtualmedia.Paths) []string {
-	flags := []string{
-		"--use-fake-device-for-media-stream",
-		"--use-fake-ui-for-media-stream",
-	}
-	if paths.VideoPath != "" {
-		flags = append(flags, fmt.Sprintf("--use-file-for-fake-video-capture=%s", paths.VideoPath))
-	}
-	if paths.AudioPath != "" {
-		flags = append(flags, fmt.Sprintf("--use-file-for-fake-audio-capture=%s", paths.AudioPath))
-	}
-	return flags
+	_ = paths // legacy signature; no Chromium flags are required for OS-level virtual devices
+	return nil
 }
 
 func parseVirtualMediaConfig(body *oapi.VirtualMediaStartRequest) (virtualmedia.Config, error) {
