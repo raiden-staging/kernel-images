@@ -24,8 +24,8 @@ const (
 	defaultHeight    = 720
 	defaultFrameRate = 30
 
-	modeDevice   = "device"
-	modeFakeFile = "fake-file"
+	modeDevice      = "device"
+	modeVirtualFile = "virtual-file"
 
 	defaultVideoFile = "/tmp/virtual-inputs/video.y4m"
 	defaultAudioFile = "/tmp/virtual-inputs/audio.wav"
@@ -185,7 +185,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 	}
 
 	if useFakeMode {
-		m.mode = modeFakeFile
+		m.mode = modeVirtualFile
 		m.videoFile = defaultVideoFile
 		m.audioFile = ""
 		if normalized.Audio != nil {
@@ -384,7 +384,7 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 		_ = m.cmd.Process.Signal(syscall.SIGTERM)
 	}
 
-	waitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	waitCtx, cancel := context.WithTimeout(context.Background(), 7*time.Second)
 	defer cancel()
 	waitDone := make(chan struct{})
 	go func() {
@@ -402,11 +402,6 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 		} else {
 			_ = m.cmd.Process.Kill()
 		}
-	}
-
-	// Ensure process is gone; if not, report error.
-	if m.cmd.Process != nil && processAlive(m.cmd.Process.Pid) {
-		return fmt.Errorf("ffmpeg process %d did not exit", m.cmd.Process.Pid)
 	}
 
 	m.cmd = nil
@@ -659,14 +654,6 @@ func parseVideoNumber(path string) (int, error) {
 	base := filepath.Base(path)
 	num := strings.TrimPrefix(base, "video")
 	return strconv.Atoi(num)
-}
-
-func processAlive(pid int) bool {
-	if pid <= 0 {
-		return false
-	}
-	err := syscall.Kill(pid, 0)
-	return err == nil
 }
 
 func prepareFifo(path string) error {

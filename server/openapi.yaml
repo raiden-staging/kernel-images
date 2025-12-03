@@ -434,7 +434,7 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
-  /virtual_inputs/configure:
+  /input/devices/virtual/configure:
     post:
       summary: Configure virtual video and audio inputs
       description: Start or restart the virtual webcam and microphone pipelines using the provided sources.
@@ -456,7 +456,7 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
-  /virtual_inputs/pause:
+  /input/devices/virtual/pause:
     post:
       summary: Pause virtual inputs with silence and black frames
       operationId: pauseVirtualInputs
@@ -471,7 +471,7 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
-  /virtual_inputs/resume:
+  /input/devices/virtual/resume:
     post:
       summary: Resume previously configured virtual inputs
       operationId: resumeVirtualInputs
@@ -486,7 +486,7 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
-  /virtual_inputs/stop:
+  /input/devices/virtual/stop:
     post:
       summary: Stop virtual input pipelines and release resources
       operationId: stopVirtualInputs
@@ -499,7 +499,7 @@ paths:
                 $ref: "#/components/schemas/VirtualInputsStatus"
         "500":
           $ref: "#/components/responses/InternalError"
-  /virtual_inputs/status:
+  /input/devices/virtual/status:
     get:
       summary: Get the current virtual input status
       operationId: getVirtualInputsStatus
@@ -1680,8 +1680,8 @@ components:
           description: Current state of the virtual input pipelines.
         mode:
           type: string
-          enum: [device, fake-file]
-          description: Output mode in use (v4l2 device vs Chromium fake capture files).
+          enum: [device, virtual-file]
+          description: Output mode in use (v4l2 device vs virtual capture files).
         video_device:
           type: string
           description: Video4Linux device path used for the virtual webcam.
@@ -1693,10 +1693,10 @@ components:
           description: PulseAudio source clients should use as a microphone.
         video_file:
           type: string
-          description: Path to the Y4M file/pipe used when fake-file mode is active.
+          description: Path to the Y4M file/pipe used when virtual-file mode is active.
         audio_file:
           type: string
-          description: Path to the WAV file/pipe used when fake-file mode is active.
+          description: Path to the WAV file/pipe used when virtual-file mode is active.
         video:
           $ref: "#/components/schemas/VirtualInputSource"
         audio:
