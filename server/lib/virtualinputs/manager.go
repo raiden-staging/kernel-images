@@ -302,6 +302,10 @@ func (m *Manager) Stop(ctx context.Context) (Status, error) {
 	if err := m.stopLocked(ctx); err != nil {
 		return m.statusLocked(), err
 	}
+	if err := m.ensureNoFFmpeg(); err != nil {
+		m.lastError = err.Error()
+		return m.statusLocked(), err
+	}
 	m.state = stateIdle
 	m.startedAt = nil
 	m.lastError = ""
@@ -443,6 +447,37 @@ func (m *Manager) killAllFFmpeg() {
 	_ = m.execCommand("pkill", "-TERM", "ffmpeg").Run()
 	time.Sleep(150 * time.Millisecond)
 	_ = m.execCommand("pkill", "-KILL", "ffmpeg").Run()
+}
+
+func (m *Manager) ensureNoFFmpeg() error {
+	m.killAllFFmpeg()
+
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		running, err := m.ffmpegRunning()
+		if err != nil {
+			return err
+		}
+		if !running {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return errors.New("ffmpeg processes still running after stop")
+		}
+		m.killAllFFmpeg()
+		time.Sleep(150 * time.Millisecond)
+	}
+}
+
+func (m *Manager) ffmpegRunning() (bool, error) {
+	cmd := m.execCommand("pgrep", "ffmpeg")
+	if err := cmd.Run(); err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
 }
 
 func (m *Manager) ensureVideoDevice(ctx context.Context) (bool, error) {
