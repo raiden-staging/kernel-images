@@ -227,6 +227,10 @@ install_media_stack_from_source() {
   local kernel_ver="$1"
   local workdir="/tmp/media-build"
 
+  # Ensure required tools for media_build
+  apt-get update >/dev/null 2>&1 || true
+  apt-get --no-install-recommends -y install patchutils libproc-processtable-perl >/dev/null 2>&1 || true
+
   rm -rf "$workdir"
   if ! git clone --depth=1 --branch for-v5.18 --single-branch https://git.linuxtv.org/media_build.git "$workdir"; then
     echo "[virtual-media] Failed to clone media_build" >&2
@@ -234,7 +238,7 @@ install_media_stack_from_source() {
   fi
 
   # Build and install the media stack (includes videodev) for the running kernel.
-  if ! (cd "$workdir" && ./build --no-prompt && make install); then
+  if ! (cd "$workdir" && ./build --depth 1 && make install); then
     echo "[virtual-media] media_build compilation failed" >&2
     return 1
   fi
