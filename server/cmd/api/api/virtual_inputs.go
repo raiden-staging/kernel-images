@@ -3,7 +3,11 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
+	"reflect"
+	"strings"
 
+	"github.com/onkernel/kernel-images/server/lib/chromiumflags"
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/virtualinputs"
@@ -29,6 +33,13 @@ func (s *ApiService) ConfigureVirtualInputs(ctx context.Context, req oapi.Config
 		log.Error("failed to configure virtual inputs", "err", err)
 		return oapi.ConfigureVirtualInputs500JSONResponse{
 			InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to configure virtual inputs"},
+		}, nil
+	}
+
+	if err := s.applyChromiumCaptureFlags(ctx, status); err != nil {
+		log.Error("failed to apply chromium capture flags", "err", err)
+		return oapi.ConfigureVirtualInputs500JSONResponse{
+			InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to apply chromium flags"},
 		}, nil
 	}
 
@@ -76,6 +87,12 @@ func (s *ApiService) StopVirtualInputs(ctx context.Context, _ oapi.StopVirtualIn
 		log.Error("failed to stop virtual inputs", "err", err)
 		return oapi.StopVirtualInputs500JSONResponse{
 			InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to stop virtual inputs"},
+		}, nil
+	}
+	if err := s.applyChromiumCaptureFlags(ctx, status); err != nil {
+		log.Error("failed to clear chromium capture flags", "err", err)
+		return oapi.StopVirtualInputs500JSONResponse{
+			InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to clear chromium flags"},
 		}, nil
 	}
 	return oapi.StopVirtualInputs200JSONResponse(toVirtualInputsStatus(status)), nil
@@ -140,6 +157,15 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 	if status.StartedAt != nil {
 		resp.StartedAt = status.StartedAt
 	}
+	if status.Mode != "" {
+		resp.Mode = status.Mode
+	}
+	if status.VideoFile != "" {
+		resp.VideoFile = &status.VideoFile
+	}
+	if status.AudioFile != "" {
+		resp.AudioFile = &status.AudioFile
+	}
 	if status.Video != nil {
 		resp.Video = &oapi.VirtualInputSource{
 			Type: oapi.VirtualInputType(status.Video.Type),
@@ -155,6 +181,72 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 		}
 	}
 	return resp
+}
+
+func (s *ApiService) applyChromiumCaptureFlags(ctx context.Context, status virtualinputs.Status) error {
+	const (
+		flagFakeDevice = "--use-fake-device-for-media-stream"
+		videoPrefix    = "--use-file-for-fake-video-capture="
+		audioPrefix    = "--use-file-for-fake-audio-capture="
+		flagsPath      = "/chromium/flags"
+	)
+
+	shouldUseFake := status.Mode == "fake-file" && status.VideoFile != ""
+	existing, err := chromiumflags.ReadOptionalFlagFile(flagsPath)
+	if err != nil {
+		return fmt.Errorf("read flags: %w", err)
+	}
+
+	filtered := filterTokens(existing, []string{flagFakeDevice}, []string{videoPrefix, audioPrefix})
+	var required []string
+	if shouldUseFake {
+		required = append(required, flagFakeDevice, videoPrefix+status.VideoFile)
+		if status.AudioFile != "" {
+			required = append(required, audioPrefix+status.AudioFile)
+		}
+	}
+
+	merged := chromiumflags.MergeFlags(filtered, required)
+	if slicesEqual(existing, merged) {
+		return nil
+	}
+
+	if err := chromiumflags.WriteFlagFile(flagsPath, merged); err != nil {
+		return fmt.Errorf("write flags: %w", err)
+	}
+
+	return s.restartChromiumAndWait(ctx, "virtual inputs configure")
+}
+
+func filterTokens(tokens, exact []string, prefixes []string) []string {
+	out := make([]string, 0, len(tokens))
+	for _, t := range tokens {
+		skip := false
+		for _, ex := range exact {
+			if t == ex {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		for _, p := range prefixes {
+			if strings.HasPrefix(t, p) {
+				skip = true
+				break
+			}
+		}
+		if skip {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
+}
+
+func slicesEqual(a, b []string) bool {
+	return reflect.DeepEqual(a, b)
 }
 
 func isVirtualInputBadRequest(err error) bool {

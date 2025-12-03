@@ -303,6 +303,9 @@ func (m *Manager) Stop(ctx context.Context) (Status, error) {
 	m.startedAt = nil
 	m.lastError = ""
 	m.lastCfg = nil
+	m.mode = modeDevice
+	m.videoFile = ""
+	m.audioFile = ""
 	return m.statusLocked(), nil
 }
 
@@ -405,14 +408,14 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 	return nil
 }
 
-func (m *Manager) ensureVideoDevice(ctx context.Context) error {
+func (m *Manager) ensureVideoDevice(ctx context.Context) (bool, error) {
 	if _, err := os.Stat(m.videoDevice); err == nil {
-		return nil
+		return true, nil
 	}
 
 	videoNr, err := parseVideoNumber(m.videoDevice)
 	if err != nil {
-		return fmt.Errorf("invalid video device path: %w", err)
+		return false, fmt.Errorf("invalid video device path: %w", err)
 	}
 
 	args := []string{
@@ -426,7 +429,7 @@ func (m *Manager) ensureVideoDevice(ctx context.Context) error {
 	cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to load v4l2loopback: %w: %s", err, strings.TrimSpace(buf.String()))
+		return false, fmt.Errorf("failed to load v4l2loopback: %w: %s", err, strings.TrimSpace(buf.String()))
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
@@ -434,11 +437,11 @@ func (m *Manager) ensureVideoDevice(ctx context.Context) error {
 	for {
 		if _, err := os.Stat(m.videoDevice); err == nil {
 			_ = os.Chmod(m.videoDevice, 0o666)
-			return nil
+			return true, nil
 		}
 		select {
 		case <-waitCtx.Done():
-			return errors.New("v4l2loopback device did not appear after modprobe")
+			return false, errors.New("v4l2loopback device did not appear after modprobe")
 		case <-time.After(200 * time.Millisecond):
 		}
 	}
@@ -531,9 +534,18 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 			"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2", cfg.Width, cfg.Height, cfg.Width, cfg.Height),
 			"-pix_fmt", "yuv420p",
 			"-r", strconv.Itoa(cfg.FrameRate),
-			"-f", "v4l2",
-			m.videoDevice,
 		)
+		if m.mode == modeFakeFile && m.videoFile != "" {
+			args = append(args,
+				"-f", "yuv4mpegpipe",
+				m.videoFile,
+			)
+		} else {
+			args = append(args,
+				"-f", "v4l2",
+				m.videoDevice,
+			)
+		}
 	}
 
 	if cfg.Audio != nil {
@@ -544,6 +556,15 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 			"-f", "pulse",
 			m.audioSink,
 		)
+		if m.audioFile != "" {
+			args = append(args,
+				"-map", fmt.Sprintf("%d:a:0", audioIdx),
+				"-ac", "2",
+				"-ar", "48000",
+				"-f", "wav",
+				m.audioFile,
+			)
+		}
 	}
 
 	return args, nil
@@ -631,6 +652,25 @@ func parseVideoNumber(path string) (int, error) {
 	base := filepath.Base(path)
 	num := strings.TrimPrefix(base, "video")
 	return strconv.Atoi(num)
+}
+
+func prepareFifo(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	if fi, err := os.Stat(path); err == nil {
+		if fi.Mode()&os.ModeNamedPipe == 0 {
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		} else {
+			return nil
+		}
+	}
+	return syscall.Mkfifo(path, 0o666)
 }
 
 func cloneSource(src *MediaSource) *MediaSource {
