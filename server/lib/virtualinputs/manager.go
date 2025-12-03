@@ -416,6 +416,10 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 		}
 	}
 
+	if processAlive(pid) {
+		return fmt.Errorf("ffmpeg process %d did not exit", pid)
+	}
+
 	m.cmd = nil
 	m.exited = nil
 	m.state = stateIdle
