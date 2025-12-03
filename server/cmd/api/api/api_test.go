@@ -245,7 +245,7 @@ func TestApiService_VirtualInputs(t *testing.T) {
 		require.NoError(t, err)
 		out, ok := resp.(oapi.ConfigureVirtualInputs200JSONResponse)
 		require.True(t, ok, "unexpected response type %T", resp)
-		require.Equal(t, "paused", out.State)
+		require.Equal(t, oapi.VirtualInputsStatusStatePaused, out.State)
 		require.Len(t, vimgr.configureCalls, 1)
 		call := vimgr.configureCalls[0]
 		require.True(t, call.paused)
@@ -306,7 +306,7 @@ func TestApiService_VirtualInputs(t *testing.T) {
 		require.NoError(t, err)
 		out, ok := statusResp.(oapi.GetVirtualInputsStatus200JSONResponse)
 		require.True(t, ok)
-		require.Equal(t, "running", out.State)
+		require.Equal(t, oapi.VirtualInputsStatusStateRunning, out.State)
 
 		stopResp, err := svc.StopVirtualInputs(ctx, oapi.StopVirtualInputsRequestObject{})
 		require.NoError(t, err)
