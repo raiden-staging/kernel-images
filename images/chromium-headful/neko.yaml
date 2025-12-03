@@ -4,6 +4,19 @@
 desktop:
   screen: "1920x1080@25"
 
+capture:
+  audio:
+    codec: "opus"
+    device: "audio_output.monitor"
+  microphone:
+    enabled: true
+    device: "audio_input"
+  webcam:
+    enabled: true
+    device: "/dev/video42"
+    width: 1280
+    height: 720
+
 member:
   provider: multiuser
   multiuser:
