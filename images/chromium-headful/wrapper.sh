@@ -18,6 +18,7 @@ VIRTUAL_MEDIA_AUDIO_SINK="${VIRTUAL_MEDIA_AUDIO_SINK:-audio_input}"
 VIRTUAL_MEDIA_AUDIO_SOURCE="${VIRTUAL_MEDIA_AUDIO_SOURCE:-microphone}"
 VIRTUAL_MEDIA_WEBCAM_WIDTH="${VIRTUAL_MEDIA_WEBCAM_WIDTH:-1280}"
 VIRTUAL_MEDIA_WEBCAM_HEIGHT="${VIRTUAL_MEDIA_WEBCAM_HEIGHT:-720}"
+VIRTUAL_MEDIA_BUILD_LOG="${VIRTUAL_MEDIA_BUILD_LOG:-/var/log/v4l2loopback-build.log}"
 
 export VIRTUAL_MEDIA_VIDEO_DEVICE VIRTUAL_MEDIA_AUDIO_SINK VIRTUAL_MEDIA_AUDIO_SOURCE
 export VIRTUAL_MEDIA_WEBCAM_WIDTH VIRTUAL_MEDIA_WEBCAM_HEIGHT
@@ -67,6 +68,74 @@ install_v4l2loopback_runtime() {
   return 0
 }
 
+V4L2_SOURCE_BUILD_ATTEMPTED=0
+install_v4l2loopback_from_source() {
+  if [[ "${V4L2_SOURCE_BUILD_ATTEMPTED}" -eq 1 ]]; then
+    echo "[virtual-media] Skipping source build; already attempted" >&2
+    return 1
+  fi
+  V4L2_SOURCE_BUILD_ATTEMPTED=1
+
+  if ! command -v git >/dev/null 2>&1; then
+    echo "[virtual-media] git is required to build v4l2loopback from source" >&2
+    return 1
+  fi
+  if ! command -v make >/dev/null 2>&1; then
+    echo "[virtual-media] make is required to build v4l2loopback from source" >&2
+    return 1
+  fi
+
+  echo "[virtual-media] Attempting to build media core and v4l2loopback from source"
+  mkdir -p "$(dirname "$VIRTUAL_MEDIA_BUILD_LOG")"
+  : > "$VIRTUAL_MEDIA_BUILD_LOG"
+
+  # Basic build dependencies are already present in the image; install headers and git if missing.
+  if command -v apt-get >/dev/null 2>&1; then
+    if ! apt-get update >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1; then
+      echo "[virtual-media] Failed to update package lists for source build (see $VIRTUAL_MEDIA_BUILD_LOG)" >&2
+      return 1
+    fi
+    apt-get --no-install-recommends -y install \
+      linux-headers-"$(uname -r)" \
+      git build-essential bc bison flex libelf-dev libssl-dev pkg-config \
+      >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1 || {
+      echo "[virtual-media] Failed to install build prerequisites (see $VIRTUAL_MEDIA_BUILD_LOG)" >&2
+      return 1
+    }
+  fi
+
+  workdir="$(mktemp -d /tmp/v4l2-source-build.XXXXXX)"
+  trap 'rm -rf "$workdir"; trap - RETURN' RETURN
+
+  media_build_dir="$workdir/media-build"
+  if ! git clone --depth=1 https://git.linuxtv.org/media_build.git "$media_build_dir" >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1; then
+    echo "[virtual-media] Failed to clone media_build (see $VIRTUAL_MEDIA_BUILD_LOG)" >&2
+    return 1
+  fi
+  if ! (cd "$media_build_dir" && ./build -j"$(nproc)" >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1 && make install >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1); then
+    echo "[virtual-media] Failed to build/install media core modules (see $VIRTUAL_MEDIA_BUILD_LOG)" >&2
+    return 1
+  fi
+
+  loopback_dir="$workdir/v4l2loopback"
+  if ! git clone --depth=1 https://github.com/umlaeute/v4l2loopback.git "$loopback_dir" >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1; then
+    echo "[virtual-media] Failed to clone v4l2loopback (see $VIRTUAL_MEDIA_BUILD_LOG)" >&2
+    return 1
+  fi
+  if ! make -C /lib/modules/"$(uname -r)"/build M="$loopback_dir" -j"$(nproc)" >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1; then
+    echo "[virtual-media] Failed to build v4l2loopback module (see $VIRTUAL_MEDIA_BUILD_LOG)" >&2
+    return 1
+  fi
+  if ! make -C /lib/modules/"$(uname -r)"/build M="$loopback_dir" install >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1; then
+    echo "[virtual-media] Failed to install v4l2loopback module (see $VIRTUAL_MEDIA_BUILD_LOG)" >&2
+    return 1
+  fi
+
+  depmod "$(uname -r)" >>"$VIRTUAL_MEDIA_BUILD_LOG" 2>&1 || true
+  echo "[virtual-media] Built and installed v4l2loopback from source"
+  return 0
+}
+
 ensure_virtual_camera() {
   local device_path="$VIRTUAL_MEDIA_VIDEO_DEVICE"
   unset VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON
@@ -101,6 +170,14 @@ ensure_virtual_camera() {
       echo "[virtual-media] Retrying v4l2loopback load after runtime install"
       if modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
         echo "[virtual-media] v4l2loopback loaded after runtime install"
+      fi
+    fi
+    if [[ ! -e "$device_path" ]]; then
+      echo "[virtual-media] Runtime install failed; attempting source build fallback (logs at ${VIRTUAL_MEDIA_BUILD_LOG})"
+      if install_v4l2loopback_from_source; then
+        if modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
+          echo "[virtual-media] v4l2loopback loaded after source build"
+        fi
       fi
     fi
 
