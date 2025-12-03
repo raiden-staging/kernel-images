@@ -35,6 +35,38 @@ NEKO_CAPTURE_WEBCAM_HEIGHT="${NEKO_CAPTURE_WEBCAM_HEIGHT:-$VIRTUAL_MEDIA_WEBCAM_
 export NEKO_CAPTURE_AUDIO_DEVICE NEKO_CAPTURE_AUDIO_CODEC NEKO_CAPTURE_MICROPHONE_ENABLED NEKO_CAPTURE_MICROPHONE_DEVICE
 export NEKO_CAPTURE_WEBCAM_ENABLED NEKO_CAPTURE_WEBCAM_DEVICE NEKO_CAPTURE_WEBCAM_WIDTH NEKO_CAPTURE_WEBCAM_HEIGHT
 
+V4L2_RUNTIME_INSTALL_ATTEMPTED=0
+
+install_v4l2loopback_runtime() {
+  if [[ "${V4L2_RUNTIME_INSTALL_ATTEMPTED}" -eq 1 ]]; then
+    return 1
+  fi
+  V4L2_RUNTIME_INSTALL_ATTEMPTED=1
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "[virtual-media] apt-get unavailable; cannot install v4l2loopback at runtime" >&2
+    return 1
+  fi
+
+  echo "[virtual-media] Attempting runtime install of v4l2loopback and kernel headers"
+  if ! apt-get update; then
+    echo "[virtual-media] Failed to update package lists for v4l2loopback install" >&2
+    return 1
+  fi
+
+  if ! apt-get --no-install-recommends -y install \
+      "linux-headers-$(uname -r)" \
+      "linux-modules-extra-$(uname -r)" \
+      v4l2loopback-dkms \
+      v4l2loopback-utils \
+      v4l-utils; then
+    echo "[virtual-media] Runtime v4l2loopback install failed" >&2
+    return 1
+  fi
+
+  return 0
+}
+
 ensure_virtual_camera() {
   local device_path="$VIRTUAL_MEDIA_VIDEO_DEVICE"
   unset VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON
@@ -65,21 +97,30 @@ ensure_virtual_camera() {
   local video_nr="${device_path#/dev/video}"
   echo "[virtual-media] Loading v4l2loopback for $device_path (video_nr=$video_nr)"
   if ! modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
-    local reason="v4l2loopback could not be loaded"
-    local detailed_reason=""
-    if ! modinfo v4l2loopback >/dev/null 2>&1; then
-      detailed_reason="v4l2loopback kernel module not installed in image"
+    if install_v4l2loopback_runtime; then
+      echo "[virtual-media] Retrying v4l2loopback load after runtime install"
+      if modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
+        echo "[virtual-media] v4l2loopback loaded after runtime install"
+      fi
     fi
-    if [[ -z "$detailed_reason" ]]; then
-      if detailed_reason=$(media_support_reason); [[ -n "$detailed_reason" ]]; then
+
+    if [[ ! -e "$device_path" ]]; then
+      local reason="v4l2loopback could not be loaded"
+      local detailed_reason=""
+      if ! modinfo v4l2loopback >/dev/null 2>&1; then
+        detailed_reason="v4l2loopback kernel module not installed in image"
+      fi
+      if [[ -z "$detailed_reason" ]]; then
+        if detailed_reason=$(media_support_reason); [[ -n "$detailed_reason" ]]; then
+          reason="$detailed_reason"
+        fi
+      else
         reason="$detailed_reason"
       fi
-    else
-      reason="$detailed_reason"
+      echo "[virtual-media] Failed to load v4l2loopback; camera will be unavailable (${reason})" >&2
+      export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="$reason"
+      return
     fi
-    echo "[virtual-media] Failed to load v4l2loopback; camera will be unavailable (${reason})" >&2
-    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="$reason"
-    return
   fi
 
   if [ -e "$device_path" ]; then

@@ -2,11 +2,23 @@
 
 set -o errexit -o pipefail -o nounset
 
-ARCH="${TARGETARCH:-$(dpkg --print-architecture)}"
-if [[ "$ARCH" != "amd64" ]]; then
-  echo "[virtual-media] Skipping v4l2loopback install for architecture ${ARCH}"
+HOST_ARCH="$(dpkg --print-architecture)"
+ARCH="${TARGETARCH:-$HOST_ARCH}"
+
+# When cross-building (TARGETARCH differs from the host architecture), skip installing
+# kernel modules because they won't match the running kernel.
+if [[ -n "${TARGETARCH:-}" && "$TARGETARCH" != "$HOST_ARCH" ]]; then
+  echo "[virtual-media] Skipping v4l2loopback install for cross-build (${TARGETARCH} on ${HOST_ARCH})"
   exit 0
 fi
+
+case "$ARCH" in
+  amd64|arm64) ;;
+  *)
+    echo "[virtual-media] Skipping v4l2loopback install for unsupported architecture ${ARCH}"
+    exit 0
+    ;;
+esac
 
 kernel_ver="$(uname -r)"
 echo "[virtual-media] Preparing v4l2loopback for kernel ${kernel_ver}"
