@@ -167,6 +167,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-ap
     apt-get -y upgrade && \
     apt-get --no-install-recommends -y install  \
     gpg-agent \
+    kmod \
     # UI Requirements
     xvfb \
     xterm \
@@ -221,9 +222,9 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-ap
     else \
       apt-get update; \
       apt-get --no-install-recommends -y install debian-archive-keyring dkms; \
-      echo "deb http://deb.debian.org/debian bookworm main contrib non-free-firmware" > /etc/apt/sources.list.d/debian-bookworm.list; \
-      echo "deb http://deb.debian.org/debian-security bookworm-security main contrib non-free-firmware" >> /etc/apt/sources.list.d/debian-bookworm.list; \
-      echo "deb http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware" >> /etc/apt/sources.list.d/debian-bookworm.list; \
+      echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm main contrib non-free-firmware" > /etc/apt/sources.list.d/debian-bookworm.list; \
+      echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security bookworm-security main contrib non-free-firmware" >> /etc/apt/sources.list.d/debian-bookworm.list; \
+      echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware" >> /etc/apt/sources.list.d/debian-bookworm.list; \
       apt-get update; \
       apt-get --no-install-recommends -y install linux-headers-$(uname -r) v4l2loopback-dkms v4l2loopback-utils v4l-utils; \
       rm /etc/apt/sources.list.d/debian-bookworm.list; \
