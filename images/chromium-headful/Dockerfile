@@ -225,6 +225,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-ap
       DEBIAN_KEYRING_PKG="debian-archive-keyring_2023.3+deb12u2_all.deb"; \
       curl -fsSL "http://deb.debian.org/debian/pool/main/d/debian-archive-keyring/${DEBIAN_KEYRING_PKG}" -o "/tmp/${DEBIAN_KEYRING_PKG}"; \
       dpkg -i "/tmp/${DEBIAN_KEYRING_PKG}"; \
+      install -m644 /usr/share/keyrings/debian-archive-keyring.gpg /etc/apt/trusted.gpg.d/debian-archive-keyring.gpg; \
       rm "/tmp/${DEBIAN_KEYRING_PKG}"; \
       echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm main contrib non-free-firmware" > /etc/apt/sources.list.d/debian-bookworm.list; \
       echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security bookworm-security main contrib non-free-firmware" >> /etc/apt/sources.list.d/debian-bookworm.list; \
