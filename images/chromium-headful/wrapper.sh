@@ -11,6 +11,78 @@ export XDG_CACHE_HOME="/tmp/.chromium"
 export XDG_RUNTIME_DIR="/tmp/runtime-kernel"
 export DISPLAY=":1"
 
+# Virtual media targets (OS-level devices)
+VIRTUAL_MEDIA_VIDEO_DEVICE="${VIRTUAL_MEDIA_VIDEO_DEVICE:-/dev/video42}"
+VIRTUAL_CAMERA_LABEL="${VIRTUAL_CAMERA_LABEL:-Virtual Camera}"
+VIRTUAL_MEDIA_AUDIO_SINK="${VIRTUAL_MEDIA_AUDIO_SINK:-audio_input}"
+VIRTUAL_MEDIA_AUDIO_SOURCE="${VIRTUAL_MEDIA_AUDIO_SOURCE:-microphone}"
+
+export VIRTUAL_MEDIA_VIDEO_DEVICE VIRTUAL_MEDIA_AUDIO_SINK VIRTUAL_MEDIA_AUDIO_SOURCE
+
+ensure_virtual_camera() {
+  local device_path="$VIRTUAL_MEDIA_VIDEO_DEVICE"
+  if [[ -z "$device_path" ]]; then
+    echo "[virtual-media] No virtual camera device configured; skipping v4l2loopback setup"
+    return
+  fi
+
+  if [[ "$device_path" != /dev/video* ]]; then
+    echo "[virtual-media] Virtual camera device must be under /dev/video*: $device_path" >&2
+    return
+  fi
+
+  if [ -e "$device_path" ]; then
+    echo "[virtual-media] Virtual camera already present at $device_path"
+    chmod 666 "$device_path" 2>/dev/null || true
+    chown root:video "$device_path" 2>/dev/null || true
+    return
+  fi
+
+  if ! command -v modprobe >/dev/null 2>&1; then
+    echo "[virtual-media] modprobe not available; cannot load v4l2loopback" >&2
+    return
+  fi
+
+  local video_nr="${device_path#/dev/video}"
+  echo "[virtual-media] Loading v4l2loopback for $device_path (video_nr=$video_nr)"
+  if ! modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
+    echo "[virtual-media] Failed to load v4l2loopback; camera will be unavailable" >&2
+    return
+  fi
+
+  if [ -e "$device_path" ]; then
+    chmod 666 "$device_path" 2>/dev/null || true
+    chown root:video "$device_path" 2>/dev/null || true
+    if command -v v4l2loopback-ctl >/dev/null 2>&1; then
+      v4l2loopback-ctl set-fps "$device_path" 30 >/dev/null 2>&1 || true
+    fi
+    echo "[virtual-media] Virtual camera ready at $device_path"
+  else
+    echo "[virtual-media] v4l2loopback loaded but $device_path not found" >&2
+  fi
+}
+
+set_pulse_defaults() {
+  local sink="$VIRTUAL_MEDIA_AUDIO_SINK"
+  local source="$VIRTUAL_MEDIA_AUDIO_SOURCE"
+
+  if [[ -n "$sink" ]]; then
+    if ! runuser -u kernel -- pactl set-default-sink "$sink" >/dev/null 2>&1; then
+      echo "[virtual-media] Failed to set default PulseAudio sink to $sink" >&2
+    else
+      echo "[virtual-media] Default PulseAudio sink set to $sink"
+    fi
+  fi
+
+  if [[ -n "$source" ]]; then
+    if ! runuser -u kernel -- pactl set-default-source "$source" >/dev/null 2>&1; then
+      echo "[virtual-media] Failed to set default PulseAudio source to $source" >&2
+    else
+      echo "[virtual-media] Default PulseAudio source set to $source"
+    fi
+  fi
+}
+
 # If the WITHDOCKER environment variable is not set, it means we are not running inside a Docker container.
 # Docker manages /dev/shm itself, and attempting to mount or modify it can cause permission or device errors.
 # However, in a unikernel container environment (non-Docker), we need to manually create and mount /dev/shm as a tmpfs
@@ -41,6 +113,9 @@ if [[ -z "${WITHDOCKER:-}" ]]; then
   echo "[wrapper] Disabling scale-to-zero"
   disable_scale_to_zero
 fi
+
+echo "[wrapper] Ensuring virtual camera device at ${VIRTUAL_MEDIA_VIDEO_DEVICE}"
+ensure_virtual_camera
 
 # -----------------------------------------------------------------------------
 # House-keeping for the unprivileged "kernel" user --------------------------------
@@ -214,6 +289,8 @@ for i in $(seq 1 20); do
   fi
   sleep 0.5
 done
+
+set_pulse_defaults
 
 # Start Chromium with display :1 and remote debugging, loading our recorder extension.
 echo "[wrapper] Starting Chromium via supervisord on internal port $INTERNAL_PORT"

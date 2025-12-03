@@ -212,6 +212,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-ap
     unzip && \
     fc-cache -f
 
+# install v4l2loopback for virtual camera support (Debian kernel headers are needed for the host kernel version)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-apt-cache \
+    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=$CACHEIDPREFIX-apt-lib \
+    set -eux; \
+    if [ "${TARGETARCH:-amd64}" != "amd64" ]; then \
+      echo "Skipping v4l2loopback installation for TARGETARCH=${TARGETARCH:-amd64}"; \
+    else \
+      apt-get update; \
+      apt-get --no-install-recommends -y install debian-archive-keyring dkms; \
+      echo "deb http://deb.debian.org/debian bookworm main contrib non-free-firmware" > /etc/apt/sources.list.d/debian-bookworm.list; \
+      echo "deb http://deb.debian.org/debian-security bookworm-security main contrib non-free-firmware" >> /etc/apt/sources.list.d/debian-bookworm.list; \
+      echo "deb http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware" >> /etc/apt/sources.list.d/debian-bookworm.list; \
+      apt-get update; \
+      apt-get --no-install-recommends -y install linux-headers-$(uname -r) v4l2loopback-dkms v4l2loopback-utils v4l-utils; \
+      rm /etc/apt/sources.list.d/debian-bookworm.list; \
+    fi
+
 # install ffmpeg manually since the version available in apt is from the 4.x branch due to #drama.
 COPY --from=ffmpeg-downloader /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --from=ffmpeg-downloader /usr/local/bin/ffprobe /usr/local/bin/ffprobe
