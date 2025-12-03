@@ -175,6 +175,12 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 	}
 
 	useFakeMode := false
+	// Avoid accidentally routing injected audio into the playback sink; force the
+	// dedicated virtual input sink when the configured sink is the output sink.
+	if m.audioSink == "audio_output" {
+		log.Warn("forcing virtual input audio sink to avoid leaking into output sink")
+		m.audioSink = "audio_input"
+	}
 	if normalized.Video != nil {
 		if ok, err := m.ensureVideoDevice(ctx); err != nil || !ok {
 			useFakeMode = true
