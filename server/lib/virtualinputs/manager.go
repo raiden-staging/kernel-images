@@ -404,6 +404,11 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 		} else {
 			_ = m.cmd.Process.Kill()
 		}
+		select {
+		case <-waitDone:
+			exited = true
+		case <-time.After(2 * time.Second):
+		}
 	}
 
 	if !exited {
