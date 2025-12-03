@@ -377,6 +377,14 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 	}
 	defer m.enableScaleToZero(ctx)
 
+	pid := m.cmd.Process.Pid
+	if !processAlive(pid) {
+		m.cmd = nil
+		m.exited = nil
+		m.state = stateIdle
+		return nil
+	}
+
 	pgid, err := syscall.Getpgid(m.cmd.Process.Pid)
 	if err == nil {
 		_ = syscall.Kill(-pgid, syscall.SIGTERM)
@@ -419,6 +427,13 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 	m.exited = nil
 	m.state = stateIdle
 	return nil
+}
+
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	return syscall.Kill(pid, 0) == nil
 }
 
 func (m *Manager) ensureVideoDevice(ctx context.Context) (bool, error) {
