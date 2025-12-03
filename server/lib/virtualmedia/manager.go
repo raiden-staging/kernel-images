@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"sync"
 	"syscall"
 	"time"
+	"strings"
 )
 
 // SourceKind describes the type of upstream media input.
@@ -27,13 +27,25 @@ type Source struct {
 	Loop bool
 }
 
+const (
+	DefaultVideoDevicePath = "/dev/video42"
+	DefaultAudioSinkName   = "audio_input"
+)
+
+// Options drive how the manager targets OS-level virtual devices.
+type Options struct {
+	FFmpegPath      string
+	VideoDevicePath string
+	AudioSinkName   string
+}
+
 // Config wraps optional audio/video sources.
 type Config struct {
 	Video *Source
 	Audio *Source
 }
 
-// Paths expose the file paths backing Chromium's fake devices.
+// Paths expose the OS targets backing the virtual devices.
 type Paths struct {
 	VideoPath string
 	AudioPath string
@@ -60,13 +72,15 @@ type commandFactory func(ctx context.Context, name string, arg ...string) *exec.
 
 // Manager owns the ffmpeg pipelines that feed Chromium's virtual camera/microphone.
 type Manager struct {
-	mu          sync.Mutex
-	baseDir     string
-	ffmpegPath  string
-	commandFn   commandFactory
-	video       *process
-	audio       *process
-	readerPipes []*os.File
+	mu         sync.Mutex
+	ffmpegPath string
+	commandFn  commandFactory
+
+	videoDevice string
+	audioSink   string
+
+	video *process
+	audio *process
 }
 
 // process wraps an ffmpeg invocation and its lifecycle metadata.
@@ -82,16 +96,28 @@ type process struct {
 
 const stopTimeout = 5 * time.Second
 
-// NewManager returns a Manager writing media artifacts under baseDir.
-func NewManager(baseDir, ffmpegPath string) *Manager {
-	path := ffmpegPath
+// NewManager returns a Manager writing into OS-level virtual devices.
+func NewManager(opts Options) *Manager {
+	path := opts.FFmpegPath
 	if path == "" {
 		path = "ffmpeg"
 	}
+
+	videoDevice := opts.VideoDevicePath
+	if videoDevice == "" {
+		videoDevice = DefaultVideoDevicePath
+	}
+
+	audioSink := opts.AudioSinkName
+	if audioSink == "" {
+		audioSink = DefaultAudioSinkName
+	}
+
 	return &Manager{
-		baseDir:    baseDir,
-		ffmpegPath: path,
-		commandFn:  exec.CommandContext,
+		ffmpegPath:  path,
+		commandFn:   exec.CommandContext,
+		videoDevice: videoDevice,
+		audioSink:   audioSink,
 	}
 }
 
@@ -103,40 +129,40 @@ func (m *Manager) Configure(ctx context.Context, cfg Config) (Paths, error) {
 	ctx, cancel := ensureTimeout(ctx, stopTimeout)
 	defer cancel()
 
-	if err := m.ensureBaseDir(); err != nil {
-		return Paths{}, err
-	}
-
 	if err := m.stopAllLocked(ctx); err != nil {
 		return Paths{}, err
 	}
 
 	var paths Paths
 	if cfg.Video != nil {
-		videoPath := filepath.Join(m.baseDir, "virtual-camera.y4m")
-		proc, err := m.startLocked(ctx, *cfg.Video, videoPath, true)
+		if err := m.ensureVideoTarget(); err != nil {
+			return Paths{}, err
+		}
+		proc, err := m.startVideoLocked(ctx, *cfg.Video)
 		if err != nil {
 			_ = m.stopAllLocked(ctx)
 			return Paths{}, err
 		}
 		m.video = proc
-		paths.VideoPath = videoPath
+		paths.VideoPath = m.videoDevice
 	}
 	if cfg.Audio != nil {
-		audioPath := filepath.Join(m.baseDir, "virtual-microphone.wav")
-		proc, err := m.startLocked(ctx, *cfg.Audio, audioPath, false)
+		if err := m.ensureAudioTarget(ctx); err != nil {
+			return Paths{}, err
+		}
+		proc, err := m.startAudioLocked(ctx, *cfg.Audio)
 		if err != nil {
 			_ = m.stopAllLocked(ctx)
 			return Paths{}, err
 		}
 		m.audio = proc
-		paths.AudioPath = audioPath
+		paths.AudioPath = fmt.Sprintf("pulse:%s", m.audioSink)
 	}
 
 	return paths, nil
 }
 
-// Stop terminates all running pipelines and cleans up FIFOs/files.
+// Stop terminates all running pipelines.
 func (m *Manager) Stop(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -198,43 +224,81 @@ func (m *Manager) Status() Status {
 	}
 }
 
-func (m *Manager) ensureBaseDir() error {
-	if m.baseDir == "" {
-		return errors.New("baseDir is required")
+func (m *Manager) ensureVideoTarget() error {
+	if m.videoDevice == "" {
+		return errors.New("video device is required")
 	}
-	return os.MkdirAll(m.baseDir, 0o755)
+	info, err := os.Stat(m.videoDevice)
+	if err != nil {
+		return fmt.Errorf("video device not available at %s: %w", m.videoDevice, err)
+	}
+	if info.Mode()&os.ModeDevice == 0 {
+		return fmt.Errorf("video target %s is not a device", m.videoDevice)
+	}
+	return nil
 }
 
-func (m *Manager) startLocked(ctx context.Context, source Source, outputPath string, isVideo bool) (*process, error) {
+func (m *Manager) ensureAudioTarget(ctx context.Context) error {
+	if m.audioSink == "" {
+		return errors.New("audio sink is required")
+	}
+	sinks, err := listPulseSinks(ctx)
+	if err != nil {
+		return err
+	}
+	for _, sink := range sinks {
+		if sink == m.audioSink {
+			return nil
+		}
+	}
+	return fmt.Errorf("pulse sink not available: %s", m.audioSink)
+}
+
+func listPulseSinks(ctx context.Context) ([]string, error) {
+	cmd := exec.CommandContext(context.WithoutCancel(ctx), "pactl", "list", "short", "sinks")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("list pulse sinks: %w", err)
+	}
+
+	var sinks []string
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) >= 2 {
+			sinks = append(sinks, fields[1])
+		}
+	}
+	return sinks, nil
+}
+
+func (m *Manager) startVideoLocked(ctx context.Context, source Source) (*process, error) {
+	args := buildVideoArgs(source, m.videoDevice)
+	return m.startProcess(ctx, source, fmt.Sprintf("v4l2:%s", m.videoDevice), args)
+}
+
+func (m *Manager) startAudioLocked(ctx context.Context, source Source) (*process, error) {
+	args := buildAudioArgs(source, m.audioSink)
+	return m.startProcess(ctx, source, fmt.Sprintf("pulse:%s", m.audioSink), args)
+}
+
+func (m *Manager) startProcess(ctx context.Context, source Source, target string, args []string) (*process, error) {
 	if err := validateSource(source); err != nil {
 		return nil, err
 	}
-	if err := prepareFIFO(outputPath); err != nil {
-		return nil, fmt.Errorf("prepare fifo: %w", err)
-	}
 
-	reader, err := os.OpenFile(outputPath, os.O_RDONLY|syscall.O_NONBLOCK, 0)
-	if err != nil {
-		return nil, fmt.Errorf("open fifo reader: %w", err)
-	}
-
-	args := m.buildArgs(source, outputPath, isVideo)
 	cmd := m.commandFn(context.WithoutCancel(ctx), m.ffmpegPath, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Start(); err != nil {
-		_ = reader.Close()
-		_ = os.Remove(outputPath)
 		return nil, fmt.Errorf("start ffmpeg: %w", err)
 	}
-	m.readerPipes = append(m.readerPipes, reader)
 
 	proc := &process{
 		cmd:        cmd,
 		source:     source,
-		outputPath: outputPath,
+		outputPath: target,
 		startedAt:  time.Now(),
 		done:       make(chan struct{}),
 	}
@@ -258,39 +322,42 @@ func (m *Manager) stopAllLocked(ctx context.Context) error {
 	}
 	m.video = nil
 	m.audio = nil
-	for _, r := range m.readerPipes {
-		_ = r.Close()
-	}
-	m.readerPipes = nil
 	return nil
 }
 
-func (m *Manager) buildArgs(source Source, outputPath string, isVideo bool) []string {
-	args := []string{"-nostdin", "-loglevel", "error", "-y"}
-	if source.Kind == SourceKindFile && source.Loop {
-		args = append(args, "-stream_loop", "-1")
-	}
-	args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2", "-i", source.URL)
+func buildVideoArgs(source Source, devicePath string) []string {
+	args := buildBaseArgs(source)
+	args = append(args,
+		"-an",
+		"-vf", "scale=1280:-2,fps=30",
+		"-pix_fmt", "yuv420p",
+		"-f", "v4l2",
+		devicePath,
+	)
+	return args
+}
 
-	if isVideo {
-		args = append(args,
-			"-an",
-			"-vf", "scale=1280:-2",
-			"-pix_fmt", "yuv420p",
-			"-f", "yuv4mpegpipe",
-			outputPath,
-		)
-		return args
-	}
-
+func buildAudioArgs(source Source, sink string) []string {
+	args := buildBaseArgs(source)
 	args = append(args,
 		"-vn",
 		"-acodec", "pcm_s16le",
 		"-ar", "48000",
 		"-ac", "2",
-		"-f", "wav",
-		outputPath,
+		"-f", "pulse",
+		"-sample_fmt", "s16le",
+		"-device", sink,
+		"virtual-media-input",
 	)
+	return args
+}
+
+func buildBaseArgs(source Source) []string {
+	args := []string{"-nostdin", "-loglevel", "error", "-y"}
+	if source.Kind == SourceKindFile && source.Loop {
+		args = append(args, "-stream_loop", "-1")
+	}
+	args = append(args, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2", "-i", source.URL)
 	return args
 }
 
@@ -384,8 +451,6 @@ func stopProcess(ctx context.Context, p *process) error {
 		}
 		<-wait
 	}
-
-	_ = os.Remove(p.outputPath)
 	return nil
 }
 
@@ -397,12 +462,4 @@ func ensureTimeout(ctx context.Context, d time.Duration) (context.Context, conte
 		return ctx, func() {}
 	}
 	return context.WithTimeout(context.WithoutCancel(ctx), d)
-}
-
-func prepareFIFO(path string) error {
-	_ = os.Remove(path)
-	if err := syscall.Mkfifo(path, 0o666); err != nil {
-		return err
-	}
-	return os.Chmod(path, 0o666)
 }
