@@ -56,6 +56,8 @@ Configure the server using environment variables:
 | `MAX_SIZE_MB`  | `500`     | Default maximum file size (MB)              |
 | `OUTPUT_DIR`   | `.`       | Directory to save recordings                |
 | `FFMPEG_PATH`  | `ffmpeg`  | Path to the ffmpeg binary                   |
+| `VIRTUAL_MEDIA_VIDEO_DEVICE` | `/dev/video42` | v4l2loopback device path for the virtual camera |
+| `VIRTUAL_MEDIA_AUDIO_SINK`   | `audio_input`  | PulseAudio sink name feeding the virtual microphone |
 
 #### Example Configuration
 
