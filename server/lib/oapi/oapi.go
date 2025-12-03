@@ -97,8 +97,8 @@ const (
 
 // Defines values for VirtualInputsStatusMode.
 const (
-	Device   VirtualInputsStatusMode = "device"
-	FakeFile VirtualInputsStatusMode = "fake-file"
+	Device      VirtualInputsStatusMode = "device"
+	VirtualFile VirtualInputsStatusMode = "virtual-file"
 )
 
 // Defines values for VirtualInputsStatusState.
@@ -607,7 +607,7 @@ type VirtualInputsRequest struct {
 type VirtualInputsStatus struct {
 	Audio *VirtualInputSource `json:"audio,omitempty"`
 
-	// AudioFile Path to the WAV file/pipe used when fake-file mode is active.
+	// AudioFile Path to the WAV file/pipe used when virtual-file mode is active.
 	AudioFile *string `json:"audio_file,omitempty"`
 
 	// AudioSink PulseAudio sink receiving injected audio.
@@ -625,7 +625,7 @@ type VirtualInputsStatus struct {
 	// MicrophoneSource PulseAudio source clients should use as a microphone.
 	MicrophoneSource string `json:"microphone_source"`
 
-	// Mode Output mode in use (v4l2 device vs Chromium fake capture files).
+	// Mode Output mode in use (v4l2 device vs virtual capture files).
 	Mode VirtualInputsStatusMode `json:"mode"`
 
 	// StartedAt Timestamp when the current pipelines started.
@@ -638,14 +638,14 @@ type VirtualInputsStatus struct {
 	// VideoDevice Video4Linux device path used for the virtual webcam.
 	VideoDevice string `json:"video_device"`
 
-	// VideoFile Path to the Y4M file/pipe used when fake-file mode is active.
+	// VideoFile Path to the Y4M file/pipe used when virtual-file mode is active.
 	VideoFile *string `json:"video_file,omitempty"`
 
 	// Width Configured width for the virtual webcam.
 	Width int `json:"width"`
 }
 
-// VirtualInputsStatusMode Output mode in use (v4l2 device vs Chromium fake capture files).
+// VirtualInputsStatusMode Output mode in use (v4l2 device vs virtual capture files).
 type VirtualInputsStatusMode string
 
 // VirtualInputsStatusState Current state of the virtual input pipelines.
@@ -808,6 +808,9 @@ type UploadZipMultipartRequestBody UploadZipMultipartBody
 // StartFsWatchJSONRequestBody defines body for StartFsWatch for application/json ContentType.
 type StartFsWatchJSONRequestBody = StartFsWatchRequest
 
+// ConfigureVirtualInputsJSONRequestBody defines body for ConfigureVirtualInputs for application/json ContentType.
+type ConfigureVirtualInputsJSONRequestBody = VirtualInputsRequest
+
 // ExecutePlaywrightCodeJSONRequestBody defines body for ExecutePlaywrightCode for application/json ContentType.
 type ExecutePlaywrightCodeJSONRequestBody = ExecutePlaywrightRequest
 
@@ -831,9 +834,6 @@ type StartRecordingJSONRequestBody = StartRecordingRequest
 
 // StopRecordingJSONRequestBody defines body for StopRecording for application/json ContentType.
 type StopRecordingJSONRequestBody = StopRecordingRequest
-
-// ConfigureVirtualInputsJSONRequestBody defines body for ConfigureVirtualInputs for application/json ContentType.
-type ConfigureVirtualInputsJSONRequestBody = VirtualInputsRequest
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -1018,6 +1018,23 @@ type ClientInterface interface {
 	// WriteFileWithBody request with any body
 	WriteFileWithBody(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ConfigureVirtualInputsWithBody request with any body
+	ConfigureVirtualInputsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	ConfigureVirtualInputs(ctx context.Context, body ConfigureVirtualInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PauseVirtualInputs request
+	PauseVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ResumeVirtualInputs request
+	ResumeVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetVirtualInputsStatus request
+	GetVirtualInputsStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StopVirtualInputs request
+	StopVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// LogsStream request
 	LogsStream(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1072,23 +1089,6 @@ type ClientInterface interface {
 	StopRecordingWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	StopRecording(ctx context.Context, body StopRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ConfigureVirtualInputsWithBody request with any body
-	ConfigureVirtualInputsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	ConfigureVirtualInputs(ctx context.Context, body ConfigureVirtualInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PauseVirtualInputs request
-	PauseVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ResumeVirtualInputs request
-	ResumeVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetVirtualInputsStatus request
-	GetVirtualInputsStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// StopVirtualInputs request
-	StopVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) PatchChromiumFlagsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1595,6 +1595,78 @@ func (c *Client) WriteFileWithBody(ctx context.Context, params *WriteFileParams,
 	return c.Client.Do(req)
 }
 
+func (c *Client) ConfigureVirtualInputsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewConfigureVirtualInputsRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ConfigureVirtualInputs(ctx context.Context, body ConfigureVirtualInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewConfigureVirtualInputsRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) PauseVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPauseVirtualInputsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) ResumeVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResumeVirtualInputsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) GetVirtualInputsStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetVirtualInputsStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StopVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStopVirtualInputsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) LogsStream(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewLogsStreamRequest(c.Server, params)
 	if err != nil {
@@ -1837,78 +1909,6 @@ func (c *Client) StopRecordingWithBody(ctx context.Context, contentType string, 
 
 func (c *Client) StopRecording(ctx context.Context, body StopRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStopRecordingRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ConfigureVirtualInputsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewConfigureVirtualInputsRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ConfigureVirtualInputs(ctx context.Context, body ConfigureVirtualInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewConfigureVirtualInputsRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) PauseVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPauseVirtualInputsRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) ResumeVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewResumeVirtualInputsRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) GetVirtualInputsStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetVirtualInputsStatusRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-func (c *Client) StopVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewStopVirtualInputsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -2957,6 +2957,154 @@ func NewWriteFileRequestWithBody(server string, params *WriteFileParams, content
 	return req, nil
 }
 
+// NewConfigureVirtualInputsRequest calls the generic ConfigureVirtualInputs builder with application/json body
+func NewConfigureVirtualInputsRequest(server string, body ConfigureVirtualInputsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewConfigureVirtualInputsRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewConfigureVirtualInputsRequestWithBody generates requests for ConfigureVirtualInputs with any type of body
+func NewConfigureVirtualInputsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/input/devices/virtual/configure")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPauseVirtualInputsRequest generates requests for PauseVirtualInputs
+func NewPauseVirtualInputsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/input/devices/virtual/pause")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewResumeVirtualInputsRequest generates requests for ResumeVirtualInputs
+func NewResumeVirtualInputsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/input/devices/virtual/resume")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetVirtualInputsStatusRequest generates requests for GetVirtualInputsStatus
+func NewGetVirtualInputsStatusRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/input/devices/virtual/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("GET", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewStopVirtualInputsRequest generates requests for StopVirtualInputs
+func NewStopVirtualInputsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/input/devices/virtual/stop")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewLogsStreamRequest generates requests for LogsStream
 func NewLogsStreamRequest(server string, params *LogsStreamParams) (*http.Request, error) {
 	var err error
@@ -3528,154 +3676,6 @@ func NewStopRecordingRequestWithBody(server string, contentType string, body io.
 	return req, nil
 }
 
-// NewConfigureVirtualInputsRequest calls the generic ConfigureVirtualInputs builder with application/json body
-func NewConfigureVirtualInputsRequest(server string, body ConfigureVirtualInputsJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewConfigureVirtualInputsRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewConfigureVirtualInputsRequestWithBody generates requests for ConfigureVirtualInputs with any type of body
-func NewConfigureVirtualInputsRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/virtual_inputs/configure")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewPauseVirtualInputsRequest generates requests for PauseVirtualInputs
-func NewPauseVirtualInputsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/virtual_inputs/pause")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewResumeVirtualInputsRequest generates requests for ResumeVirtualInputs
-func NewResumeVirtualInputsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/virtual_inputs/resume")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetVirtualInputsStatusRequest generates requests for GetVirtualInputsStatus
-func NewGetVirtualInputsStatusRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/virtual_inputs/status")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("GET", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewStopVirtualInputsRequest generates requests for StopVirtualInputs
-func NewStopVirtualInputsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/virtual_inputs/stop")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest("POST", queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -3829,6 +3829,23 @@ type ClientWithResponsesInterface interface {
 	// WriteFileWithBodyWithResponse request with any body
 	WriteFileWithBodyWithResponse(ctx context.Context, params *WriteFileParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*WriteFileResponse, error)
 
+	// ConfigureVirtualInputsWithBodyWithResponse request with any body
+	ConfigureVirtualInputsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ConfigureVirtualInputsResponse, error)
+
+	ConfigureVirtualInputsWithResponse(ctx context.Context, body ConfigureVirtualInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*ConfigureVirtualInputsResponse, error)
+
+	// PauseVirtualInputsWithResponse request
+	PauseVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PauseVirtualInputsResponse, error)
+
+	// ResumeVirtualInputsWithResponse request
+	ResumeVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ResumeVirtualInputsResponse, error)
+
+	// GetVirtualInputsStatusWithResponse request
+	GetVirtualInputsStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVirtualInputsStatusResponse, error)
+
+	// StopVirtualInputsWithResponse request
+	StopVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StopVirtualInputsResponse, error)
+
 	// LogsStreamWithResponse request
 	LogsStreamWithResponse(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*LogsStreamResponse, error)
 
@@ -3883,23 +3900,6 @@ type ClientWithResponsesInterface interface {
 	StopRecordingWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StopRecordingResponse, error)
 
 	StopRecordingWithResponse(ctx context.Context, body StopRecordingJSONRequestBody, reqEditors ...RequestEditorFn) (*StopRecordingResponse, error)
-
-	// ConfigureVirtualInputsWithBodyWithResponse request with any body
-	ConfigureVirtualInputsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ConfigureVirtualInputsResponse, error)
-
-	ConfigureVirtualInputsWithResponse(ctx context.Context, body ConfigureVirtualInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*ConfigureVirtualInputsResponse, error)
-
-	// PauseVirtualInputsWithResponse request
-	PauseVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PauseVirtualInputsResponse, error)
-
-	// ResumeVirtualInputsWithResponse request
-	ResumeVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ResumeVirtualInputsResponse, error)
-
-	// GetVirtualInputsStatusWithResponse request
-	GetVirtualInputsStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVirtualInputsStatusResponse, error)
-
-	// StopVirtualInputsWithResponse request
-	StopVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StopVirtualInputsResponse, error)
 }
 
 type PatchChromiumFlagsResponse struct {
@@ -4523,6 +4523,124 @@ func (r WriteFileResponse) StatusCode() int {
 	return 0
 }
 
+type ConfigureVirtualInputsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VirtualInputsStatus
+	JSON400      *BadRequestError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ConfigureVirtualInputsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ConfigureVirtualInputsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type PauseVirtualInputsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VirtualInputsStatus
+	JSON400      *BadRequestError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r PauseVirtualInputsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PauseVirtualInputsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type ResumeVirtualInputsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VirtualInputsStatus
+	JSON400      *BadRequestError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r ResumeVirtualInputsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResumeVirtualInputsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type GetVirtualInputsStatusResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VirtualInputsStatus
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r GetVirtualInputsStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetVirtualInputsStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StopVirtualInputsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VirtualInputsStatus
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r StopVirtualInputsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StopVirtualInputsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type LogsStreamResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4827,124 +4945,6 @@ func (r StopRecordingResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r StopRecordingResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ConfigureVirtualInputsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *VirtualInputsStatus
-	JSON400      *BadRequestError
-	JSON500      *InternalError
-}
-
-// Status returns HTTPResponse.Status
-func (r ConfigureVirtualInputsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ConfigureVirtualInputsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type PauseVirtualInputsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *VirtualInputsStatus
-	JSON400      *BadRequestError
-	JSON500      *InternalError
-}
-
-// Status returns HTTPResponse.Status
-func (r PauseVirtualInputsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PauseVirtualInputsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type ResumeVirtualInputsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *VirtualInputsStatus
-	JSON400      *BadRequestError
-	JSON500      *InternalError
-}
-
-// Status returns HTTPResponse.Status
-func (r ResumeVirtualInputsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ResumeVirtualInputsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type GetVirtualInputsStatusResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *VirtualInputsStatus
-	JSON500      *InternalError
-}
-
-// Status returns HTTPResponse.Status
-func (r GetVirtualInputsStatusResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetVirtualInputsStatusResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-type StopVirtualInputsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	JSON200      *VirtualInputsStatus
-	JSON500      *InternalError
-}
-
-// Status returns HTTPResponse.Status
-func (r StopVirtualInputsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r StopVirtualInputsResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5313,6 +5313,59 @@ func (c *ClientWithResponses) WriteFileWithBodyWithResponse(ctx context.Context,
 	return ParseWriteFileResponse(rsp)
 }
 
+// ConfigureVirtualInputsWithBodyWithResponse request with arbitrary body returning *ConfigureVirtualInputsResponse
+func (c *ClientWithResponses) ConfigureVirtualInputsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ConfigureVirtualInputsResponse, error) {
+	rsp, err := c.ConfigureVirtualInputsWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseConfigureVirtualInputsResponse(rsp)
+}
+
+func (c *ClientWithResponses) ConfigureVirtualInputsWithResponse(ctx context.Context, body ConfigureVirtualInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*ConfigureVirtualInputsResponse, error) {
+	rsp, err := c.ConfigureVirtualInputs(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseConfigureVirtualInputsResponse(rsp)
+}
+
+// PauseVirtualInputsWithResponse request returning *PauseVirtualInputsResponse
+func (c *ClientWithResponses) PauseVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PauseVirtualInputsResponse, error) {
+	rsp, err := c.PauseVirtualInputs(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePauseVirtualInputsResponse(rsp)
+}
+
+// ResumeVirtualInputsWithResponse request returning *ResumeVirtualInputsResponse
+func (c *ClientWithResponses) ResumeVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ResumeVirtualInputsResponse, error) {
+	rsp, err := c.ResumeVirtualInputs(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResumeVirtualInputsResponse(rsp)
+}
+
+// GetVirtualInputsStatusWithResponse request returning *GetVirtualInputsStatusResponse
+func (c *ClientWithResponses) GetVirtualInputsStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVirtualInputsStatusResponse, error) {
+	rsp, err := c.GetVirtualInputsStatus(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetVirtualInputsStatusResponse(rsp)
+}
+
+// StopVirtualInputsWithResponse request returning *StopVirtualInputsResponse
+func (c *ClientWithResponses) StopVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StopVirtualInputsResponse, error) {
+	rsp, err := c.StopVirtualInputs(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStopVirtualInputsResponse(rsp)
+}
+
 // LogsStreamWithResponse request returning *LogsStreamResponse
 func (c *ClientWithResponses) LogsStreamWithResponse(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*LogsStreamResponse, error) {
 	rsp, err := c.LogsStream(ctx, params, reqEditors...)
@@ -5492,59 +5545,6 @@ func (c *ClientWithResponses) StopRecordingWithResponse(ctx context.Context, bod
 		return nil, err
 	}
 	return ParseStopRecordingResponse(rsp)
-}
-
-// ConfigureVirtualInputsWithBodyWithResponse request with arbitrary body returning *ConfigureVirtualInputsResponse
-func (c *ClientWithResponses) ConfigureVirtualInputsWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ConfigureVirtualInputsResponse, error) {
-	rsp, err := c.ConfigureVirtualInputsWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseConfigureVirtualInputsResponse(rsp)
-}
-
-func (c *ClientWithResponses) ConfigureVirtualInputsWithResponse(ctx context.Context, body ConfigureVirtualInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*ConfigureVirtualInputsResponse, error) {
-	rsp, err := c.ConfigureVirtualInputs(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseConfigureVirtualInputsResponse(rsp)
-}
-
-// PauseVirtualInputsWithResponse request returning *PauseVirtualInputsResponse
-func (c *ClientWithResponses) PauseVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*PauseVirtualInputsResponse, error) {
-	rsp, err := c.PauseVirtualInputs(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePauseVirtualInputsResponse(rsp)
-}
-
-// ResumeVirtualInputsWithResponse request returning *ResumeVirtualInputsResponse
-func (c *ClientWithResponses) ResumeVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ResumeVirtualInputsResponse, error) {
-	rsp, err := c.ResumeVirtualInputs(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseResumeVirtualInputsResponse(rsp)
-}
-
-// GetVirtualInputsStatusWithResponse request returning *GetVirtualInputsStatusResponse
-func (c *ClientWithResponses) GetVirtualInputsStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetVirtualInputsStatusResponse, error) {
-	rsp, err := c.GetVirtualInputsStatus(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetVirtualInputsStatusResponse(rsp)
-}
-
-// StopVirtualInputsWithResponse request returning *StopVirtualInputsResponse
-func (c *ClientWithResponses) StopVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StopVirtualInputsResponse, error) {
-	rsp, err := c.StopVirtualInputs(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseStopVirtualInputsResponse(rsp)
 }
 
 // ParsePatchChromiumFlagsResponse parses an HTTP response from a PatchChromiumFlagsWithResponse call
@@ -6548,6 +6548,192 @@ func ParseWriteFileResponse(rsp *http.Response) (*WriteFileResponse, error) {
 	return response, nil
 }
 
+// ParseConfigureVirtualInputsResponse parses an HTTP response from a ConfigureVirtualInputsWithResponse call
+func ParseConfigureVirtualInputsResponse(rsp *http.Response) (*ConfigureVirtualInputsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ConfigureVirtualInputsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VirtualInputsStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParsePauseVirtualInputsResponse parses an HTTP response from a PauseVirtualInputsWithResponse call
+func ParsePauseVirtualInputsResponse(rsp *http.Response) (*PauseVirtualInputsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PauseVirtualInputsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VirtualInputsStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseResumeVirtualInputsResponse parses an HTTP response from a ResumeVirtualInputsWithResponse call
+func ParseResumeVirtualInputsResponse(rsp *http.Response) (*ResumeVirtualInputsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResumeVirtualInputsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VirtualInputsStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetVirtualInputsStatusResponse parses an HTTP response from a GetVirtualInputsStatusWithResponse call
+func ParseGetVirtualInputsStatusResponse(rsp *http.Response) (*GetVirtualInputsStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetVirtualInputsStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VirtualInputsStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseStopVirtualInputsResponse parses an HTTP response from a StopVirtualInputsWithResponse call
+func ParseStopVirtualInputsResponse(rsp *http.Response) (*StopVirtualInputsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StopVirtualInputsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VirtualInputsStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseLogsStreamResponse parses an HTTP response from a LogsStreamWithResponse call
 func ParseLogsStreamResponse(rsp *http.Response) (*LogsStreamResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7051,192 +7237,6 @@ func ParseStopRecordingResponse(rsp *http.Response) (*StopRecordingResponse, err
 	return response, nil
 }
 
-// ParseConfigureVirtualInputsResponse parses an HTTP response from a ConfigureVirtualInputsWithResponse call
-func ParseConfigureVirtualInputsResponse(rsp *http.Response) (*ConfigureVirtualInputsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ConfigureVirtualInputsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest VirtualInputsStatus
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequestError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParsePauseVirtualInputsResponse parses an HTTP response from a PauseVirtualInputsWithResponse call
-func ParsePauseVirtualInputsResponse(rsp *http.Response) (*PauseVirtualInputsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PauseVirtualInputsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest VirtualInputsStatus
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequestError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseResumeVirtualInputsResponse parses an HTTP response from a ResumeVirtualInputsWithResponse call
-func ParseResumeVirtualInputsResponse(rsp *http.Response) (*ResumeVirtualInputsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ResumeVirtualInputsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest VirtualInputsStatus
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequestError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseGetVirtualInputsStatusResponse parses an HTTP response from a GetVirtualInputsStatusWithResponse call
-func ParseGetVirtualInputsStatusResponse(rsp *http.Response) (*GetVirtualInputsStatusResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetVirtualInputsStatusResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest VirtualInputsStatus
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseStopVirtualInputsResponse parses an HTTP response from a StopVirtualInputsWithResponse call
-func ParseStopVirtualInputsResponse(rsp *http.Response) (*StopVirtualInputsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &StopVirtualInputsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest VirtualInputsStatus
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	return response, nil
-}
-
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Update Chromium launch flags and restart
@@ -7317,6 +7317,21 @@ type ServerInterface interface {
 	// Write or create a file
 	// (PUT /fs/write_file)
 	WriteFile(w http.ResponseWriter, r *http.Request, params WriteFileParams)
+	// Configure virtual video and audio inputs
+	// (POST /input/devices/virtual/configure)
+	ConfigureVirtualInputs(w http.ResponseWriter, r *http.Request)
+	// Pause virtual inputs with silence and black frames
+	// (POST /input/devices/virtual/pause)
+	PauseVirtualInputs(w http.ResponseWriter, r *http.Request)
+	// Resume previously configured virtual inputs
+	// (POST /input/devices/virtual/resume)
+	ResumeVirtualInputs(w http.ResponseWriter, r *http.Request)
+	// Get the current virtual input status
+	// (GET /input/devices/virtual/status)
+	GetVirtualInputsStatus(w http.ResponseWriter, r *http.Request)
+	// Stop virtual input pipelines and release resources
+	// (POST /input/devices/virtual/stop)
+	StopVirtualInputs(w http.ResponseWriter, r *http.Request)
 	// Stream logs over SSE
 	// (GET /logs/stream)
 	LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams)
@@ -7356,21 +7371,6 @@ type ServerInterface interface {
 	// Stop the recording
 	// (POST /recording/stop)
 	StopRecording(w http.ResponseWriter, r *http.Request)
-	// Configure virtual video and audio inputs
-	// (POST /virtual_inputs/configure)
-	ConfigureVirtualInputs(w http.ResponseWriter, r *http.Request)
-	// Pause virtual inputs with silence and black frames
-	// (POST /virtual_inputs/pause)
-	PauseVirtualInputs(w http.ResponseWriter, r *http.Request)
-	// Resume previously configured virtual inputs
-	// (POST /virtual_inputs/resume)
-	ResumeVirtualInputs(w http.ResponseWriter, r *http.Request)
-	// Get the current virtual input status
-	// (GET /virtual_inputs/status)
-	GetVirtualInputsStatus(w http.ResponseWriter, r *http.Request)
-	// Stop virtual input pipelines and release resources
-	// (POST /virtual_inputs/stop)
-	StopVirtualInputs(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -7533,6 +7533,36 @@ func (_ Unimplemented) WriteFile(w http.ResponseWriter, r *http.Request, params 
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Configure virtual video and audio inputs
+// (POST /input/devices/virtual/configure)
+func (_ Unimplemented) ConfigureVirtualInputs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Pause virtual inputs with silence and black frames
+// (POST /input/devices/virtual/pause)
+func (_ Unimplemented) PauseVirtualInputs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Resume previously configured virtual inputs
+// (POST /input/devices/virtual/resume)
+func (_ Unimplemented) ResumeVirtualInputs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Get the current virtual input status
+// (GET /input/devices/virtual/status)
+func (_ Unimplemented) GetVirtualInputsStatus(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Stop virtual input pipelines and release resources
+// (POST /input/devices/virtual/stop)
+func (_ Unimplemented) StopVirtualInputs(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Stream logs over SSE
 // (GET /logs/stream)
 func (_ Unimplemented) LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams) {
@@ -7608,36 +7638,6 @@ func (_ Unimplemented) StartRecording(w http.ResponseWriter, r *http.Request) {
 // Stop the recording
 // (POST /recording/stop)
 func (_ Unimplemented) StopRecording(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Configure virtual video and audio inputs
-// (POST /virtual_inputs/configure)
-func (_ Unimplemented) ConfigureVirtualInputs(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Pause virtual inputs with silence and black frames
-// (POST /virtual_inputs/pause)
-func (_ Unimplemented) PauseVirtualInputs(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Resume previously configured virtual inputs
-// (POST /virtual_inputs/resume)
-func (_ Unimplemented) ResumeVirtualInputs(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Get the current virtual input status
-// (GET /virtual_inputs/status)
-func (_ Unimplemented) GetVirtualInputsStatus(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusNotImplemented)
-}
-
-// Stop virtual input pipelines and release resources
-// (POST /virtual_inputs/stop)
-func (_ Unimplemented) StopVirtualInputs(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8144,6 +8144,76 @@ func (siw *ServerInterfaceWrapper) WriteFile(w http.ResponseWriter, r *http.Requ
 	handler.ServeHTTP(w, r)
 }
 
+// ConfigureVirtualInputs operation middleware
+func (siw *ServerInterfaceWrapper) ConfigureVirtualInputs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfigureVirtualInputs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PauseVirtualInputs operation middleware
+func (siw *ServerInterfaceWrapper) PauseVirtualInputs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PauseVirtualInputs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ResumeVirtualInputs operation middleware
+func (siw *ServerInterfaceWrapper) ResumeVirtualInputs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResumeVirtualInputs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetVirtualInputsStatus operation middleware
+func (siw *ServerInterfaceWrapper) GetVirtualInputsStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetVirtualInputsStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StopVirtualInputs operation middleware
+func (siw *ServerInterfaceWrapper) StopVirtualInputs(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StopVirtualInputs(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // LogsStream operation middleware
 func (siw *ServerInterfaceWrapper) LogsStream(w http.ResponseWriter, r *http.Request) {
 
@@ -8427,76 +8497,6 @@ func (siw *ServerInterfaceWrapper) StopRecording(w http.ResponseWriter, r *http.
 	handler.ServeHTTP(w, r)
 }
 
-// ConfigureVirtualInputs operation middleware
-func (siw *ServerInterfaceWrapper) ConfigureVirtualInputs(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ConfigureVirtualInputs(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// PauseVirtualInputs operation middleware
-func (siw *ServerInterfaceWrapper) PauseVirtualInputs(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.PauseVirtualInputs(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// ResumeVirtualInputs operation middleware
-func (siw *ServerInterfaceWrapper) ResumeVirtualInputs(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ResumeVirtualInputs(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// GetVirtualInputsStatus operation middleware
-func (siw *ServerInterfaceWrapper) GetVirtualInputsStatus(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetVirtualInputsStatus(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// StopVirtualInputs operation middleware
-func (siw *ServerInterfaceWrapper) StopVirtualInputs(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.StopVirtualInputs(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -8689,6 +8689,21 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Put(options.BaseURL+"/fs/write_file", wrapper.WriteFile)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/input/devices/virtual/configure", wrapper.ConfigureVirtualInputs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/input/devices/virtual/pause", wrapper.PauseVirtualInputs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/input/devices/virtual/resume", wrapper.ResumeVirtualInputs)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/input/devices/virtual/status", wrapper.GetVirtualInputsStatus)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/input/devices/virtual/stop", wrapper.StopVirtualInputs)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/logs/stream", wrapper.LogsStream)
 	})
 	r.Group(func(r chi.Router) {
@@ -8726,21 +8741,6 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/recording/stop", wrapper.StopRecording)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/virtual_inputs/configure", wrapper.ConfigureVirtualInputs)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/virtual_inputs/pause", wrapper.PauseVirtualInputs)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/virtual_inputs/resume", wrapper.ResumeVirtualInputs)
-	})
-	r.Group(func(r chi.Router) {
-		r.Get(options.BaseURL+"/virtual_inputs/status", wrapper.GetVirtualInputsStatus)
-	})
-	r.Group(func(r chi.Router) {
-		r.Post(options.BaseURL+"/virtual_inputs/stop", wrapper.StopVirtualInputs)
 	})
 
 	return r
@@ -9854,6 +9854,159 @@ func (response WriteFile500JSONResponse) VisitWriteFileResponse(w http.ResponseW
 	return json.NewEncoder(w).Encode(response)
 }
 
+type ConfigureVirtualInputsRequestObject struct {
+	Body *ConfigureVirtualInputsJSONRequestBody
+}
+
+type ConfigureVirtualInputsResponseObject interface {
+	VisitConfigureVirtualInputsResponse(w http.ResponseWriter) error
+}
+
+type ConfigureVirtualInputs200JSONResponse VirtualInputsStatus
+
+func (response ConfigureVirtualInputs200JSONResponse) VisitConfigureVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ConfigureVirtualInputs400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ConfigureVirtualInputs400JSONResponse) VisitConfigureVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ConfigureVirtualInputs500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ConfigureVirtualInputs500JSONResponse) VisitConfigureVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PauseVirtualInputsRequestObject struct {
+}
+
+type PauseVirtualInputsResponseObject interface {
+	VisitPauseVirtualInputsResponse(w http.ResponseWriter) error
+}
+
+type PauseVirtualInputs200JSONResponse VirtualInputsStatus
+
+func (response PauseVirtualInputs200JSONResponse) VisitPauseVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PauseVirtualInputs400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response PauseVirtualInputs400JSONResponse) VisitPauseVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PauseVirtualInputs500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response PauseVirtualInputs500JSONResponse) VisitPauseVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ResumeVirtualInputsRequestObject struct {
+}
+
+type ResumeVirtualInputsResponseObject interface {
+	VisitResumeVirtualInputsResponse(w http.ResponseWriter) error
+}
+
+type ResumeVirtualInputs200JSONResponse VirtualInputsStatus
+
+func (response ResumeVirtualInputs200JSONResponse) VisitResumeVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ResumeVirtualInputs400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response ResumeVirtualInputs400JSONResponse) VisitResumeVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ResumeVirtualInputs500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ResumeVirtualInputs500JSONResponse) VisitResumeVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetVirtualInputsStatusRequestObject struct {
+}
+
+type GetVirtualInputsStatusResponseObject interface {
+	VisitGetVirtualInputsStatusResponse(w http.ResponseWriter) error
+}
+
+type GetVirtualInputsStatus200JSONResponse VirtualInputsStatus
+
+func (response GetVirtualInputsStatus200JSONResponse) VisitGetVirtualInputsStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetVirtualInputsStatus500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetVirtualInputsStatus500JSONResponse) VisitGetVirtualInputsStatusResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StopVirtualInputsRequestObject struct {
+}
+
+type StopVirtualInputsResponseObject interface {
+	VisitStopVirtualInputsResponse(w http.ResponseWriter) error
+}
+
+type StopVirtualInputs200JSONResponse VirtualInputsStatus
+
+func (response StopVirtualInputs200JSONResponse) VisitStopVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StopVirtualInputs500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response StopVirtualInputs500JSONResponse) VisitStopVirtualInputsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type LogsStreamRequestObject struct {
 	Params LogsStreamParams
 }
@@ -10451,159 +10604,6 @@ func (response StopRecording500JSONResponse) VisitStopRecordingResponse(w http.R
 	return json.NewEncoder(w).Encode(response)
 }
 
-type ConfigureVirtualInputsRequestObject struct {
-	Body *ConfigureVirtualInputsJSONRequestBody
-}
-
-type ConfigureVirtualInputsResponseObject interface {
-	VisitConfigureVirtualInputsResponse(w http.ResponseWriter) error
-}
-
-type ConfigureVirtualInputs200JSONResponse VirtualInputsStatus
-
-func (response ConfigureVirtualInputs200JSONResponse) VisitConfigureVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ConfigureVirtualInputs400JSONResponse struct{ BadRequestErrorJSONResponse }
-
-func (response ConfigureVirtualInputs400JSONResponse) VisitConfigureVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ConfigureVirtualInputs500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ConfigureVirtualInputs500JSONResponse) VisitConfigureVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PauseVirtualInputsRequestObject struct {
-}
-
-type PauseVirtualInputsResponseObject interface {
-	VisitPauseVirtualInputsResponse(w http.ResponseWriter) error
-}
-
-type PauseVirtualInputs200JSONResponse VirtualInputsStatus
-
-func (response PauseVirtualInputs200JSONResponse) VisitPauseVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PauseVirtualInputs400JSONResponse struct{ BadRequestErrorJSONResponse }
-
-func (response PauseVirtualInputs400JSONResponse) VisitPauseVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type PauseVirtualInputs500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response PauseVirtualInputs500JSONResponse) VisitPauseVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ResumeVirtualInputsRequestObject struct {
-}
-
-type ResumeVirtualInputsResponseObject interface {
-	VisitResumeVirtualInputsResponse(w http.ResponseWriter) error
-}
-
-type ResumeVirtualInputs200JSONResponse VirtualInputsStatus
-
-func (response ResumeVirtualInputs200JSONResponse) VisitResumeVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ResumeVirtualInputs400JSONResponse struct{ BadRequestErrorJSONResponse }
-
-func (response ResumeVirtualInputs400JSONResponse) VisitResumeVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(400)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type ResumeVirtualInputs500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ResumeVirtualInputs500JSONResponse) VisitResumeVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetVirtualInputsStatusRequestObject struct {
-}
-
-type GetVirtualInputsStatusResponseObject interface {
-	VisitGetVirtualInputsStatusResponse(w http.ResponseWriter) error
-}
-
-type GetVirtualInputsStatus200JSONResponse VirtualInputsStatus
-
-func (response GetVirtualInputsStatus200JSONResponse) VisitGetVirtualInputsStatusResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type GetVirtualInputsStatus500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response GetVirtualInputsStatus500JSONResponse) VisitGetVirtualInputsStatusResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type StopVirtualInputsRequestObject struct {
-}
-
-type StopVirtualInputsResponseObject interface {
-	VisitStopVirtualInputsResponse(w http.ResponseWriter) error
-}
-
-type StopVirtualInputs200JSONResponse VirtualInputsStatus
-
-func (response StopVirtualInputs200JSONResponse) VisitStopVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
-type StopVirtualInputs500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response StopVirtualInputs500JSONResponse) VisitStopVirtualInputsResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(500)
-
-	return json.NewEncoder(w).Encode(response)
-}
-
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// Update Chromium launch flags and restart
@@ -10684,6 +10684,21 @@ type StrictServerInterface interface {
 	// Write or create a file
 	// (PUT /fs/write_file)
 	WriteFile(ctx context.Context, request WriteFileRequestObject) (WriteFileResponseObject, error)
+	// Configure virtual video and audio inputs
+	// (POST /input/devices/virtual/configure)
+	ConfigureVirtualInputs(ctx context.Context, request ConfigureVirtualInputsRequestObject) (ConfigureVirtualInputsResponseObject, error)
+	// Pause virtual inputs with silence and black frames
+	// (POST /input/devices/virtual/pause)
+	PauseVirtualInputs(ctx context.Context, request PauseVirtualInputsRequestObject) (PauseVirtualInputsResponseObject, error)
+	// Resume previously configured virtual inputs
+	// (POST /input/devices/virtual/resume)
+	ResumeVirtualInputs(ctx context.Context, request ResumeVirtualInputsRequestObject) (ResumeVirtualInputsResponseObject, error)
+	// Get the current virtual input status
+	// (GET /input/devices/virtual/status)
+	GetVirtualInputsStatus(ctx context.Context, request GetVirtualInputsStatusRequestObject) (GetVirtualInputsStatusResponseObject, error)
+	// Stop virtual input pipelines and release resources
+	// (POST /input/devices/virtual/stop)
+	StopVirtualInputs(ctx context.Context, request StopVirtualInputsRequestObject) (StopVirtualInputsResponseObject, error)
 	// Stream logs over SSE
 	// (GET /logs/stream)
 	LogsStream(ctx context.Context, request LogsStreamRequestObject) (LogsStreamResponseObject, error)
@@ -10723,21 +10738,6 @@ type StrictServerInterface interface {
 	// Stop the recording
 	// (POST /recording/stop)
 	StopRecording(ctx context.Context, request StopRecordingRequestObject) (StopRecordingResponseObject, error)
-	// Configure virtual video and audio inputs
-	// (POST /virtual_inputs/configure)
-	ConfigureVirtualInputs(ctx context.Context, request ConfigureVirtualInputsRequestObject) (ConfigureVirtualInputsResponseObject, error)
-	// Pause virtual inputs with silence and black frames
-	// (POST /virtual_inputs/pause)
-	PauseVirtualInputs(ctx context.Context, request PauseVirtualInputsRequestObject) (PauseVirtualInputsResponseObject, error)
-	// Resume previously configured virtual inputs
-	// (POST /virtual_inputs/resume)
-	ResumeVirtualInputs(ctx context.Context, request ResumeVirtualInputsRequestObject) (ResumeVirtualInputsResponseObject, error)
-	// Get the current virtual input status
-	// (GET /virtual_inputs/status)
-	GetVirtualInputsStatus(ctx context.Context, request GetVirtualInputsStatusRequestObject) (GetVirtualInputsStatusResponseObject, error)
-	// Stop virtual input pipelines and release resources
-	// (POST /virtual_inputs/stop)
-	StopVirtualInputs(ctx context.Context, request StopVirtualInputsRequestObject) (StopVirtualInputsResponseObject, error)
 }
 
 type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
@@ -11542,6 +11542,133 @@ func (sh *strictHandler) WriteFile(w http.ResponseWriter, r *http.Request, param
 	}
 }
 
+// ConfigureVirtualInputs operation middleware
+func (sh *strictHandler) ConfigureVirtualInputs(w http.ResponseWriter, r *http.Request) {
+	var request ConfigureVirtualInputsRequestObject
+
+	var body ConfigureVirtualInputsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ConfigureVirtualInputs(ctx, request.(ConfigureVirtualInputsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ConfigureVirtualInputs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ConfigureVirtualInputsResponseObject); ok {
+		if err := validResponse.VisitConfigureVirtualInputsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PauseVirtualInputs operation middleware
+func (sh *strictHandler) PauseVirtualInputs(w http.ResponseWriter, r *http.Request) {
+	var request PauseVirtualInputsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PauseVirtualInputs(ctx, request.(PauseVirtualInputsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PauseVirtualInputs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PauseVirtualInputsResponseObject); ok {
+		if err := validResponse.VisitPauseVirtualInputsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ResumeVirtualInputs operation middleware
+func (sh *strictHandler) ResumeVirtualInputs(w http.ResponseWriter, r *http.Request) {
+	var request ResumeVirtualInputsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResumeVirtualInputs(ctx, request.(ResumeVirtualInputsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResumeVirtualInputs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResumeVirtualInputsResponseObject); ok {
+		if err := validResponse.VisitResumeVirtualInputsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetVirtualInputsStatus operation middleware
+func (sh *strictHandler) GetVirtualInputsStatus(w http.ResponseWriter, r *http.Request) {
+	var request GetVirtualInputsStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetVirtualInputsStatus(ctx, request.(GetVirtualInputsStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetVirtualInputsStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetVirtualInputsStatusResponseObject); ok {
+		if err := validResponse.VisitGetVirtualInputsStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StopVirtualInputs operation middleware
+func (sh *strictHandler) StopVirtualInputs(w http.ResponseWriter, r *http.Request) {
+	var request StopVirtualInputsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StopVirtualInputs(ctx, request.(StopVirtualInputsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StopVirtualInputs")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StopVirtualInputsResponseObject); ok {
+		if err := validResponse.VisitStopVirtualInputsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // LogsStream operation middleware
 func (sh *strictHandler) LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams) {
 	var request LogsStreamRequestObject
@@ -11922,138 +12049,11 @@ func (sh *strictHandler) StopRecording(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// ConfigureVirtualInputs operation middleware
-func (sh *strictHandler) ConfigureVirtualInputs(w http.ResponseWriter, r *http.Request) {
-	var request ConfigureVirtualInputsRequestObject
-
-	var body ConfigureVirtualInputsJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ConfigureVirtualInputs(ctx, request.(ConfigureVirtualInputsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ConfigureVirtualInputs")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ConfigureVirtualInputsResponseObject); ok {
-		if err := validResponse.VisitConfigureVirtualInputsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// PauseVirtualInputs operation middleware
-func (sh *strictHandler) PauseVirtualInputs(w http.ResponseWriter, r *http.Request) {
-	var request PauseVirtualInputsRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.PauseVirtualInputs(ctx, request.(PauseVirtualInputsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "PauseVirtualInputs")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(PauseVirtualInputsResponseObject); ok {
-		if err := validResponse.VisitPauseVirtualInputsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ResumeVirtualInputs operation middleware
-func (sh *strictHandler) ResumeVirtualInputs(w http.ResponseWriter, r *http.Request) {
-	var request ResumeVirtualInputsRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ResumeVirtualInputs(ctx, request.(ResumeVirtualInputsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ResumeVirtualInputs")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ResumeVirtualInputsResponseObject); ok {
-		if err := validResponse.VisitResumeVirtualInputsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// GetVirtualInputsStatus operation middleware
-func (sh *strictHandler) GetVirtualInputsStatus(w http.ResponseWriter, r *http.Request) {
-	var request GetVirtualInputsStatusRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetVirtualInputsStatus(ctx, request.(GetVirtualInputsStatusRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetVirtualInputsStatus")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetVirtualInputsStatusResponseObject); ok {
-		if err := validResponse.VisitGetVirtualInputsStatusResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// StopVirtualInputs operation middleware
-func (sh *strictHandler) StopVirtualInputs(w http.ResponseWriter, r *http.Request) {
-	var request StopVirtualInputsRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.StopVirtualInputs(ctx, request.(StopVirtualInputsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "StopVirtualInputs")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(StopVirtualInputsResponseObject); ok {
-		if err := validResponse.VisitStopVirtualInputsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
 	"H4sIAAAAAAAC/+x9e3PbNvboV8Hw7kziu3o4r+40+1eaOK1vkiZjJ+3+WudqIfJIwpoEuAAoW8n4u985",
-	"B+BDIqiX7djp3JmdrSOSwAHO+4GDr1GsslxJkNZEz79GGkyupAH6x088OYH/FmDskdZK40+xkhakxT95",
+	"B+BDIqiX7djp3JmdrSOSwAHOA+eNr1GsslxJkNZEz79GGkyupAH6x088OYH/FmDskdZK40+xkhakxT95",
 	"nqci5lYoOfyPURJ/M/EMMo5//U3DJHoe/a9hPf7QPTVDN9rV1VUvSsDEWuQ4SPQcJ2R+xuiqF71UcpKK",
 	"+FvNXk6HUx9LC1ry9BtNXU7HTkHPQTP/Yi/6VdnXqpDJN4LjV2UZzRfhM/86jvYyFfH5O1UYKPGDACSJ",
 	"wA95+kGrHLQVSDcTnhroRXnjp6/RuLDWQbg8IQ3J3FNmFRO4ETy27ELYWdSLQBZZ9PzPKIWJjXqRFtMZ",
@@ -12063,125 +12063,126 @@ var swaggerSpec = []string{
 	"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",
-	"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",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

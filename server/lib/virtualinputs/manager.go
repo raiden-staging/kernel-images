@@ -537,7 +537,7 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 			"-pix_fmt", "yuv420p",
 			"-r", strconv.Itoa(cfg.FrameRate),
 		)
-		if m.mode == modeFakeFile && m.videoFile != "" {
+		if m.mode == modeVirtualFile && m.videoFile != "" {
 			args = append(args,
 				"-f", "yuv4mpegpipe",
 				m.videoFile,
