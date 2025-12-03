@@ -808,7 +808,11 @@ func (m *Manager) startFFmpegLocked(ctx context.Context, args []string) error {
 	var buf bytes.Buffer
 	cmd.Stdout = io.MultiWriter(os.Stdout, &buf)
 	cmd.Stderr = io.MultiWriter(os.Stderr, &buf)
-	cmd.Env = os.Environ()
+	env := os.Environ()
+	if m.audioSink != "" {
+		env = append(env, fmt.Sprintf("PULSE_SINK=%s", m.audioSink))
+	}
+	cmd.Env = env
 
 	if err := cmd.Start(); err != nil {
 		m.enableScaleToZero(ctx)
