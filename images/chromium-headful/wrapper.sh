@@ -40,22 +40,25 @@ ensure_virtual_camera() {
   fi
 
   if ! command -v modprobe >/dev/null 2>&1; then
-    echo "[virtual-media] modprobe not available; cannot load v4l2loopback" >&2
-    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="modprobe not available to load v4l2loopback"
+    local reason="modprobe not available to load v4l2loopback"
+    echo "[virtual-media] ${reason}" >&2
+    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="$reason"
     return
-  fi
-
-  # Install v4l2loopback for the running kernel if it isn't available.
-  if ! lsmod 2>/dev/null | grep -q '^v4l2loopback'; then
-    install_v4l2loopback || true
   fi
 
   local video_nr="${device_path#/dev/video}"
   echo "[virtual-media] Loading v4l2loopback for $device_path (video_nr=$video_nr)"
   if ! modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
     local reason="v4l2loopback could not be loaded"
-    local detailed_reason
-    if detailed_reason=$(media_support_reason); [[ -n "$detailed_reason" ]]; then
+    local detailed_reason=""
+    if ! modinfo v4l2loopback >/dev/null 2>&1; then
+      detailed_reason="v4l2loopback kernel module not installed in image"
+    fi
+    if [[ -z "$detailed_reason" ]]; then
+      if detailed_reason=$(media_support_reason); [[ -n "$detailed_reason" ]]; then
+        reason="$detailed_reason"
+      fi
+    else
       reason="$detailed_reason"
     fi
     echo "[virtual-media] Failed to load v4l2loopback; camera will be unavailable (${reason})" >&2
@@ -102,150 +105,6 @@ media_support_reason() {
   fi
 }
 
-install_v4l2loopback() {
-  local kernel_ver
-  kernel_ver="$(uname -r)"
-  echo "[virtual-media] Attempting to install v4l2loopback for kernel ${kernel_ver}"
-
-  if ! command -v apt-get >/dev/null 2>&1; then
-    echo "[virtual-media] apt-get not available; cannot install v4l2loopback" >&2
-    return 1
-  fi
-
-  export DEBIAN_FRONTEND=noninteractive
-  if ! apt-get update; then
-    echo "[virtual-media] apt-get update failed before v4l2loopback install" >&2
-  fi
-  if ! apt-get --no-install-recommends -y install ca-certificates curl dkms; then
-    echo "[virtual-media] Failed to install prerequisites for v4l2loopback" >&2
-  fi
-
-  local keyring_pkg="debian-archive-keyring_2023.3+deb12u2_all.deb"
-  if [ ! -s /usr/share/keyrings/debian-archive-keyring.gpg ]; then
-    if curl -fsSL "http://deb.debian.org/debian/pool/main/d/debian-archive-keyring/${keyring_pkg}" -o "/tmp/${keyring_pkg}"; then
-      dpkg -i "/tmp/${keyring_pkg}" || true
-      install -m644 /usr/share/keyrings/debian-archive-keyring.gpg /etc/apt/trusted.gpg.d/debian-archive-keyring.gpg || true
-      rm -f "/tmp/${keyring_pkg}"
-    else
-      echo "[virtual-media] Failed to download debian-archive-keyring package" >&2
-    fi
-  fi
-
-  local bookworm_list="/etc/apt/sources.list.d/debian-bookworm.list"
-  echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm main contrib non-free-firmware" > "$bookworm_list"
-  echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security bookworm-security main contrib non-free-firmware" >> "$bookworm_list"
-  echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware" >> "$bookworm_list"
-
-  ensure_kernel_media_modules "$kernel_ver" || true
-  patch_v4l2loopback_dkms || true
-
-  if apt-get update; then
-    if ! apt-get --no-install-recommends -y install "linux-headers-${kernel_ver}" v4l2loopback-dkms v4l2loopback-utils v4l-utils; then
-      echo "[virtual-media] Failed to install v4l2loopback packages for ${kernel_ver}, trying meta packages" >&2
-      apt-get --no-install-recommends -y install linux-headers-cloud-amd64 linux-headers-amd64 v4l2loopback-dkms v4l2loopback-utils v4l-utils || true
-    fi
-    DKMS_FORCE=1 dkms autoinstall -k "${kernel_ver}" || true
-    depmod "${kernel_ver}" || true
-  else
-    echo "[virtual-media] Unable to update apt with Debian mirrors" >&2
-  fi
-
-  rm -f "$bookworm_list"
-
-  if ! modinfo v4l2loopback >/dev/null 2>&1; then
-    echo "[virtual-media] v4l2loopback module still not present after installation" >&2
-    local media_reason
-    media_reason="$(media_support_reason || true)"
-    if [[ -n "$media_reason" ]]; then
-      echo "[virtual-media] Attempting to build media stack from source (media_build) to supply V4L2 core; reason: ${media_reason}"
-      if install_media_stack_from_source "$kernel_ver"; then
-        DKMS_FORCE=1 dkms autoinstall -k "${kernel_ver}" || true
-      fi
-    fi
-  fi
-
-  if ! modinfo v4l2loopback >/dev/null 2>&1; then
-    echo "[virtual-media] v4l2loopback module still not present after media stack build" >&2
-    return 1
-  fi
-  return 0
-}
-
-ensure_kernel_media_modules() {
-  local kernel_ver="$1"
-  local tried=()
-  local candidates=(
-    "linux-modules-extra-${kernel_ver}"
-    "linux-modules-${kernel_ver}"
-    "linux-modules-extra-cloud-amd64"
-  )
-
-  for pkg in "${candidates[@]}"; do
-    tried+=("$pkg")
-    if dpkg -s "$pkg" >/dev/null 2>&1; then
-      echo "[virtual-media] Kernel media modules already installed via ${pkg}"
-      return 0
-    fi
-    if apt-get --no-install-recommends -y install "$pkg"; then
-      echo "[virtual-media] Installed ${pkg} for kernel media support"
-      return 0
-    fi
-  done
-
-  echo "[virtual-media] Unable to install kernel media support packages (tried: ${tried[*]})" >&2
-  return 1
-}
-
-patch_v4l2loopback_dkms() {
-  local src_dir conf
-  src_dir="$(find /usr/src -maxdepth 1 -type d -name 'v4l2loopback-*' | head -n1 || true)"
-  if [[ -z "$src_dir" ]]; then
-    return 0
-  fi
-  conf="${src_dir}/dkms.conf"
-  if [[ ! -f "$conf" ]]; then
-    return 0
-  fi
-  if grep -q 'BUILD_EXCLUSIVE_KERNEL' "$conf"; then
-    echo "[virtual-media] Rewriting v4l2loopback dkms.conf to bypass BUILD_EXCLUSIVE checks"
-    cat > "$conf" <<'EOF'
-PACKAGE_NAME="v4l2loopback"
-PACKAGE_VERSION="0.12.7"
-
-MAKE[0]="make KERNEL_DIR=${kernel_source_dir} all"
-CLEAN="make clean"
-
-BUILT_MODULE_NAME[0]="$PACKAGE_NAME"
-DEST_MODULE_LOCATION[0]="/extra"
-
-AUTOINSTALL="yes"
-EOF
-  fi
-}
-
-install_media_stack_from_source() {
-  local kernel_ver="$1"
-  local workdir="/tmp/media-build"
-
-  # Ensure required tools for media_build
-  apt-get update >/dev/null 2>&1 || true
-  apt-get --no-install-recommends -y install patchutils libproc-processtable-perl >/dev/null 2>&1 || true
-
-  rm -rf "$workdir"
-  if ! git clone --depth=1 --branch for-v5.18 --single-branch https://git.linuxtv.org/media_build.git "$workdir"; then
-    echo "[virtual-media] Failed to clone media_build" >&2
-    return 1
-  fi
-
-  # Build and install the media stack (includes videodev) for the running kernel.
-  if ! (cd "$workdir" && ./build --depth 1 && make install); then
-    echo "[virtual-media] media_build compilation failed" >&2
-    return 1
-  fi
-
-  depmod "${kernel_ver}" || true
-  return 0
-}
 
 set_pulse_defaults() {
   local sink="$VIRTUAL_MEDIA_AUDIO_SINK"
