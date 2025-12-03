@@ -43,6 +43,11 @@ ensure_virtual_camera() {
     return
   fi
 
+  # Install v4l2loopback for the running kernel if it isn't available.
+  if ! lsmod 2>/dev/null | grep -q '^v4l2loopback'; then
+    install_v4l2loopback || true
+  fi
+
   local video_nr="${device_path#/dev/video}"
   echo "[virtual-media] Loading v4l2loopback for $device_path (video_nr=$video_nr)"
   if ! modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
@@ -60,6 +65,45 @@ ensure_virtual_camera() {
   else
     echo "[virtual-media] v4l2loopback loaded but $device_path not found" >&2
   fi
+}
+
+install_v4l2loopback() {
+  local kernel_ver
+  kernel_ver="$(uname -r)"
+  echo "[virtual-media] Attempting to install v4l2loopback for kernel ${kernel_ver}"
+
+  if ! command -v apt-get >/dev/null 2>&1; then
+    echo "[virtual-media] apt-get not available; cannot install v4l2loopback" >&2
+    return 1
+  fi
+
+  export DEBIAN_FRONTEND=noninteractive
+  apt-get update 1>/dev/null 2>/dev/null || true
+  apt-get --no-install-recommends -y install ca-certificates curl dkms 1>/dev/null 2>/dev/null || true
+
+  local keyring_pkg="debian-archive-keyring_2023.3+deb12u2_all.deb"
+  if [ ! -s /usr/share/keyrings/debian-archive-keyring.gpg ]; then
+    if curl -fsSL "http://deb.debian.org/debian/pool/main/d/debian-archive-keyring/${keyring_pkg}" -o "/tmp/${keyring_pkg}"; then
+      dpkg -i "/tmp/${keyring_pkg}" 1>/dev/null 2>/dev/null || true
+      install -m644 /usr/share/keyrings/debian-archive-keyring.gpg /etc/apt/trusted.gpg.d/debian-archive-keyring.gpg 2>/dev/null || true
+      rm -f "/tmp/${keyring_pkg}"
+    else
+      echo "[virtual-media] Failed to download debian-archive-keyring package" >&2
+    fi
+  fi
+
+  local bookworm_list="/etc/apt/sources.list.d/debian-bookworm.list"
+  echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm main contrib non-free-firmware" > "$bookworm_list"
+  echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security bookworm-security main contrib non-free-firmware" >> "$bookworm_list"
+  echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware" >> "$bookworm_list"
+
+  if apt-get update 1>/dev/null 2>/dev/null; then
+    apt-get --no-install-recommends -y install "linux-headers-${kernel_ver}" v4l2loopback-dkms v4l2loopback-utils v4l-utils 1>/dev/null 2>/dev/null || true
+  else
+    echo "[virtual-media] Unable to update apt with Debian mirrors" >&2
+  fi
+
+  rm -f "$bookworm_list"
 }
 
 set_pulse_defaults() {

@@ -377,7 +377,6 @@ func buildAudioArgs(source Source, sink string) []string {
 		"-ar", "48000",
 		"-ac", "2",
 		"-f", "pulse",
-		"-sample_fmt", "s16le",
 		"-device", sink,
 		"virtual-media-input",
 	)
