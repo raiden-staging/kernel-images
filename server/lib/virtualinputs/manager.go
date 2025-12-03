@@ -384,22 +384,29 @@ func (m *Manager) stopLocked(ctx context.Context) error {
 		_ = m.cmd.Process.Signal(syscall.SIGTERM)
 	}
 
-	done := make(chan struct{})
+	waitCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	waitDone := make(chan struct{})
 	go func() {
 		if m.exited != nil {
 			<-m.exited
 		}
-		close(done)
+		close(waitDone)
 	}()
 
 	select {
-	case <-done:
-	case <-time.After(5 * time.Second):
+	case <-waitDone:
+	case <-waitCtx.Done():
 		if err == nil {
 			_ = syscall.Kill(-pgid, syscall.SIGKILL)
 		} else {
 			_ = m.cmd.Process.Kill()
 		}
+	}
+
+	// Ensure process is gone; if not, report error.
+	if m.cmd.Process != nil && processAlive(m.cmd.Process.Pid) {
+		return fmt.Errorf("ffmpeg process %d did not exit", m.cmd.Process.Pid)
 	}
 
 	m.cmd = nil
@@ -652,6 +659,14 @@ func parseVideoNumber(path string) (int, error) {
 	base := filepath.Base(path)
 	num := strings.TrimPrefix(base, "video")
 	return strconv.Atoi(num)
+}
+
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil
 }
 
 func prepareFifo(path string) error {
