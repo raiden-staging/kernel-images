@@ -78,14 +78,18 @@ install_v4l2loopback() {
   fi
 
   export DEBIAN_FRONTEND=noninteractive
-  apt-get update 1>/dev/null 2>/dev/null || true
-  apt-get --no-install-recommends -y install ca-certificates curl dkms 1>/dev/null 2>/dev/null || true
+  if ! apt-get update; then
+    echo "[virtual-media] apt-get update failed before v4l2loopback install" >&2
+  fi
+  if ! apt-get --no-install-recommends -y install ca-certificates curl dkms; then
+    echo "[virtual-media] Failed to install prerequisites for v4l2loopback" >&2
+  fi
 
   local keyring_pkg="debian-archive-keyring_2023.3+deb12u2_all.deb"
   if [ ! -s /usr/share/keyrings/debian-archive-keyring.gpg ]; then
     if curl -fsSL "http://deb.debian.org/debian/pool/main/d/debian-archive-keyring/${keyring_pkg}" -o "/tmp/${keyring_pkg}"; then
-      dpkg -i "/tmp/${keyring_pkg}" 1>/dev/null 2>/dev/null || true
-      install -m644 /usr/share/keyrings/debian-archive-keyring.gpg /etc/apt/trusted.gpg.d/debian-archive-keyring.gpg 2>/dev/null || true
+      dpkg -i "/tmp/${keyring_pkg}" || true
+      install -m644 /usr/share/keyrings/debian-archive-keyring.gpg /etc/apt/trusted.gpg.d/debian-archive-keyring.gpg || true
       rm -f "/tmp/${keyring_pkg}"
     else
       echo "[virtual-media] Failed to download debian-archive-keyring package" >&2
@@ -97,13 +101,24 @@ install_v4l2loopback() {
   echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian-security bookworm-security main contrib non-free-firmware" >> "$bookworm_list"
   echo "deb [signed-by=/usr/share/keyrings/debian-archive-keyring.gpg] http://deb.debian.org/debian bookworm-updates main contrib non-free-firmware" >> "$bookworm_list"
 
-  if apt-get update 1>/dev/null 2>/dev/null; then
-    apt-get --no-install-recommends -y install "linux-headers-${kernel_ver}" v4l2loopback-dkms v4l2loopback-utils v4l-utils 1>/dev/null 2>/dev/null || true
+  if apt-get update; then
+    if ! apt-get --no-install-recommends -y install "linux-headers-${kernel_ver}" v4l2loopback-dkms v4l2loopback-utils v4l-utils; then
+      echo "[virtual-media] Failed to install v4l2loopback packages for ${kernel_ver}, trying meta packages" >&2
+      apt-get --no-install-recommends -y install linux-headers-cloud-amd64 linux-headers-amd64 v4l2loopback-dkms v4l2loopback-utils v4l-utils || true
+    fi
+    dkms autoinstall -k "${kernel_ver}" || true
+    depmod "${kernel_ver}" || true
   else
     echo "[virtual-media] Unable to update apt with Debian mirrors" >&2
   fi
 
   rm -f "$bookworm_list"
+
+  if ! modinfo v4l2loopback >/dev/null 2>&1; then
+    echo "[virtual-media] v4l2loopback module still not present after installation" >&2
+    return 1
+  fi
+  return 0
 }
 
 set_pulse_defaults() {
