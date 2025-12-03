@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"math/rand"
@@ -203,6 +204,117 @@ func TestApiService_Shutdown(t *testing.T) {
 	require.NoError(t, svc.Shutdown(ctx))
 	require.True(t, rec.stopCalled, "Shutdown should have stopped active recorder")
 	require.Equal(t, 1, vimgr.stopCalls)
+}
+
+func TestApiService_VirtualInputs(t *testing.T) {
+	ctx := context.Background()
+
+	newSvc := func(t *testing.T, vimgr *mockVirtualInputsManager) *ApiService {
+		mgr := recorder.NewFFmpegManager()
+		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), vimgr)
+		require.NoError(t, err)
+		return svc
+	}
+
+	t.Run("configure success", func(t *testing.T) {
+		vimgr := newMockVirtualInputsManager()
+		svc := newSvc(t, vimgr)
+		videoLoop := true
+		audioLoop := false
+		width := int64(640)
+		height := int64(480)
+		fr := int64(24)
+		startPaused := true
+		body := oapi.VirtualInputsRequest{
+			Video: &oapi.VirtualInputSource{
+				Type: oapi.VirtualInputTypeStream,
+				Url:  "https://example.com/vid.m3u8",
+				Loop: &videoLoop,
+			},
+			Audio: &oapi.VirtualInputSource{
+				Type: oapi.VirtualInputTypeFile,
+				Url:  "https://example.com/audio.mp3",
+				Loop: &audioLoop,
+			},
+			Width:       &width,
+			Height:      &height,
+			FrameRate:   &fr,
+			StartPaused: &startPaused,
+		}
+
+		resp, err := svc.ConfigureVirtualInputs(ctx, oapi.ConfigureVirtualInputsRequestObject{Body: &body})
+		require.NoError(t, err)
+		out, ok := resp.(oapi.ConfigureVirtualInputs200JSONResponse)
+		require.True(t, ok, "unexpected response type %T", resp)
+		require.Equal(t, "paused", out.State)
+		require.Len(t, vimgr.configureCalls, 1)
+		call := vimgr.configureCalls[0]
+		require.True(t, call.paused)
+		require.NotNil(t, call.cfg.Video)
+		require.NotNil(t, call.cfg.Audio)
+		assert.Equal(t, "https://example.com/vid.m3u8", call.cfg.Video.URL)
+		assert.Equal(t, "https://example.com/audio.mp3", call.cfg.Audio.URL)
+		assert.Equal(t, 640, call.cfg.Width)
+		assert.Equal(t, 480, call.cfg.Height)
+		assert.Equal(t, 24, call.cfg.FrameRate)
+	})
+
+	t.Run("configure validation error", func(t *testing.T) {
+		vimgr := newMockVirtualInputsManager()
+		vimgr.configureErr = virtualinputs.ErrMissingSources
+		svc := newSvc(t, vimgr)
+		resp, err := svc.ConfigureVirtualInputs(ctx, oapi.ConfigureVirtualInputsRequestObject{Body: &oapi.VirtualInputsRequest{}})
+		require.NoError(t, err)
+		_, ok := resp.(oapi.ConfigureVirtualInputs400JSONResponse)
+		require.True(t, ok, "expected 400 response")
+	})
+
+	t.Run("configure internal error", func(t *testing.T) {
+		vimgr := newMockVirtualInputsManager()
+		vimgr.configureErr = errors.New("boom")
+		svc := newSvc(t, vimgr)
+		reqBody := oapi.VirtualInputsRequest{
+			Audio: &oapi.VirtualInputSource{Type: oapi.VirtualInputTypeStream, Url: "http://a"},
+		}
+		resp, err := svc.ConfigureVirtualInputs(ctx, oapi.ConfigureVirtualInputsRequestObject{Body: &reqBody})
+		require.NoError(t, err)
+		_, ok := resp.(oapi.ConfigureVirtualInputs500JSONResponse)
+		require.True(t, ok, "expected 500 response")
+	})
+
+	t.Run("pause and resume", func(t *testing.T) {
+		vimgr := newMockVirtualInputsManager()
+		svc := newSvc(t, vimgr)
+
+		pauseResp, err := svc.PauseVirtualInputs(ctx, oapi.PauseVirtualInputsRequestObject{})
+		require.NoError(t, err)
+		_, ok := pauseResp.(oapi.PauseVirtualInputs200JSONResponse)
+		require.True(t, ok)
+
+		vimgr.resumeErr = virtualinputs.ErrNoConfigToResume
+		resumeResp, err := svc.ResumeVirtualInputs(ctx, oapi.ResumeVirtualInputsRequestObject{})
+		require.NoError(t, err)
+		_, ok = resumeResp.(oapi.ResumeVirtualInputs400JSONResponse)
+		require.True(t, ok)
+	})
+
+	t.Run("stop and status", func(t *testing.T) {
+		vimgr := newMockVirtualInputsManager()
+		vimgr.status.State = "running"
+		svc := newSvc(t, vimgr)
+
+		statusResp, err := svc.GetVirtualInputsStatus(ctx, oapi.GetVirtualInputsStatusRequestObject{})
+		require.NoError(t, err)
+		out, ok := statusResp.(oapi.GetVirtualInputsStatus200JSONResponse)
+		require.True(t, ok)
+		require.Equal(t, "running", out.State)
+
+		stopResp, err := svc.StopVirtualInputs(ctx, oapi.StopVirtualInputsRequestObject{})
+		require.NoError(t, err)
+		_, ok = stopResp.(oapi.StopVirtualInputs200JSONResponse)
+		require.True(t, ok)
+		require.Equal(t, 1, vimgr.stopCalls)
+	})
 }
 
 // mockRecorder is a lightweight stand-in for recorder.Recorder used in unit tests. It purposefully

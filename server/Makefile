@@ -19,7 +19,7 @@ $(OAPI_CODEGEN): | $(BIN_DIR)
 # 2. Run oapi-codegen with our config
 # 3. go mod tidy to pull deps
 oapi-generate: $(OAPI_CODEGEN)
-	pnpm i -g @apiture/openapi-down-convert
+	npm install -g @apiture/openapi-down-convert
 	openapi-down-convert --input openapi.yaml --output openapi-3.0.yaml
 	$(OAPI_CODEGEN) -config ./oapi-codegen.yaml ./openapi-3.0.yaml
 	@echo "Fixing oapi-codegen issue https://github.com/oapi-codegen/oapi-codegen/issues/1764..."

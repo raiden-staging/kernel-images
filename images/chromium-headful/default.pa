@@ -15,3 +15,7 @@ load-module module-native-protocol-unix auth-anonymous=1
 
 ### Make sure we always have a sink around, even if it is a null sink.
 load-module module-always-sink
+
+### Default devices for virtual media IO
+set-default-sink audio_output
+set-default-source microphone
