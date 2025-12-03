@@ -193,13 +193,12 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 		if normalized.Audio != nil {
 			m.audioFile = defaultAudioFile
 		}
-		if err := prepareFifo(m.videoFile); err != nil {
-			return m.statusLocked(), fmt.Errorf("prepare video fifo: %w", err)
+		if err := os.MkdirAll(filepath.Dir(m.videoFile), 0o755); err != nil {
+			return m.statusLocked(), fmt.Errorf("prepare virtual capture dir: %w", err)
 		}
+		_ = os.Remove(m.videoFile)
 		if m.audioFile != "" {
-			if err := prepareFifo(m.audioFile); err != nil {
-				return m.statusLocked(), fmt.Errorf("prepare audio fifo: %w", err)
-			}
+			_ = os.Remove(m.audioFile)
 		}
 	} else {
 		m.mode = modeDevice
@@ -690,25 +689,6 @@ func parseVideoNumber(path string) (int, error) {
 	base := filepath.Base(path)
 	num := strings.TrimPrefix(base, "video")
 	return strconv.Atoi(num)
-}
-
-func prepareFifo(path string) error {
-	if path == "" {
-		return nil
-	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return err
-	}
-	if fi, err := os.Stat(path); err == nil {
-		if fi.Mode()&os.ModeNamedPipe == 0 {
-			if err := os.Remove(path); err != nil {
-				return err
-			}
-		} else {
-			return nil
-		}
-	}
-	return syscall.Mkfifo(path, 0o666)
 }
 
 func cloneSource(src *MediaSource) *MediaSource {
