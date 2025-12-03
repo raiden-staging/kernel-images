@@ -207,8 +207,19 @@ patch_v4l2loopback_dkms() {
     return 0
   fi
   if grep -q 'BUILD_EXCLUSIVE_KERNEL' "$conf"; then
-    echo "[virtual-media] Patching v4l2loopback dkms.conf to allow build on minimal kernels"
-    sed -i '/BUILD_EXCLUSIVE_KERNEL/d' "$conf"
+    echo "[virtual-media] Rewriting v4l2loopback dkms.conf to bypass BUILD_EXCLUSIVE checks"
+    cat > "$conf" <<'EOF'
+PACKAGE_NAME="v4l2loopback"
+PACKAGE_VERSION="0.12.7"
+
+MAKE[0]="make KERNEL_DIR=${kernel_source_dir} all"
+CLEAN="make clean"
+
+BUILT_MODULE_NAME[0]="$PACKAGE_NAME"
+DEST_MODULE_LOCATION[0]="/extra"
+
+AUTOINSTALL="yes"
+EOF
   fi
 }
 
@@ -217,7 +228,7 @@ install_media_stack_from_source() {
   local workdir="/tmp/media-build"
 
   rm -rf "$workdir"
-  if ! git clone --depth=1 https://git.linuxtv.org/media_build.git "$workdir"; then
+  if ! git clone --depth=1 --branch for-v5.18 --single-branch https://git.linuxtv.org/media_build.git "$workdir"; then
     echo "[virtual-media] Failed to clone media_build" >&2
     return 1
   fi
