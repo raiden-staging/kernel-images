@@ -186,6 +186,8 @@ ensure_virtual_camera() {
       local detailed_reason=""
       if ! modinfo v4l2loopback >/dev/null 2>&1; then
         detailed_reason="v4l2loopback kernel module not installed in image"
+      elif [[ -f "$VIRTUAL_MEDIA_BUILD_LOG" ]]; then
+        detailed_reason="v4l2loopback build failed; inspect ${VIRTUAL_MEDIA_BUILD_LOG}"
       fi
       if [[ -z "$detailed_reason" ]]; then
         if detailed_reason=$(media_support_reason); [[ -n "$detailed_reason" ]]; then
