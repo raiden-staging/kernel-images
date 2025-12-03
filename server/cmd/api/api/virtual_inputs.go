@@ -193,7 +193,7 @@ func (s *ApiService) applyChromiumCaptureFlags(ctx context.Context, status virtu
 		flagsPath      = "/chromium/flags"
 	)
 
-	shouldUseFake := status.Mode == "fake-file" && status.VideoFile != ""
+	shouldUseVirtual := status.Mode == "virtual-file" && status.VideoFile != ""
 	existing, err := chromiumflags.ReadOptionalFlagFile(flagsPath)
 	if err != nil {
 		return fmt.Errorf("read flags: %w", err)
@@ -201,7 +201,7 @@ func (s *ApiService) applyChromiumCaptureFlags(ctx context.Context, status virtu
 
 	filtered := filterTokens(existing, []string{flagFakeDevice}, []string{videoPrefix, audioPrefix})
 	var required []string
-	if shouldUseFake {
+	if shouldUseVirtual {
 		required = append(required, flagFakeDevice, videoPrefix+status.VideoFile)
 		if status.AudioFile != "" {
 			required = append(required, audioPrefix+status.AudioFile)
