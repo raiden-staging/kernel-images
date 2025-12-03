@@ -53,8 +53,13 @@ ensure_virtual_camera() {
   local video_nr="${device_path#/dev/video}"
   echo "[virtual-media] Loading v4l2loopback for $device_path (video_nr=$video_nr)"
   if ! modprobe v4l2loopback video_nr="$video_nr" card_label="$VIRTUAL_CAMERA_LABEL" exclusive_caps=1; then
-    echo "[virtual-media] Failed to load v4l2loopback; camera will be unavailable" >&2
-    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="v4l2loopback could not be loaded"
+    local reason="v4l2loopback could not be loaded"
+    local detailed_reason
+    if detailed_reason=$(media_support_reason); [[ -n "$detailed_reason" ]]; then
+      reason="$detailed_reason"
+    fi
+    echo "[virtual-media] Failed to load v4l2loopback; camera will be unavailable (${reason})" >&2
+    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="$reason"
     return
   fi
 
@@ -67,8 +72,33 @@ ensure_virtual_camera() {
     echo "[virtual-media] Virtual camera ready at $device_path"
     unset VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON
   else
-    echo "[virtual-media] v4l2loopback loaded but $device_path not found" >&2
-    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="v4l2loopback loaded but device missing"
+    local reason="v4l2loopback loaded but device missing"
+    local detailed_reason
+    if detailed_reason=$(media_support_reason); [[ -n "$detailed_reason" ]]; then
+      reason="$detailed_reason"
+    fi
+    echo "[virtual-media] v4l2loopback loaded but $device_path not found (${reason})" >&2
+    export VIRTUAL_MEDIA_VIDEO_UNAVAILABLE_REASON="$reason"
+  fi
+}
+
+media_support_reason() {
+  local config_file="/lib/modules/$(uname -r)/build/.config"
+  if [[ ! -f "$config_file" ]]; then
+    return
+  fi
+
+  if ! grep -q '^CONFIG_MEDIA_SUPPORT=[ym]' "$config_file"; then
+    echo "host kernel missing CONFIG_MEDIA_SUPPORT"
+    return
+  fi
+  if ! grep -q '^CONFIG_VIDEO_V4L2=[ym]' "$config_file"; then
+    echo "host kernel missing CONFIG_VIDEO_V4L2"
+    return
+  fi
+  if ! grep -q '^CONFIG_VIDEO_DEV=[ym]' "$config_file"; then
+    echo "host kernel missing CONFIG_VIDEO_DEV"
+    return
   fi
 }
 
