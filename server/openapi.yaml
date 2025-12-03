@@ -434,6 +434,84 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /virtual_inputs/configure:
+    post:
+      summary: Configure virtual video and audio inputs
+      description: Start or restart the virtual webcam and microphone pipelines using the provided sources.
+      operationId: configureVirtualInputs
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VirtualInputsRequest"
+      responses:
+        "200":
+          description: Virtual inputs configured
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualInputsStatus"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_inputs/pause:
+    post:
+      summary: Pause virtual inputs with silence and black frames
+      operationId: pauseVirtualInputs
+      responses:
+        "200":
+          description: Virtual inputs paused
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualInputsStatus"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_inputs/resume:
+    post:
+      summary: Resume previously configured virtual inputs
+      operationId: resumeVirtualInputs
+      responses:
+        "200":
+          description: Virtual inputs resumed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualInputsStatus"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_inputs/stop:
+    post:
+      summary: Stop virtual input pipelines and release resources
+      operationId: stopVirtualInputs
+      responses:
+        "200":
+          description: Virtual inputs stopped
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualInputsStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /virtual_inputs/status:
+    get:
+      summary: Get the current virtual input status
+      operationId: getVirtualInputsStatus
+      responses:
+        "200":
+          description: Status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualInputsStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /logs/stream:
     get:
       summary: Stream logs over SSE
@@ -1541,6 +1619,93 @@ components:
           type: boolean
           description: Indicates success.
           default: true
+      additionalProperties: false
+    VirtualInputType:
+      type: string
+      enum: [stream, file]
+      description: Type of media source being injected.
+    VirtualInputSource:
+      type: object
+      required: [type, url]
+      properties:
+        type:
+          $ref: "#/components/schemas/VirtualInputType"
+        url:
+          type: string
+          description: Input URL (supports file URLs, HLS, RTMP(S), DASH, etc).
+        loop:
+          type: boolean
+          description: When true, loop file inputs indefinitely.
+      additionalProperties: false
+    VirtualInputsRequest:
+      type: object
+      description: Configure virtual webcam and microphone inputs.
+      properties:
+        video:
+          $ref: "#/components/schemas/VirtualInputSource"
+        audio:
+          $ref: "#/components/schemas/VirtualInputSource"
+        width:
+          type: integer
+          minimum: 1
+          description: Target width for the virtual webcam output.
+        height:
+          type: integer
+          minimum: 1
+          description: Target height for the virtual webcam output.
+        frame_rate:
+          type: integer
+          minimum: 1
+          maximum: 60
+          description: Frame rate for the virtual webcam output.
+        start_paused:
+          type: boolean
+          description: Start with silence/black frames instead of live media until resumed.
+      additionalProperties: false
+    VirtualInputsStatus:
+      type: object
+      required:
+        - state
+        - video_device
+        - audio_sink
+        - microphone_source
+        - width
+        - height
+        - frame_rate
+      properties:
+        state:
+          type: string
+          enum: [idle, running, paused]
+          description: Current state of the virtual input pipelines.
+        video_device:
+          type: string
+          description: Video4Linux device path used for the virtual webcam.
+        audio_sink:
+          type: string
+          description: PulseAudio sink receiving injected audio.
+        microphone_source:
+          type: string
+          description: PulseAudio source clients should use as a microphone.
+        video:
+          $ref: "#/components/schemas/VirtualInputSource"
+        audio:
+          $ref: "#/components/schemas/VirtualInputSource"
+        width:
+          type: integer
+          description: Configured width for the virtual webcam.
+        height:
+          type: integer
+          description: Configured height for the virtual webcam.
+        frame_rate:
+          type: integer
+          description: Configured frame rate for the virtual webcam.
+        started_at:
+          type: string
+          format: date-time
+          description: Timestamp when the current pipelines started.
+        last_error:
+          type: string
+          description: Last observed error (if any).
       additionalProperties: false
     ExecutePlaywrightRequest:
       type: object

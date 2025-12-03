@@ -14,7 +14,17 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/virtualinputs"
 )
+
+// VirtualInputsManager abstracts the lifecycle of virtual camera/microphone pipelines.
+type VirtualInputsManager interface {
+	Configure(ctx context.Context, cfg virtualinputs.Config, startPaused bool) (virtualinputs.Status, error)
+	Pause(ctx context.Context) (virtualinputs.Status, error)
+	Resume(ctx context.Context) (virtualinputs.Status, error)
+	Stop(ctx context.Context) (virtualinputs.Status, error)
+	Status(ctx context.Context) virtualinputs.Status
+}
 
 type ApiService struct {
 	// defaultRecorderID is used whenever the caller doesn't specify an explicit ID.
@@ -42,11 +52,13 @@ type ApiService struct {
 
 	// playwrightMu serializes Playwright code execution (only one execution at a time)
 	playwrightMu sync.Mutex
+
+	virtualInputs VirtualInputsManager
 }
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
 
-func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient) (*ApiService, error) {
+func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient, virtualInputsMgr VirtualInputsManager) (*ApiService, error) {
 	switch {
 	case recordManager == nil:
 		return nil, fmt.Errorf("recordManager cannot be nil")
@@ -56,6 +68,8 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		return nil, fmt.Errorf("upstreamMgr cannot be nil")
 	case nekoAuthClient == nil:
 		return nil, fmt.Errorf("nekoAuthClient cannot be nil")
+	case virtualInputsMgr == nil:
+		return nil, fmt.Errorf("virtualInputsMgr cannot be nil")
 	}
 
 	return &ApiService{
@@ -67,6 +81,7 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		upstreamMgr:       upstreamMgr,
 		stz:               stz,
 		nekoAuthClient:    nekoAuthClient,
+		virtualInputs:     virtualInputsMgr,
 	}, nil
 }
 
@@ -261,5 +276,11 @@ func (s *ApiService) ListRecorders(ctx context.Context, _ oapi.ListRecordersRequ
 }
 
 func (s *ApiService) Shutdown(ctx context.Context) error {
-	return s.recordManager.StopAll(ctx)
+	if err := s.recordManager.StopAll(ctx); err != nil {
+		return err
+	}
+	if s.virtualInputs != nil {
+		_, _ = s.virtualInputs.Stop(ctx)
+	}
+	return nil
 }
