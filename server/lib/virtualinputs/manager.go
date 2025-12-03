@@ -739,13 +739,18 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 	}
 
 	if cfg.Audio != nil {
-		args = append(args,
-			"-map", fmt.Sprintf("%d:a:0", audioIdx),
-			"-ac", "2",
-			"-ar", "48000",
-			"-f", "pulse",
-			m.audioSink,
-		)
+		// Only route audio into Pulse when using a v4l2loopback device; in virtual-file
+		// mode Chromium consumes the WAV via --use-file-for-fake-audio-capture, so
+		// sending audio to a sink risks leaking it to the output path.
+		if m.mode != modeVirtualFile {
+			args = append(args,
+				"-map", fmt.Sprintf("%d:a:0", audioIdx),
+				"-ac", "2",
+				"-ar", "48000",
+				"-f", "pulse",
+				m.audioSink,
+			)
+		}
 		if m.audioFile != "" {
 			args = append(args,
 				"-map", fmt.Sprintf("%d:a:0", audioIdx),
