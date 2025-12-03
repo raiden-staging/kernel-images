@@ -151,14 +151,16 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 		Height:           status.Height,
 		FrameRate:        status.FrameRate,
 	}
+	if status.Mode != "" {
+		resp.Mode = oapi.VirtualInputsStatusMode(status.Mode)
+	} else {
+		resp.Mode = oapi.Device
+	}
 	if status.LastError != "" {
 		resp.LastError = &status.LastError
 	}
 	if status.StartedAt != nil {
 		resp.StartedAt = status.StartedAt
-	}
-	if status.Mode != "" {
-		resp.Mode = status.Mode
 	}
 	if status.VideoFile != "" {
 		resp.VideoFile = &status.VideoFile

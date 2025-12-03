@@ -89,6 +89,8 @@ Environment variables control the virtual devices and output shape:
 | `VIRTUAL_INPUT_HEIGHT`           | `720`            | Output height for the virtual camera                            |
 | `VIRTUAL_INPUT_FRAME_RATE`       | `30`             | Output frame rate for the virtual camera                        |
 
+If the host kernel cannot load `v4l2loopback`, the server automatically falls back to streaming into Chromium’s fake capture flags using Y4M/WAV pipes under `/tmp/virtual-inputs/*` and restarts Chromium to pick them up.
+
 ### Useful Requests
 
 Configure a virtual webcam + mic from mixed sources (looping the audio file):

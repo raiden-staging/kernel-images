@@ -1672,11 +1672,16 @@ components:
         - width
         - height
         - frame_rate
+        - mode
       properties:
         state:
           type: string
           enum: [idle, running, paused]
           description: Current state of the virtual input pipelines.
+        mode:
+          type: string
+          enum: [device, fake-file]
+          description: Output mode in use (v4l2 device vs Chromium fake capture files).
         video_device:
           type: string
           description: Video4Linux device path used for the virtual webcam.
@@ -1686,6 +1691,12 @@ components:
         microphone_source:
           type: string
           description: PulseAudio source clients should use as a microphone.
+        video_file:
+          type: string
+          description: Path to the Y4M file/pipe used when fake-file mode is active.
+        audio_file:
+          type: string
+          description: Path to the WAV file/pipe used when fake-file mode is active.
         video:
           $ref: "#/components/schemas/VirtualInputSource"
         audio:
