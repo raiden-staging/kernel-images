@@ -20,6 +20,14 @@ type Config struct {
 	// Absolute or relative path to the ffmpeg binary. If empty the code falls back to "ffmpeg" on $PATH.
 	PathToFFmpeg string `envconfig:"FFMPEG_PATH" default:"ffmpeg"`
 
+	// Virtual input defaults
+	VirtualVideoDevice     string `envconfig:"VIRTUAL_INPUT_VIDEO_DEVICE" default:"/dev/video20"`
+	VirtualAudioSink       string `envconfig:"VIRTUAL_INPUT_AUDIO_SINK" default:"audio_input"`
+	VirtualMicrophoneSource string `envconfig:"VIRTUAL_INPUT_MICROPHONE_SOURCE" default:"microphone"`
+	VirtualInputWidth      int    `envconfig:"VIRTUAL_INPUT_WIDTH" default:"1280"`
+	VirtualInputHeight     int    `envconfig:"VIRTUAL_INPUT_HEIGHT" default:"720"`
+	VirtualInputFrameRate  int    `envconfig:"VIRTUAL_INPUT_FRAME_RATE" default:"30"`
+
 	// DevTools proxy configuration
 	LogCDPMessages bool `envconfig:"LOG_CDP_MESSAGES" default:"false"`
 }
@@ -52,6 +60,21 @@ func validate(config *Config) error {
 	}
 	if config.PathToFFmpeg == "" {
 		return fmt.Errorf("FFMPEG_PATH is required")
+	}
+	if config.VirtualVideoDevice == "" {
+		return fmt.Errorf("VIRTUAL_INPUT_VIDEO_DEVICE is required")
+	}
+	if config.VirtualAudioSink == "" {
+		return fmt.Errorf("VIRTUAL_INPUT_AUDIO_SINK is required")
+	}
+	if config.VirtualMicrophoneSource == "" {
+		return fmt.Errorf("VIRTUAL_INPUT_MICROPHONE_SOURCE is required")
+	}
+	if config.VirtualInputWidth <= 0 || config.VirtualInputHeight <= 0 {
+		return fmt.Errorf("VIRTUAL_INPUT_WIDTH and VIRTUAL_INPUT_HEIGHT must be greater than 0")
+	}
+	if config.VirtualInputFrameRate <= 0 || config.VirtualInputFrameRate > 60 {
+		return fmt.Errorf("VIRTUAL_INPUT_FRAME_RATE must be between 1 and 60")
 	}
 
 	return nil

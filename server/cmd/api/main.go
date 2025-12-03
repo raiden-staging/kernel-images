@@ -88,12 +88,24 @@ func main() {
 		os.Exit(1)
 	}
 
+	virtualInputsMgr := virtualinputs.NewManager(
+		config.PathToFFmpeg,
+		config.VirtualVideoDevice,
+		config.VirtualAudioSink,
+		config.VirtualMicrophoneSource,
+		config.VirtualInputWidth,
+		config.VirtualInputHeight,
+		config.VirtualInputFrameRate,
+		stz,
+	)
+
 	apiService, err := api.New(
 		recorder.NewFFmpegManager(),
 		recorder.NewFFmpegRecorderFactory(config.PathToFFmpeg, defaultParams, stz),
 		upstreamMgr,
 		stz,
 		nekoAuthClient,
+		virtualInputsMgr,
 	)
 	if err != nil {
 		slogger.Error("failed to create api service", "err", err)

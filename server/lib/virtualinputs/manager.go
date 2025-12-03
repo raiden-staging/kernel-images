@@ -94,7 +94,7 @@ type Manager struct {
 }
 
 // NewManager builds a Manager with sensible defaults and optional overrides.
-func NewManager(ffmpegPath, videoDevice, audioSink, microphoneSource string, stz scaletozero.Controller) *Manager {
+func NewManager(ffmpegPath, videoDevice, audioSink, microphoneSource string, width, height, frameRate int, stz scaletozero.Controller) *Manager {
 	if ffmpegPath == "" {
 		ffmpegPath = "ffmpeg"
 	}
@@ -107,15 +107,24 @@ func NewManager(ffmpegPath, videoDevice, audioSink, microphoneSource string, stz
 	if microphoneSource == "" {
 		microphoneSource = "microphone"
 	}
+	if width <= 0 {
+		width = defaultWidth
+	}
+	if height <= 0 {
+		height = defaultHeight
+	}
+	if frameRate <= 0 {
+		frameRate = defaultFrameRate
+	}
 
 	return &Manager{
 		ffmpegPath:       ffmpegPath,
 		videoDevice:      videoDevice,
 		audioSink:        audioSink,
 		microphoneSource: microphoneSource,
-		defaultWidth:     defaultWidth,
-		defaultHeight:    defaultHeight,
-		defaultFrameRate: defaultFrameRate,
+		defaultWidth:     width,
+		defaultHeight:    height,
+		defaultFrameRate: frameRate,
 		state:            stateIdle,
 		stz:              scaletozero.NewOncer(stz),
 		execCommand:      exec.Command,
@@ -243,6 +252,7 @@ func (m *Manager) Stop(ctx context.Context) (Status, error) {
 	m.state = stateIdle
 	m.startedAt = nil
 	m.lastError = ""
+	m.lastCfg = nil
 	return m.statusLocked(), nil
 }
 
@@ -412,39 +422,59 @@ func (m *Manager) ensurePulseDevices(ctx context.Context) error {
 }
 
 func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
-	var args []string
+	var (
+		args     []string
+		videoIdx = -1
+		audioIdx = -1
+	)
 	args = append(args, "-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts", "-threads", "2")
 
+	// Build inputs and track indexes for mapping.
 	if paused {
-		args = append(args,
-			"-f", "lavfi", "-re", "-i", fmt.Sprintf("color=size=%dx%d:rate=%d:color=black", cfg.Width, cfg.Height, cfg.FrameRate),
-		)
+		if cfg.Video != nil {
+			videoIdx = 0
+			args = append(args,
+				"-f", "lavfi", "-re", "-i", fmt.Sprintf("color=size=%dx%d:rate=%d:color=black", cfg.Width, cfg.Height, cfg.FrameRate),
+			)
+		}
 		if cfg.Audio != nil {
+			if videoIdx == -1 {
+				audioIdx = 0
+			} else {
+				audioIdx = 1
+			}
 			args = append(args, "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=48000")
 		}
 	} else {
-		inputs := buildInputs(cfg)
-		if len(inputs) == 0 {
-			return nil, errors.New("no inputs provided")
+		shared := sourcesShared(cfg)
+		if cfg.Video != nil {
+			videoIdx = 0
+			args = append(args, buildInputArgs(cfg.Video)...)
 		}
-		for _, in := range inputs {
-			args = append(args, in.args...)
+		if cfg.Audio != nil {
+			if shared && cfg.Video != nil {
+				audioIdx = videoIdx
+			} else {
+				if videoIdx == -1 {
+					audioIdx = 0
+				} else {
+					audioIdx = 1
+				}
+				args = append(args, buildInputArgs(cfg.Audio)...)
+			}
 		}
 	}
 
+	if cfg.Video != nil && videoIdx == -1 {
+		return nil, errors.New("video mapping requested without input")
+	}
+	if cfg.Audio != nil && audioIdx == -1 {
+		return nil, errors.New("audio mapping requested without input")
+	}
+
 	if cfg.Video != nil {
-		videoMap := "0:v:0"
-		if cfg.Audio != nil && !paused && !sourcesShared(cfg) {
-			videoMap = "0:v:0"
-		}
-		if !paused && cfg.Audio != nil && sourcesShared(cfg) {
-			videoMap = "0:v:0"
-		} else if !paused && cfg.Audio != nil && !sourcesShared(cfg) {
-			// audio is on second input
-			videoMap = "0:v:0"
-		}
 		args = append(args,
-			"-map", videoMap,
+			"-map", fmt.Sprintf("%d:v:0", videoIdx),
 			"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2", cfg.Width, cfg.Height, cfg.Width, cfg.Height),
 			"-pix_fmt", "yuv420p",
 			"-r", strconv.Itoa(cfg.FrameRate),
@@ -454,12 +484,8 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 	}
 
 	if cfg.Audio != nil {
-		audioMap := "0:a:0"
-		if cfg.Video != nil && !paused && !sourcesShared(cfg) {
-			audioMap = "1:a:0"
-		}
 		args = append(args,
-			"-map", audioMap,
+			"-map", fmt.Sprintf("%d:a:0", audioIdx),
 			"-ac", "2",
 			"-ar", "48000",
 			"-f", "pulse",
@@ -470,40 +496,23 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 	return args, nil
 }
 
-type inputSpec struct {
-	args []string
-}
-
-func buildInputs(cfg Config) []inputSpec {
-	shared := sourcesShared(cfg)
-	var inputs []inputSpec
-
-	addSource := func(src *MediaSource) {
-		if src == nil {
-			return
-		}
-		var parts []string
-		if src.Type == SourceTypeFile && src.Loop {
-			parts = append(parts, "-stream_loop", "-1")
-		}
-		if src.Type == SourceTypeStream {
-			parts = append(parts, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2")
-		}
-		parts = append(parts, "-thread_queue_size", "64")
-		if src.Type == SourceTypeFile {
-			parts = append(parts, "-re")
-		}
-		parts = append(parts, "-i", src.URL)
-		inputs = append(inputs, inputSpec{args: parts})
+func buildInputArgs(src *MediaSource) []string {
+	var parts []string
+	if src == nil {
+		return parts
 	}
-
-	if shared {
-		addSource(cfg.Video)
-	} else {
-		addSource(cfg.Video)
-		addSource(cfg.Audio)
+	if src.Type == SourceTypeFile && src.Loop {
+		parts = append(parts, "-stream_loop", "-1")
 	}
-	return inputs
+	if src.Type == SourceTypeStream {
+		parts = append(parts, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2")
+	}
+	parts = append(parts, "-thread_queue_size", "64")
+	if src.Type == SourceTypeFile {
+		parts = append(parts, "-re")
+	}
+	parts = append(parts, "-i", src.URL)
+	return parts
 }
 
 func sourcesShared(cfg Config) bool {
