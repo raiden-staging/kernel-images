@@ -12,7 +12,7 @@ capture:
     height: 720
   microphone:
     enabled: true
-    device: "audio_output.monitor"
+    device: "microphone"
 
 member:
   provider: multiuser
