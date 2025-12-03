@@ -4,6 +4,16 @@
 desktop:
   screen: "1920x1080@25"
 
+capture:
+  webcam:
+    enabled: true
+    device: "/dev/video20"
+    width: 1280
+    height: 720
+  microphone:
+    enabled: true
+    device: "microphone"
+
 member:
   provider: multiuser
   multiuser:
