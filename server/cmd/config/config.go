@@ -20,6 +20,12 @@ type Config struct {
 	// Absolute or relative path to the ffmpeg binary. If empty the code falls back to "ffmpeg" on $PATH.
 	PathToFFmpeg string `envconfig:"FFMPEG_PATH" default:"ffmpeg"`
 
+	// RTMP/RTMPS internal server configuration
+	RTMPListenAddr  string `envconfig:"RTMP_LISTEN_ADDR" default:":1935"`
+	RTMPSListenAddr string `envconfig:"RTMPS_LISTEN_ADDR" default:":1936"`
+	RTMPSCertPath   string `envconfig:"RTMPS_CERT_PATH" default:""`
+	RTMPSKeyPath    string `envconfig:"RTMPS_KEY_PATH" default:""`
+
 	// Virtual input defaults
 	VirtualVideoDevice      string `envconfig:"VIRTUAL_INPUT_VIDEO_DEVICE" default:"/dev/video20"`
 	VirtualAudioSink        string `envconfig:"VIRTUAL_INPUT_AUDIO_SINK" default:"audio_input"`
@@ -60,6 +66,12 @@ func validate(config *Config) error {
 	}
 	if config.PathToFFmpeg == "" {
 		return fmt.Errorf("FFMPEG_PATH is required")
+	}
+	if config.RTMPListenAddr == "" {
+		return fmt.Errorf("RTMP_LISTEN_ADDR is required")
+	}
+	if (config.RTMPSCertPath == "") != (config.RTMPSKeyPath == "") {
+		return fmt.Errorf("RTMPS_CERT_PATH and RTMPS_KEY_PATH must both be set or both be empty")
 	}
 	if config.VirtualVideoDevice == "" {
 		return fmt.Errorf("VIRTUAL_INPUT_VIDEO_DEVICE is required")
