@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"testing"
+	"time"
 
 	"log/slog"
 
@@ -17,6 +18,7 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/stream"
 	"github.com/onkernel/kernel-images/server/lib/virtualinputs"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -24,9 +26,29 @@ import (
 
 func newTestApiService(t *testing.T, mgr recorder.RecordManager) (*ApiService, *mockVirtualInputsManager) {
 	vimgr := newMockVirtualInputsManager()
-	svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), vimgr)
+	return newApiServiceWithVirtualInputs(t, mgr, vimgr), vimgr
+}
+
+func newApiServiceWithVirtualInputs(t *testing.T, mgr recorder.RecordManager, vimgr *mockVirtualInputsManager) *ApiService {
+	t.Helper()
+	if vimgr == nil {
+		vimgr = newMockVirtualInputsManager()
+	}
+	defaults := testStreamDefaults()
+	svc, err := New(
+		mgr,
+		newMockFactory(),
+		newTestUpstreamManager(),
+		scaletozero.NewNoopController(),
+		newMockNekoClient(t),
+		vimgr,
+		stream.NewStreamManager(),
+		newMockStreamFactory(),
+		mockRTMPServer{},
+		defaults,
+	)
 	require.NoError(t, err)
-	return svc, vimgr
+	return svc
 }
 
 func TestApiService_StartRecording(t *testing.T) {
@@ -190,6 +212,60 @@ func TestApiService_DownloadRecording(t *testing.T) {
 		require.Equal(t, data, buf.Bytes(), "response body mismatch")
 		require.Equal(t, int64(len(data)), r.ContentLength, "content length mismatch")
 	})
+}
+
+func TestApiService_StreamLifecycle(t *testing.T) {
+	ctx := context.Background()
+	mgr := recorder.NewFFmpegManager()
+	svc := newApiServiceWithVirtualInputs(t, mgr, nil)
+
+	mode := oapi.StartStreamRequestModeInternal
+	resp, err := svc.StartStream(ctx, oapi.StartStreamRequestObject{
+		Body: &oapi.StartStreamJSONRequestBody{Mode: &mode},
+	})
+	require.NoError(t, err)
+	created, ok := resp.(oapi.StartStream201JSONResponse)
+	require.True(t, ok, "expected start stream response")
+	assert.Equal(t, oapi.StreamInfoModeInternal, created.Mode)
+	assert.True(t, created.IsStreaming)
+
+	streamer, exists := svc.streamManager.GetStream("default")
+	require.True(t, exists)
+	assert.True(t, streamer.IsStreaming(ctx))
+
+	listResp, err := svc.ListStreams(ctx, oapi.ListStreamsRequestObject{})
+	require.NoError(t, err)
+	listTyped, ok := listResp.(oapi.ListStreams200JSONResponse)
+	require.True(t, ok)
+	require.Len(t, listTyped, 1)
+	assert.Equal(t, oapi.StreamInfoModeInternal, listTyped[0].Mode)
+
+	stopResp, err := svc.StopStream(ctx, oapi.StopStreamRequestObject{})
+	require.NoError(t, err)
+	require.IsType(t, oapi.StopStream200Response{}, stopResp)
+}
+
+func TestApiService_StartStream_RemoteValidation(t *testing.T) {
+	ctx := context.Background()
+	mgr := recorder.NewFFmpegManager()
+	svc := newApiServiceWithVirtualInputs(t, mgr, nil)
+
+	mode := oapi.StartStreamRequestModeRemote
+	resp, err := svc.StartStream(ctx, oapi.StartStreamRequestObject{
+		Body: &oapi.StartStreamJSONRequestBody{Mode: &mode},
+	})
+	require.NoError(t, err)
+	require.IsType(t, oapi.StartStream400JSONResponse{}, resp)
+}
+
+func TestApiService_StopStream_NotFound(t *testing.T) {
+	ctx := context.Background()
+	mgr := recorder.NewFFmpegManager()
+	svc := newApiServiceWithVirtualInputs(t, mgr, nil)
+
+	resp, err := svc.StopStream(ctx, oapi.StopStreamRequestObject{})
+	require.NoError(t, err)
+	require.IsType(t, oapi.StopStream404JSONResponse{}, resp)
 }
 
 func TestApiService_Shutdown(t *testing.T) {
