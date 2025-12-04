@@ -275,10 +275,13 @@ func TestApiService_Shutdown(t *testing.T) {
 	require.NoError(t, mgr.RegisterRecorder(ctx, rec), "failed to register recorder")
 
 	svc, vimgr := newTestApiService(t, mgr)
+	streamer := &mockStreamer{id: "stream-1", started: true}
+	require.NoError(t, svc.streamManager.RegisterStream(ctx, streamer))
 
 	require.NoError(t, svc.Shutdown(ctx))
 	require.True(t, rec.stopCalled, "Shutdown should have stopped active recorder")
 	require.Equal(t, 1, vimgr.stopCalls)
+	require.False(t, streamer.started, "Shutdown should stop active stream")
 }
 
 func TestApiService_VirtualInputs(t *testing.T) {
@@ -286,9 +289,7 @@ func TestApiService_VirtualInputs(t *testing.T) {
 
 	newSvc := func(t *testing.T, vimgr *mockVirtualInputsManager) *ApiService {
 		mgr := recorder.NewFFmpegManager()
-		svc, err := New(mgr, newMockFactory(), newTestUpstreamManager(), scaletozero.NewNoopController(), newMockNekoClient(t), vimgr)
-		require.NoError(t, err)
-		return svc
+		return newApiServiceWithVirtualInputs(t, mgr, vimgr)
 	}
 
 	t.Run("configure success", func(t *testing.T) {
@@ -473,6 +474,84 @@ func newMockFactory() recorder.FFmpegRecorderFactory {
 	return func(id string, _ recorder.FFmpegRecordingParams) (recorder.Recorder, error) {
 		rec := &mockRecorder{id: id}
 		return rec, nil
+	}
+}
+
+type mockStreamer struct {
+	id       string
+	meta     stream.Metadata
+	started  bool
+	startErr error
+	stopErr  error
+}
+
+func (m *mockStreamer) ID() string { return m.id }
+
+func (m *mockStreamer) Start(ctx context.Context) error {
+	if m.startErr != nil {
+		return m.startErr
+	}
+	m.started = true
+	if m.meta.StartedAt.IsZero() {
+		m.meta.StartedAt = time.Now()
+	}
+	return nil
+}
+
+func (m *mockStreamer) Stop(ctx context.Context) error {
+	if m.stopErr != nil {
+		return m.stopErr
+	}
+	m.started = false
+	return nil
+}
+
+func (m *mockStreamer) IsStreaming(ctx context.Context) bool { return m.started }
+
+func (m *mockStreamer) Metadata() stream.Metadata {
+	meta := m.meta
+	if meta.ID == "" {
+		meta.ID = m.id
+	}
+	return meta
+}
+
+type mockRTMPServer struct{}
+
+func (mockRTMPServer) Start(ctx context.Context) error { return nil }
+func (mockRTMPServer) EnsureStream(path string)        {}
+func (mockRTMPServer) IngestURL(path string) string {
+	return "rtmp://internal/" + path
+}
+func (mockRTMPServer) PlaybackURLs(host string, path string) (*string, *string) {
+	url := "rtmp://" + host + "/" + path
+	return &url, nil
+}
+func (mockRTMPServer) Close(ctx context.Context) error { return nil }
+
+func newMockStreamFactory() stream.FFmpegStreamerFactory {
+	return func(id string, params stream.Params) (stream.Streamer, error) {
+		return &mockStreamer{
+			id: id,
+			meta: stream.Metadata{
+				ID:                id,
+				Mode:              params.Mode,
+				IngestURL:         params.IngestURL,
+				PlaybackURL:       params.PlaybackURL,
+				SecurePlaybackURL: params.SecurePlaybackURL,
+				StartedAt:         time.Now(),
+			},
+		}, nil
+	}
+}
+
+func testStreamDefaults() stream.Params {
+	frameRate := 10
+	display := 1
+	return stream.Params{
+		FrameRate:  &frameRate,
+		DisplayNum: &display,
+		Mode:       stream.ModeInternal,
 	}
 }
 

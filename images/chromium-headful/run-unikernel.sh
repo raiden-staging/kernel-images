@@ -70,6 +70,8 @@ deploy_args=(
   -M 4096
   -p 9222:9222/tls
   -p 444:10001/tls
+  -p 1935:1935/tcp
+  -p 1936:1936/tcp
   -e DISPLAY_NUM=1
   -e HEIGHT=1080
   -e WIDTH=1920
