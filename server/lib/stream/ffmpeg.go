@@ -23,6 +23,12 @@ const (
 	exitCodeInitValue = math.MinInt
 )
 
+var runCommand = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = os.Environ()
+	return cmd.Output()
+}
+
 // FFmpegStreamer streams the display to an RTMP(S) endpoint.
 type FFmpegStreamer struct {
 	mu sync.Mutex
@@ -127,7 +133,7 @@ func (fs *FFmpegStreamer) Start(ctx context.Context) error {
 	fs.startedAt = time.Now()
 	fs.exited = make(chan struct{})
 
-	args, err := ffmpegStreamArgs(fs.params)
+	args, err := ffmpegStreamArgs(ctx, fs.params)
 	if err != nil {
 		_ = fs.stz.Enable(context.WithoutCancel(ctx))
 		fs.mu.Unlock()
@@ -235,18 +241,44 @@ func (fs *FFmpegStreamer) waitForCommand(ctx context.Context) {
 }
 
 // ffmpegStreamArgs builds input/output arguments for live streaming.
-func ffmpegStreamArgs(params Params) ([]string, error) {
-	input, err := screenCaptureArgs(params)
+func ffmpegStreamArgs(ctx context.Context, params Params) ([]string, error) {
+	videoInput, err := screenCaptureArgs(params)
 	if err != nil {
 		return nil, err
 	}
 
-	args := append(input,
+	args := append([]string{}, videoInput...)
+
+	hasAudio := false
+	if runtime.GOOS == "linux" {
+		audioInput, err := audioCaptureArgs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("detect PulseAudio sink: %w", err)
+		}
+		args = append(args, audioInput...)
+		hasAudio = true
+	}
+
+	args = append(args,
 		"-c:v", "libx264",
 		"-preset", "veryfast",
 		"-tune", "zerolatency",
 		"-pix_fmt", "yuv420p",
 		"-g", strconv.Itoa(*params.FrameRate*2),
+	)
+
+	if hasAudio {
+		args = append(args,
+			"-map", "0:v:0",
+			"-map", "1:a:0",
+			"-c:a", "aac",
+			"-b:a", "128k",
+			"-ar", "44100",
+			"-ac", "2",
+		)
+	}
+
+	args = append(args,
 		"-use_wallclock_as_timestamps", "1",
 		"-fflags", "nobuffer",
 		"-f", "flv",
@@ -274,6 +306,95 @@ func screenCaptureArgs(params Params) ([]string, error) {
 	default:
 		return nil, fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
+}
+
+func audioCaptureArgs(ctx context.Context) ([]string, error) {
+	mon, err := pulseAudioMonitorSource(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return []string{
+		"-f", "pulse",
+		"-thread_queue_size", "512",
+		"-i", mon,
+	}, nil
+}
+
+func pulseAudioMonitorSource(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+
+	defaultSink, defaultErr := pulseDefaultSink(ctx)
+	if defaultSink != "" {
+		return defaultSink + ".monitor", nil
+	}
+
+	sinks, listErr := listPulseSinks(ctx)
+	if listErr != nil {
+		if defaultErr != nil {
+			return "", fmt.Errorf("failed to detect pulseaudio default sink (%v) and list sinks (%w)", defaultErr, listErr)
+		}
+		return "", fmt.Errorf("failed to list pulseaudio sinks: %w", listErr)
+	}
+
+	sink := pickPreferredSink(sinks)
+	if sink == "" {
+		if defaultErr != nil {
+			return "", fmt.Errorf("no pulseaudio sinks detected (default sink error: %v)", defaultErr)
+		}
+		return "", errors.New("no pulseaudio sinks detected")
+	}
+
+	return sink + ".monitor", nil
+}
+
+func pulseDefaultSink(ctx context.Context) (string, error) {
+	out, err := runCommand(ctx, "pactl", "info")
+	if err != nil {
+		return "", err
+	}
+
+	for _, line := range strings.Split(string(out), "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "Default Sink:") {
+			parts := strings.SplitN(line, ":", 2)
+			if len(parts) == 2 {
+				if sink := strings.TrimSpace(parts[1]); sink != "" {
+					return sink, nil
+				}
+			}
+		}
+	}
+	return "", nil
+}
+
+func listPulseSinks(ctx context.Context) ([]string, error) {
+	out, err := runCommand(ctx, "pactl", "list", "short", "sinks")
+	if err != nil {
+		return nil, err
+	}
+	lines := strings.Split(string(out), "\n")
+	sinks := make([]string, 0, len(lines))
+	for _, line := range lines {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) >= 2 && fields[1] != "" {
+			sinks = append(sinks, fields[1])
+		}
+	}
+	return sinks, nil
+}
+
+func pickPreferredSink(sinks []string) string {
+	if len(sinks) == 0 {
+		return ""
+	}
+	for _, sink := range sinks {
+		if sink == "audio_output" {
+			return sink
+		}
+	}
+	return sinks[0]
 }
 
 // waitForChan returns nil if and only if the channel is closed within the timeout.
