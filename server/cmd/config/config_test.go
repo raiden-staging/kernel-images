@@ -38,12 +38,12 @@ func TestLoad(t *testing.T) {
 		{
 			name: "custom valid env",
 			env: map[string]string{
-				"PORT":        "12345",
-				"FRAME_RATE":  "20",
-				"DISPLAY_NUM": "2",
-				"MAX_SIZE_MB": "250",
-				"OUTPUT_DIR":  "/tmp",
-				"FFMPEG_PATH": "/usr/local/bin/ffmpeg",
+				"PORT":              "12345",
+				"FRAME_RATE":        "20",
+				"DISPLAY_NUM":       "2",
+				"MAX_SIZE_MB":       "250",
+				"OUTPUT_DIR":        "/tmp",
+				"FFMPEG_PATH":       "/usr/local/bin/ffmpeg",
 				"RTMP_LISTEN_ADDR":  "0.0.0.0:1935",
 				"RTMPS_LISTEN_ADDR": "0.0.0.0:1936",
 				"RTMPS_CERT_PATH":   "/cert.pem",

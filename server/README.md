@@ -56,6 +56,10 @@ Configure the server using environment variables:
 | `MAX_SIZE_MB`  | `500`     | Default maximum file size (MB)              |
 | `OUTPUT_DIR`   | `.`       | Directory to save recordings                |
 | `FFMPEG_PATH`  | `ffmpeg`  | Path to the ffmpeg binary                   |
+| `RTMP_LISTEN_ADDR` | `:1935` | RTMP listen address for the internal server |
+| `RTMPS_LISTEN_ADDR` | `:1936` | RTMPS listen address (self-signed certs are generated when no cert/key is provided) |
+| `RTMPS_CERT_PATH` | _(empty)_ | TLS certificate for RTMPS (requires `RTMPS_KEY_PATH` when set) |
+| `RTMPS_KEY_PATH` | _(empty)_ | TLS private key for RTMPS (requires `RTMPS_CERT_PATH` when set) |
 
 #### Example Configuration
 
@@ -71,6 +75,33 @@ export OUTPUT_DIR=/tmp/recordings
 
 - **YAML Spec**: `GET /spec.yaml`
 - **JSON Spec**: `GET /spec.json`
+
+## 📡 Livestreaming
+
+Use `/stream/start` to broadcast the display either to the internal RTMP(S) server (ports 1935/1936 exposed by the Docker/unikernel runners) or to a remote RTMP/RTMPS endpoint.
+
+- Internal RTMP server (returns ingest + playback URLs):
+
+```bash
+curl http://localhost:10001/stream/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"internal"}'
+```
+
+- Push to a remote RTMP target:
+
+```bash
+curl http://localhost:10001/stream/start \
+  -H "Content-Type: application/json" \
+  -d '{"mode":"remote","target_url":"rtmp://example.com/live/default"}'
+```
+
+Stop or enumerate streams:
+
+```bash
+curl -X POST http://localhost:10001/stream/stop
+curl http://localhost:10001/stream/list
+```
 
 ## 🎥 Virtual Media Inputs
 
