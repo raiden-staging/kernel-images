@@ -680,7 +680,7 @@ type VirtualInputIngestEndpoint struct {
 
 // VirtualInputSource defines model for VirtualInputSource.
 type VirtualInputSource struct {
-	// Format Optional format hint for socket/WebRTC feeds (e.g. "mp3", "mjpeg", "ogg", "ivf").
+	// Format Optional format hint for socket/WebRTC feeds (e.g. "wav", "mpegts", "ogg", "ivf").
 	Format *string `json:"format,omitempty"`
 
 	// Loop When true, loop file inputs indefinitely.

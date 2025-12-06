@@ -62,7 +62,7 @@ func TestBuildIngestStatus(t *testing.T) {
 	t.Parallel()
 
 	cfg := Config{
-		Video: &MediaSource{Type: SourceTypeSocket, URL: "/tmp/vid.pipe", Format: "mjpeg"},
+		Video: &MediaSource{Type: SourceTypeSocket, URL: "/tmp/vid.pipe", Format: "mpegts"},
 		Audio: &MediaSource{Type: SourceTypeWebRTC, URL: "/tmp/aud.pipe", Format: "ogg"},
 	}
 	status := buildIngestStatus(cfg)
@@ -70,7 +70,7 @@ func TestBuildIngestStatus(t *testing.T) {
 	require.NotNil(t, status.Video)
 	require.NotNil(t, status.Audio)
 	require.Equal(t, string(SourceTypeSocket), status.Video.Protocol)
-	require.Equal(t, "mjpeg", status.Video.Format)
+	require.Equal(t, "mpegts", status.Video.Format)
 	require.Equal(t, "/tmp/vid.pipe", status.Video.Path)
 	require.Equal(t, string(SourceTypeWebRTC), status.Audio.Protocol)
 	require.Equal(t, "ogg", status.Audio.Format)
@@ -82,8 +82,8 @@ func TestBuildIngestStatus(t *testing.T) {
 func TestBuildInputArgsIncludesFormatForRealtimeSources(t *testing.T) {
 	t.Parallel()
 
-	videoArgs := buildInputArgs(&MediaSource{Type: SourceTypeSocket, URL: "/tmp/video.pipe", Format: "mjpeg"})
-	require.Equal(t, []string{"-thread_queue_size", "64", "-f", "mjpeg", "-i", "/tmp/video.pipe"}, videoArgs)
+	videoArgs := buildInputArgs(&MediaSource{Type: SourceTypeSocket, URL: "/tmp/video.pipe", Format: "mpegts"})
+	require.Equal(t, []string{"-thread_queue_size", "64", "-f", "mpegts", "-i", "/tmp/video.pipe"}, videoArgs)
 
 	audioArgs := buildInputArgs(&MediaSource{Type: SourceTypeWebRTC, URL: "/tmp/audio.pipe", Format: "ogg"})
 	require.Equal(t, []string{"-thread_queue_size", "64", "-f", "ogg", "-i", "/tmp/audio.pipe"}, audioArgs)

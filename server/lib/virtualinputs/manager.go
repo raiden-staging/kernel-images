@@ -65,7 +65,7 @@ type MediaSource struct {
 	URL  string
 	Loop bool
 	// Format hints the expected container/codec when the source is a socket or WebRTC feed
-	// (e.g. "mp3" for audio sockets, "mjpeg" for video sockets, "ivf"/"ogg" for WebRTC).
+	// (e.g. "wav" for audio sockets, "mpegts" for video sockets, "ivf"/"ogg" for WebRTC).
 	Format string
 }
 

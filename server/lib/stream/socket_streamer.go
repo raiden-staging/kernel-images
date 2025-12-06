@@ -53,13 +53,14 @@ func (s *SocketStreamer) ID() string {
 
 func (s *SocketStreamer) Start(ctx context.Context) error {
 	log := logger.FromContext(ctx)
+	runCtx := context.WithoutCancel(ctx)
 
 	s.mu.Lock()
 	if s.cmd != nil {
 		s.mu.Unlock()
 		return ErrStreamInProgress
 	}
-	if err := s.stz.Disable(ctx); err != nil {
+	if err := s.stz.Disable(runCtx); err != nil {
 		s.mu.Unlock()
 		return err
 	}
@@ -70,7 +71,7 @@ func (s *SocketStreamer) Start(ctx context.Context) error {
 		_ = s.stz.Enable(context.Background())
 		return err
 	}
-	audioInput, err := audioCaptureArgs(ctx)
+	audioInput, err := audioCaptureArgs(runCtx)
 	if err != nil {
 		s.mu.Unlock()
 		_ = s.stz.Enable(context.Background())
@@ -98,7 +99,7 @@ func (s *SocketStreamer) Start(ctx context.Context) error {
 	)
 
 	pr, pw := io.Pipe()
-	cmd := exec.CommandContext(ctx, s.ffmpegPath, args...)
+	cmd := exec.CommandContext(runCtx, s.ffmpegPath, args...)
 	cmd.Stdout = pw
 	cmd.Stderr = os.Stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

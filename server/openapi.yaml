@@ -1833,7 +1833,7 @@ components:
         format:
           type: string
           description: |
-            Optional format hint for socket/WebRTC feeds (e.g. "mp3", "mjpeg", "ogg", "ivf").
+            Optional format hint for socket/WebRTC feeds (e.g. "wav", "mpegts", "ogg", "ivf").
       additionalProperties: false
     VirtualInputsRequest:
       type: object

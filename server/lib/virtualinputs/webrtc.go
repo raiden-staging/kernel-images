@@ -63,6 +63,8 @@ func (w *WebRTCIngestor) Clear() {
 
 // HandleOffer negotiates a PeerConnection and starts forwarding tracks into the configured pipes.
 func (w *WebRTCIngestor) HandleOffer(ctx context.Context, offerSDP string) (string, error) {
+	runCtx := context.WithoutCancel(ctx)
+
 	w.mu.Lock()
 	cfg := w.config
 	if cfg == nil {
@@ -87,7 +89,7 @@ func (w *WebRTCIngestor) HandleOffer(ctx context.Context, offerSDP string) (stri
 		w.mu.Unlock()
 		return "", fmt.Errorf("failed to create peerconnection: %w", err)
 	}
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(runCtx)
 	w.pc = pc
 	w.cancel = cancel
 	w.mu.Unlock()

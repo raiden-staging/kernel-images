@@ -59,13 +59,14 @@ func (w *WebRTCStreamer) ID() string { return w.id }
 
 func (w *WebRTCStreamer) Start(ctx context.Context) error {
 	log := logger.FromContext(ctx)
+	runCtx := context.WithoutCancel(ctx)
 
 	w.mu.Lock()
 	if w.cmd != nil {
 		w.mu.Unlock()
 		return ErrStreamInProgress
 	}
-	if err := w.stz.Disable(ctx); err != nil {
+	if err := w.stz.Disable(runCtx); err != nil {
 		w.mu.Unlock()
 		return err
 	}
@@ -106,7 +107,7 @@ func (w *WebRTCStreamer) Start(ctx context.Context) error {
 	videoPort := videoConn.LocalAddr().(*net.UDPAddr).Port
 	audioPort := audioConn.LocalAddr().(*net.UDPAddr).Port
 
-	ctx, cancel := context.WithCancel(ctx)
+	ctx, cancel := context.WithCancel(runCtx)
 
 	videoInput, err := screenCaptureArgs(w.params)
 	if err != nil {
