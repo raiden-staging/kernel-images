@@ -208,7 +208,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 		log.Warn("forcing virtual input audio sink to avoid leaking into output sink")
 		m.audioSink = "audio_input"
 	}
-	if normalized.Video != nil {
+	if normalized.Video != nil && normalized.Video.Type != SourceTypeSocket && normalized.Video.Type != SourceTypeWebRTC {
 		if ok, err := m.ensureVideoDevice(ctx); err != nil || !ok {
 			useFakeMode = true
 			log.Warn("v4l2loopback unavailable, using virtual capture files instead", "err", err)
@@ -244,16 +244,16 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 
 	m.ingest = buildIngestStatus(normalized)
 	if needsVideoPipe(normalized) {
-		if err := preparePipe(defaultVideoPipe); err != nil {
+		if err := preparePipe(normalized.Video.URL); err != nil {
 			return m.statusLocked(), err
 		}
-		m.videoPipe = defaultVideoPipe
+		m.videoPipe = normalized.Video.URL
 	}
 	if needsAudioPipe(normalized) {
-		if err := preparePipe(defaultAudioPipe); err != nil {
+		if err := preparePipe(normalized.Audio.URL); err != nil {
 			return m.statusLocked(), err
 		}
-		m.audioPipe = defaultAudioPipe
+		m.audioPipe = normalized.Audio.URL
 	}
 
 	args, err := m.buildFFmpegArgs(normalized, startPaused)
@@ -853,6 +853,95 @@ func sourcesShared(cfg Config) bool {
 		return false
 	}
 	return cfg.Video.URL == cfg.Audio.URL && cfg.Video.Type == cfg.Audio.Type && (!cfg.Video.Loop || cfg.Audio.Loop == cfg.Video.Loop)
+}
+
+func usesRealtimeSource(cfg Config) bool {
+	return (cfg.Video != nil && (cfg.Video.Type == SourceTypeSocket || cfg.Video.Type == SourceTypeWebRTC)) ||
+		(cfg.Audio != nil && (cfg.Audio.Type == SourceTypeSocket || cfg.Audio.Type == SourceTypeWebRTC))
+}
+
+func needsVideoPipe(cfg Config) bool {
+	return cfg.Video != nil && (cfg.Video.Type == SourceTypeSocket || cfg.Video.Type == SourceTypeWebRTC)
+}
+
+func needsAudioPipe(cfg Config) bool {
+	return cfg.Audio != nil && (cfg.Audio.Type == SourceTypeSocket || cfg.Audio.Type == SourceTypeWebRTC)
+}
+
+func buildIngestStatus(cfg Config) *IngestStatus {
+	var status IngestStatus
+	if cfg.Video != nil && (cfg.Video.Type == SourceTypeSocket || cfg.Video.Type == SourceTypeWebRTC) {
+		status.Video = &IngestEndpoint{
+			Protocol: string(cfg.Video.Type),
+			Format:   cfg.Video.Format,
+			Path:     cfg.Video.URL,
+		}
+	}
+	if cfg.Audio != nil && (cfg.Audio.Type == SourceTypeSocket || cfg.Audio.Type == SourceTypeWebRTC) {
+		status.Audio = &IngestEndpoint{
+			Protocol: string(cfg.Audio.Type),
+			Format:   cfg.Audio.Format,
+			Path:     cfg.Audio.URL,
+		}
+	}
+	if status.Audio == nil && status.Video == nil {
+		return nil
+	}
+	return &status
+}
+
+func normalizeSource(src *MediaSource, isVideo bool) *MediaSource {
+	if src == nil {
+		return nil
+	}
+	out := *src
+	if out.Type == SourceTypeSocket {
+		if out.URL == "" {
+			if isVideo {
+				out.URL = defaultVideoPipe
+			} else {
+				out.URL = defaultAudioPipe
+			}
+		}
+		if out.Format == "" {
+			if isVideo {
+				out.Format = "mjpeg"
+			} else {
+				out.Format = "mp3"
+			}
+		}
+	}
+	if out.Type == SourceTypeWebRTC {
+		if out.URL == "" {
+			if isVideo {
+				out.URL = defaultVideoPipe
+			} else {
+				out.URL = defaultAudioPipe
+			}
+		}
+		if out.Format == "" {
+			if isVideo {
+				out.Format = "ivf"
+			} else {
+				out.Format = "ogg"
+			}
+		}
+	}
+	return &out
+}
+
+func preparePipe(path string) error {
+	if path == "" {
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
+	}
+	_ = os.Remove(path)
+	if err := syscall.Mkfifo(path, 0o666); err != nil {
+		return fmt.Errorf("create fifo %s: %w", path, err)
+	}
+	return nil
 }
 
 func (m *Manager) startFFmpegLocked(ctx context.Context, args []string) error {
