@@ -627,6 +627,24 @@ paths:
                 type: string
         "500":
           $ref: "#/components/responses/InternalError"
+  /input/devices/virtual/feed/socket/info:
+    get:
+      summary: Discover the websocket URL for the virtual video feed mirror
+      description: |
+        Returns the websocket endpoint and expected format for the live virtual video feed preview.
+        This helper does not upgrade the connection; use the returned URL to open the websocket stream.
+      operationId: getVirtualInputFeedSocketInfo
+      responses:
+        "200":
+          description: Websocket feed info
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualFeedSocketInfo"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /input/devices/virtual/webrtc/offer:
     post:
       summary: Negotiate a WebRTC ingest session for virtual inputs
@@ -1984,6 +2002,18 @@ components:
         sdp:
           type: string
           description: SDP answer to set on the publisher.
+      additionalProperties: false
+    VirtualFeedSocketInfo:
+      type: object
+      description: Endpoint information for the websocket preview mirror of the virtual video feed.
+      required: [url]
+      properties:
+        url:
+          type: string
+          description: Websocket URL that mirrors the configured virtual video feed.
+        format:
+          type: string
+          description: Container/codec expected over the websocket (e.g. mpegts or ivf).
       additionalProperties: false
     ExecutePlaywrightRequest:
       type: object

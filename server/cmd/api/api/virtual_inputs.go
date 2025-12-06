@@ -106,6 +106,33 @@ func (s *ApiService) GetVirtualInputsStatus(ctx context.Context, _ oapi.GetVirtu
 	return oapi.GetVirtualInputsStatus200JSONResponse(toVirtualInputsStatus(status)), nil
 }
 
+func (s *ApiService) GetVirtualInputFeedSocketInfo(ctx context.Context, _ oapi.GetVirtualInputFeedSocketInfoRequestObject) (oapi.GetVirtualInputFeedSocketInfoResponseObject, error) {
+	status := s.virtualInputs.Status(ctx)
+	if status.Ingest == nil || status.Ingest.Video == nil {
+		return oapi.GetVirtualInputFeedSocketInfo409JSONResponse{
+			ConflictErrorJSONResponse: oapi.ConflictErrorJSONResponse{Message: "virtual video ingest not active"},
+		}, nil
+	}
+
+	format := status.Ingest.Video.Format
+	switch {
+	case format != "":
+	case status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeWebRTC):
+		format = "ivf"
+	case status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeSocket):
+		format = "mpegts"
+	}
+
+	resp := oapi.VirtualFeedSocketInfo{
+		Url: "/input/devices/virtual/feed/socket",
+	}
+	if format != "" {
+		resp.Format = &format
+	}
+
+	return oapi.GetVirtualInputFeedSocketInfo200JSONResponse(resp), nil
+}
+
 func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Config, bool) {
 	cfg := virtualinputs.Config{}
 	if body.Video != nil {
