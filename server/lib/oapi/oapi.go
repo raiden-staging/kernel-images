@@ -93,18 +93,24 @@ const (
 const (
 	StartStreamRequestModeInternal StartStreamRequestMode = "internal"
 	StartStreamRequestModeRemote   StartStreamRequestMode = "remote"
+	StartStreamRequestModeSocket   StartStreamRequestMode = "socket"
+	StartStreamRequestModeWebrtc   StartStreamRequestMode = "webrtc"
 )
 
 // Defines values for StreamInfoMode.
 const (
 	StreamInfoModeInternal StreamInfoMode = "internal"
 	StreamInfoModeRemote   StreamInfoMode = "remote"
+	StreamInfoModeSocket   StreamInfoMode = "socket"
+	StreamInfoModeWebrtc   StreamInfoMode = "webrtc"
 )
 
 // Defines values for VirtualInputType.
 const (
 	File   VirtualInputType = "file"
+	Socket VirtualInputType = "socket"
 	Stream VirtualInputType = "stream"
+	Webrtc VirtualInputType = "webrtc"
 )
 
 // Defines values for VirtualInputsStatusMode.
@@ -574,6 +580,8 @@ type StartStreamRequest struct {
 
 	// Mode Where to send the stream output. "internal" starts a local RTMP(S) server and streams to it.
 	// "remote" pushes the stream to the provided RTMP/RTMPS target_url.
+	// "webrtc" exposes a WebRTC offer/answer endpoint for browser-friendly playback.
+	// "socket" broadcasts MPEG-TS chunks over a websocket endpoint.
 	Mode *StartStreamRequestMode `json:"mode,omitempty"`
 
 	// TargetUrl RTMP or RTMPS URL to push the stream to when mode is "remote".
@@ -582,6 +590,8 @@ type StartStreamRequest struct {
 
 // StartStreamRequestMode Where to send the stream output. "internal" starts a local RTMP(S) server and streams to it.
 // "remote" pushes the stream to the provided RTMP/RTMPS target_url.
+// "webrtc" exposes a WebRTC offer/answer endpoint for browser-friendly playback.
+// "socket" broadcasts MPEG-TS chunks over a websocket endpoint.
 type StartStreamRequestMode string
 
 // StopRecordingRequest defines model for StopRecordingRequest.
@@ -610,7 +620,7 @@ type StreamInfo struct {
 	// IsStreaming Whether the ffmpeg streaming process is currently running
 	IsStreaming bool `json:"is_streaming"`
 
-	// Mode Whether the stream is using the internal RTMP server or a remote endpoint
+	// Mode Whether the stream is using the internal RTMP server, remote endpoint, WebRTC, or websocket broadcast.
 	Mode StreamInfoMode `json:"mode"`
 
 	// PlaybackUrl RTMP playback URL if available (internal streams only)
@@ -621,10 +631,31 @@ type StreamInfo struct {
 
 	// StartedAt Timestamp when streaming started
 	StartedAt time.Time `json:"started_at"`
+
+	// WebrtcOfferUrl HTTP endpoint to post SDP offers to when mode is "webrtc"
+	WebrtcOfferUrl *string `json:"webrtc_offer_url"`
+
+	// WebsocketUrl Websocket endpoint that streams MPEG-TS chunks when mode is "socket"
+	WebsocketUrl *string `json:"websocket_url"`
 }
 
-// StreamInfoMode Whether the stream is using the internal RTMP server or a remote endpoint
+// StreamInfoMode Whether the stream is using the internal RTMP server, remote endpoint, WebRTC, or websocket broadcast.
 type StreamInfoMode string
+
+// StreamWebRTCAnswer defines model for StreamWebRTCAnswer.
+type StreamWebRTCAnswer struct {
+	// Sdp SDP answer to set as the remote description on the viewer
+	Sdp *string `json:"sdp,omitempty"`
+}
+
+// StreamWebRTCOffer defines model for StreamWebRTCOffer.
+type StreamWebRTCOffer struct {
+	// Id Stream identifier (defaults to "default" if omitted)
+	Id *string `json:"id,omitempty"`
+
+	// Sdp SDP offer from the viewer
+	Sdp string `json:"sdp"`
+}
 
 // TypeTextRequest defines model for TypeTextRequest.
 type TypeTextRequest struct {
@@ -635,8 +666,23 @@ type TypeTextRequest struct {
 	Text string `json:"text"`
 }
 
+// VirtualInputIngestEndpoint defines model for VirtualInputIngestEndpoint.
+type VirtualInputIngestEndpoint struct {
+	// Format Expected format/codec for the ingest stream.
+	Format *string `json:"format,omitempty"`
+
+	// Protocol Protocol used to ingest media (socket or webrtc).
+	Protocol *string `json:"protocol,omitempty"`
+
+	// Url URL to push media to (ws:// or HTTP offer endpoint).
+	Url *string `json:"url,omitempty"`
+}
+
 // VirtualInputSource defines model for VirtualInputSource.
 type VirtualInputSource struct {
+	// Format Optional format hint for socket/WebRTC feeds (e.g. "mp3", "mjpeg", "ogg", "ivf").
+	Format *string `json:"format,omitempty"`
+
 	// Loop When true, loop file inputs indefinitely.
 	Loop *bool `json:"loop,omitempty"`
 
@@ -644,11 +690,29 @@ type VirtualInputSource struct {
 	Type VirtualInputType `json:"type"`
 
 	// Url Input URL (supports file URLs, HLS, RTMP(S), DASH, etc).
-	Url string `json:"url"`
+	Url *string `json:"url,omitempty"`
 }
 
 // VirtualInputType Type of media source being injected.
 type VirtualInputType string
+
+// VirtualInputWebRTCAnswer defines model for VirtualInputWebRTCAnswer.
+type VirtualInputWebRTCAnswer struct {
+	// Sdp SDP answer to set on the publisher.
+	Sdp *string `json:"sdp,omitempty"`
+}
+
+// VirtualInputWebRTCOffer defines model for VirtualInputWebRTCOffer.
+type VirtualInputWebRTCOffer struct {
+	// Sdp SDP offer from the publisher.
+	Sdp string `json:"sdp"`
+}
+
+// VirtualInputsIngest Network endpoints that accept realtime media for the configured virtual inputs.
+type VirtualInputsIngest struct {
+	Audio *VirtualInputIngestEndpoint `json:"audio,omitempty"`
+	Video *VirtualInputIngestEndpoint `json:"video,omitempty"`
+}
 
 // VirtualInputsRequest Configure virtual webcam and microphone inputs.
 type VirtualInputsRequest struct {
@@ -683,6 +747,9 @@ type VirtualInputsStatus struct {
 
 	// Height Configured height for the virtual webcam.
 	Height int `json:"height"`
+
+	// Ingest Network endpoints that accept realtime media for the configured virtual inputs.
+	Ingest *VirtualInputsIngest `json:"ingest,omitempty"`
 
 	// LastError Last observed error (if any).
 	LastError *string `json:"last_error,omitempty"`
@@ -876,6 +943,9 @@ type StartFsWatchJSONRequestBody = StartFsWatchRequest
 // ConfigureVirtualInputsJSONRequestBody defines body for ConfigureVirtualInputs for application/json ContentType.
 type ConfigureVirtualInputsJSONRequestBody = VirtualInputsRequest
 
+// NegotiateVirtualInputsWebrtcJSONRequestBody defines body for NegotiateVirtualInputsWebrtc for application/json ContentType.
+type NegotiateVirtualInputsWebrtcJSONRequestBody = VirtualInputWebRTCOffer
+
 // ExecutePlaywrightCodeJSONRequestBody defines body for ExecutePlaywrightCode for application/json ContentType.
 type ExecutePlaywrightCodeJSONRequestBody = ExecutePlaywrightRequest
 
@@ -905,6 +975,9 @@ type StartStreamJSONRequestBody = StartStreamRequest
 
 // StopStreamJSONRequestBody defines body for StopStream for application/json ContentType.
 type StopStreamJSONRequestBody = StopStreamRequest
+
+// StreamWebrtcOfferJSONRequestBody defines body for StreamWebrtcOffer for application/json ContentType.
+type StreamWebrtcOfferJSONRequestBody = StreamWebRTCOffer
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -1106,6 +1179,11 @@ type ClientInterface interface {
 	// StopVirtualInputs request
 	StopVirtualInputs(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// NegotiateVirtualInputsWebrtcWithBody request with any body
+	NegotiateVirtualInputsWebrtcWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	NegotiateVirtualInputsWebrtc(ctx context.Context, body NegotiateVirtualInputsWebrtcJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// LogsStream request
 	LogsStream(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1173,6 +1251,11 @@ type ClientInterface interface {
 	StopStreamWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	StopStream(ctx context.Context, body StopStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// StreamWebrtcOfferWithBody request with any body
+	StreamWebrtcOfferWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	StreamWebrtcOffer(ctx context.Context, body StreamWebrtcOfferJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 func (c *Client) PatchChromiumFlagsWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1751,6 +1834,30 @@ func (c *Client) StopVirtualInputs(ctx context.Context, reqEditors ...RequestEdi
 	return c.Client.Do(req)
 }
 
+func (c *Client) NegotiateVirtualInputsWebrtcWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewNegotiateVirtualInputsWebrtcRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) NegotiateVirtualInputsWebrtc(ctx context.Context, body NegotiateVirtualInputsWebrtcJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewNegotiateVirtualInputsWebrtcRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 func (c *Client) LogsStream(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewLogsStreamRequest(c.Server, params)
 	if err != nil {
@@ -2053,6 +2160,30 @@ func (c *Client) StopStreamWithBody(ctx context.Context, contentType string, bod
 
 func (c *Client) StopStream(ctx context.Context, body StopStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewStopStreamRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StreamWebrtcOfferWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamWebrtcOfferRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+func (c *Client) StreamWebrtcOffer(ctx context.Context, body StreamWebrtcOfferJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewStreamWebrtcOfferRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3249,6 +3380,46 @@ func NewStopVirtualInputsRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewNegotiateVirtualInputsWebrtcRequest calls the generic NegotiateVirtualInputsWebrtc builder with application/json body
+func NewNegotiateVirtualInputsWebrtcRequest(server string, body NegotiateVirtualInputsWebrtcJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewNegotiateVirtualInputsWebrtcRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewNegotiateVirtualInputsWebrtcRequestWithBody generates requests for NegotiateVirtualInputsWebrtc with any type of body
+func NewNegotiateVirtualInputsWebrtcRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/input/devices/virtual/webrtc/offer")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewLogsStreamRequest generates requests for LogsStream
 func NewLogsStreamRequest(server string, params *LogsStreamParams) (*http.Request, error) {
 	var err error
@@ -3927,6 +4098,46 @@ func NewStopStreamRequestWithBody(server string, contentType string, body io.Rea
 	return req, nil
 }
 
+// NewStreamWebrtcOfferRequest calls the generic StreamWebrtcOffer builder with application/json body
+func NewStreamWebrtcOfferRequest(server string, body StreamWebrtcOfferJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewStreamWebrtcOfferRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewStreamWebrtcOfferRequestWithBody generates requests for StreamWebrtcOffer with any type of body
+func NewStreamWebrtcOfferRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/stream/webrtc/offer")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest("POST", queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 func (c *Client) applyEditors(ctx context.Context, req *http.Request, additionalEditors []RequestEditorFn) error {
 	for _, r := range c.RequestEditors {
 		if err := r(ctx, req); err != nil {
@@ -4097,6 +4308,11 @@ type ClientWithResponsesInterface interface {
 	// StopVirtualInputsWithResponse request
 	StopVirtualInputsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*StopVirtualInputsResponse, error)
 
+	// NegotiateVirtualInputsWebrtcWithBodyWithResponse request with any body
+	NegotiateVirtualInputsWebrtcWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*NegotiateVirtualInputsWebrtcResponse, error)
+
+	NegotiateVirtualInputsWebrtcWithResponse(ctx context.Context, body NegotiateVirtualInputsWebrtcJSONRequestBody, reqEditors ...RequestEditorFn) (*NegotiateVirtualInputsWebrtcResponse, error)
+
 	// LogsStreamWithResponse request
 	LogsStreamWithResponse(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*LogsStreamResponse, error)
 
@@ -4164,6 +4380,11 @@ type ClientWithResponsesInterface interface {
 	StopStreamWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StopStreamResponse, error)
 
 	StopStreamWithResponse(ctx context.Context, body StopStreamJSONRequestBody, reqEditors ...RequestEditorFn) (*StopStreamResponse, error)
+
+	// StreamWebrtcOfferWithBodyWithResponse request with any body
+	StreamWebrtcOfferWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StreamWebrtcOfferResponse, error)
+
+	StreamWebrtcOfferWithResponse(ctx context.Context, body StreamWebrtcOfferJSONRequestBody, reqEditors ...RequestEditorFn) (*StreamWebrtcOfferResponse, error)
 }
 
 type PatchChromiumFlagsResponse struct {
@@ -4905,6 +5126,31 @@ func (r StopVirtualInputsResponse) StatusCode() int {
 	return 0
 }
 
+type NegotiateVirtualInputsWebrtcResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *VirtualInputWebRTCAnswer
+	JSON400      *BadRequestError
+	JSON409      *ConflictError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r NegotiateVirtualInputsWebrtcResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r NegotiateVirtualInputsWebrtcResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
 type LogsStreamResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -5281,6 +5527,32 @@ func (r StopStreamResponse) Status() string {
 
 // StatusCode returns HTTPResponse.StatusCode
 func (r StopStreamResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+type StreamWebrtcOfferResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	JSON200      *StreamWebRTCAnswer
+	JSON400      *BadRequestError
+	JSON404      *NotFoundError
+	JSON409      *ConflictError
+	JSON500      *InternalError
+}
+
+// Status returns HTTPResponse.Status
+func (r StreamWebrtcOfferResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r StreamWebrtcOfferResponse) StatusCode() int {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.StatusCode
 	}
@@ -5702,6 +5974,23 @@ func (c *ClientWithResponses) StopVirtualInputsWithResponse(ctx context.Context,
 	return ParseStopVirtualInputsResponse(rsp)
 }
 
+// NegotiateVirtualInputsWebrtcWithBodyWithResponse request with arbitrary body returning *NegotiateVirtualInputsWebrtcResponse
+func (c *ClientWithResponses) NegotiateVirtualInputsWebrtcWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*NegotiateVirtualInputsWebrtcResponse, error) {
+	rsp, err := c.NegotiateVirtualInputsWebrtcWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseNegotiateVirtualInputsWebrtcResponse(rsp)
+}
+
+func (c *ClientWithResponses) NegotiateVirtualInputsWebrtcWithResponse(ctx context.Context, body NegotiateVirtualInputsWebrtcJSONRequestBody, reqEditors ...RequestEditorFn) (*NegotiateVirtualInputsWebrtcResponse, error) {
+	rsp, err := c.NegotiateVirtualInputsWebrtc(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseNegotiateVirtualInputsWebrtcResponse(rsp)
+}
+
 // LogsStreamWithResponse request returning *LogsStreamResponse
 func (c *ClientWithResponses) LogsStreamWithResponse(ctx context.Context, params *LogsStreamParams, reqEditors ...RequestEditorFn) (*LogsStreamResponse, error) {
 	rsp, err := c.LogsStream(ctx, params, reqEditors...)
@@ -5924,6 +6213,23 @@ func (c *ClientWithResponses) StopStreamWithResponse(ctx context.Context, body S
 		return nil, err
 	}
 	return ParseStopStreamResponse(rsp)
+}
+
+// StreamWebrtcOfferWithBodyWithResponse request with arbitrary body returning *StreamWebrtcOfferResponse
+func (c *ClientWithResponses) StreamWebrtcOfferWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*StreamWebrtcOfferResponse, error) {
+	rsp, err := c.StreamWebrtcOfferWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamWebrtcOfferResponse(rsp)
+}
+
+func (c *ClientWithResponses) StreamWebrtcOfferWithResponse(ctx context.Context, body StreamWebrtcOfferJSONRequestBody, reqEditors ...RequestEditorFn) (*StreamWebrtcOfferResponse, error) {
+	rsp, err := c.StreamWebrtcOffer(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseStreamWebrtcOfferResponse(rsp)
 }
 
 // ParsePatchChromiumFlagsResponse parses an HTTP response from a PatchChromiumFlagsWithResponse call
@@ -7113,6 +7419,53 @@ func ParseStopVirtualInputsResponse(rsp *http.Response) (*StopVirtualInputsRespo
 	return response, nil
 }
 
+// ParseNegotiateVirtualInputsWebrtcResponse parses an HTTP response from a NegotiateVirtualInputsWebrtcWithResponse call
+func ParseNegotiateVirtualInputsWebrtcResponse(rsp *http.Response) (*NegotiateVirtualInputsWebrtcResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &NegotiateVirtualInputsWebrtcResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest VirtualInputWebRTCAnswer
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ConflictError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseLogsStreamResponse parses an HTTP response from a LogsStreamWithResponse call
 func ParseLogsStreamResponse(rsp *http.Response) (*LogsStreamResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7736,6 +8089,60 @@ func ParseStopStreamResponse(rsp *http.Response) (*StopStreamResponse, error) {
 	return response, nil
 }
 
+// ParseStreamWebrtcOfferResponse parses an HTTP response from a StreamWebrtcOfferWithResponse call
+func ParseStreamWebrtcOfferResponse(rsp *http.Response) (*StreamWebrtcOfferResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &StreamWebrtcOfferResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StreamWebRTCAnswer
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequestError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest NotFoundError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ConflictError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	return response, nil
+}
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Update Chromium launch flags and restart
@@ -7831,6 +8238,9 @@ type ServerInterface interface {
 	// Stop virtual input pipelines and release resources
 	// (POST /input/devices/virtual/stop)
 	StopVirtualInputs(w http.ResponseWriter, r *http.Request)
+	// Negotiate a WebRTC ingest session for virtual inputs
+	// (POST /input/devices/virtual/webrtc/offer)
+	NegotiateVirtualInputsWebrtc(w http.ResponseWriter, r *http.Request)
 	// Stream logs over SSE
 	// (GET /logs/stream)
 	LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams)
@@ -7879,6 +8289,9 @@ type ServerInterface interface {
 	// Stop a live stream
 	// (POST /stream/stop)
 	StopStream(w http.ResponseWriter, r *http.Request)
+	// Exchange SDP for a WebRTC livestream
+	// (POST /stream/webrtc/offer)
+	StreamWebrtcOffer(w http.ResponseWriter, r *http.Request)
 }
 
 // Unimplemented server implementation that returns http.StatusNotImplemented for each endpoint.
@@ -8071,6 +8484,12 @@ func (_ Unimplemented) StopVirtualInputs(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// Negotiate a WebRTC ingest session for virtual inputs
+// (POST /input/devices/virtual/webrtc/offer)
+func (_ Unimplemented) NegotiateVirtualInputsWebrtc(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // Stream logs over SSE
 // (GET /logs/stream)
 func (_ Unimplemented) LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams) {
@@ -8164,6 +8583,12 @@ func (_ Unimplemented) StartStream(w http.ResponseWriter, r *http.Request) {
 // Stop a live stream
 // (POST /stream/stop)
 func (_ Unimplemented) StopStream(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// Exchange SDP for a WebRTC livestream
+// (POST /stream/webrtc/offer)
+func (_ Unimplemented) StreamWebrtcOffer(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -8740,6 +9165,20 @@ func (siw *ServerInterfaceWrapper) StopVirtualInputs(w http.ResponseWriter, r *h
 	handler.ServeHTTP(w, r)
 }
 
+// NegotiateVirtualInputsWebrtc operation middleware
+func (siw *ServerInterfaceWrapper) NegotiateVirtualInputsWebrtc(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.NegotiateVirtualInputsWebrtc(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // LogsStream operation middleware
 func (siw *ServerInterfaceWrapper) LogsStream(w http.ResponseWriter, r *http.Request) {
 
@@ -9065,6 +9504,20 @@ func (siw *ServerInterfaceWrapper) StopStream(w http.ResponseWriter, r *http.Req
 	handler.ServeHTTP(w, r)
 }
 
+// StreamWebrtcOffer operation middleware
+func (siw *ServerInterfaceWrapper) StreamWebrtcOffer(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StreamWebrtcOffer(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 type UnescapedCookieParamError struct {
 	ParamName string
 	Err       error
@@ -9272,6 +9725,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/input/devices/virtual/stop", wrapper.StopVirtualInputs)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/input/devices/virtual/webrtc/offer", wrapper.NegotiateVirtualInputsWebrtc)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/logs/stream", wrapper.LogsStream)
 	})
 	r.Group(func(r chi.Router) {
@@ -9318,6 +9774,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/stream/stop", wrapper.StopStream)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/stream/webrtc/offer", wrapper.StreamWebrtcOffer)
 	})
 
 	return r
@@ -10584,6 +11043,50 @@ func (response StopVirtualInputs500JSONResponse) VisitStopVirtualInputsResponse(
 	return json.NewEncoder(w).Encode(response)
 }
 
+type NegotiateVirtualInputsWebrtcRequestObject struct {
+	Body *NegotiateVirtualInputsWebrtcJSONRequestBody
+}
+
+type NegotiateVirtualInputsWebrtcResponseObject interface {
+	VisitNegotiateVirtualInputsWebrtcResponse(w http.ResponseWriter) error
+}
+
+type NegotiateVirtualInputsWebrtc200JSONResponse VirtualInputWebRTCAnswer
+
+func (response NegotiateVirtualInputsWebrtc200JSONResponse) VisitNegotiateVirtualInputsWebrtcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type NegotiateVirtualInputsWebrtc400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response NegotiateVirtualInputsWebrtc400JSONResponse) VisitNegotiateVirtualInputsWebrtcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type NegotiateVirtualInputsWebrtc409JSONResponse struct{ ConflictErrorJSONResponse }
+
+func (response NegotiateVirtualInputsWebrtc409JSONResponse) VisitNegotiateVirtualInputsWebrtcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type NegotiateVirtualInputsWebrtc500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response NegotiateVirtualInputsWebrtc500JSONResponse) VisitNegotiateVirtualInputsWebrtcResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 type LogsStreamRequestObject struct {
 	Params LogsStreamParams
 }
@@ -11293,6 +11796,59 @@ func (response StopStream500JSONResponse) VisitStopStreamResponse(w http.Respons
 	return json.NewEncoder(w).Encode(response)
 }
 
+type StreamWebrtcOfferRequestObject struct {
+	Body *StreamWebrtcOfferJSONRequestBody
+}
+
+type StreamWebrtcOfferResponseObject interface {
+	VisitStreamWebrtcOfferResponse(w http.ResponseWriter) error
+}
+
+type StreamWebrtcOffer200JSONResponse StreamWebRTCAnswer
+
+func (response StreamWebrtcOffer200JSONResponse) VisitStreamWebrtcOfferResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StreamWebrtcOffer400JSONResponse struct{ BadRequestErrorJSONResponse }
+
+func (response StreamWebrtcOffer400JSONResponse) VisitStreamWebrtcOfferResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StreamWebrtcOffer404JSONResponse struct{ NotFoundErrorJSONResponse }
+
+func (response StreamWebrtcOffer404JSONResponse) VisitStreamWebrtcOfferResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StreamWebrtcOffer409JSONResponse struct{ ConflictErrorJSONResponse }
+
+func (response StreamWebrtcOffer409JSONResponse) VisitStreamWebrtcOfferResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type StreamWebrtcOffer500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response StreamWebrtcOffer500JSONResponse) VisitStreamWebrtcOfferResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 	// Update Chromium launch flags and restart
@@ -11388,6 +11944,9 @@ type StrictServerInterface interface {
 	// Stop virtual input pipelines and release resources
 	// (POST /input/devices/virtual/stop)
 	StopVirtualInputs(ctx context.Context, request StopVirtualInputsRequestObject) (StopVirtualInputsResponseObject, error)
+	// Negotiate a WebRTC ingest session for virtual inputs
+	// (POST /input/devices/virtual/webrtc/offer)
+	NegotiateVirtualInputsWebrtc(ctx context.Context, request NegotiateVirtualInputsWebrtcRequestObject) (NegotiateVirtualInputsWebrtcResponseObject, error)
 	// Stream logs over SSE
 	// (GET /logs/stream)
 	LogsStream(ctx context.Context, request LogsStreamRequestObject) (LogsStreamResponseObject, error)
@@ -11436,6 +11995,9 @@ type StrictServerInterface interface {
 	// Stop a live stream
 	// (POST /stream/stop)
 	StopStream(ctx context.Context, request StopStreamRequestObject) (StopStreamResponseObject, error)
+	// Exchange SDP for a WebRTC livestream
+	// (POST /stream/webrtc/offer)
+	StreamWebrtcOffer(ctx context.Context, request StreamWebrtcOfferRequestObject) (StreamWebrtcOfferResponseObject, error)
 }
 
 type StrictHandlerFunc = strictnethttp.StrictHTTPHandlerFunc
@@ -12367,6 +12929,37 @@ func (sh *strictHandler) StopVirtualInputs(w http.ResponseWriter, r *http.Reques
 	}
 }
 
+// NegotiateVirtualInputsWebrtc operation middleware
+func (sh *strictHandler) NegotiateVirtualInputsWebrtc(w http.ResponseWriter, r *http.Request) {
+	var request NegotiateVirtualInputsWebrtcRequestObject
+
+	var body NegotiateVirtualInputsWebrtcJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.NegotiateVirtualInputsWebrtc(ctx, request.(NegotiateVirtualInputsWebrtcRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "NegotiateVirtualInputsWebrtc")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(NegotiateVirtualInputsWebrtcResponseObject); ok {
+		if err := validResponse.VisitNegotiateVirtualInputsWebrtcResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // LogsStream operation middleware
 func (sh *strictHandler) LogsStream(w http.ResponseWriter, r *http.Request, params LogsStreamParams) {
 	var request LogsStreamRequestObject
@@ -12833,149 +13426,191 @@ func (sh *strictHandler) StopStream(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// StreamWebrtcOffer operation middleware
+func (sh *strictHandler) StreamWebrtcOffer(w http.ResponseWriter, r *http.Request) {
+	var request StreamWebrtcOfferRequestObject
+
+	var body StreamWebrtcOfferJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StreamWebrtcOffer(ctx, request.(StreamWebrtcOfferRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StreamWebrtcOffer")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StreamWebrtcOfferResponseObject); ok {
+		if err := validResponse.VisitStreamWebrtcOfferResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
+	"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",
+	"AAA=",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file
