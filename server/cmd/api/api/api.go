@@ -311,9 +311,11 @@ func (s *ApiService) StartStream(ctx context.Context, req oapi.StartStreamReques
 		_ = s.streamManager.DeregisterStream(ctx, existing)
 	}
 
-	var ingestURL string
-	var playbackURL *string
-	var securePlaybackURL *string
+	var (
+		streamer          stream.Streamer
+		playbackURL       *string
+		securePlaybackURL *string
+	)
 	streamPath := fmt.Sprintf("live/%s", streamID)
 
 	switch mode {
@@ -323,29 +325,67 @@ func (s *ApiService) StartStream(ctx context.Context, req oapi.StartStreamReques
 			return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to start internal streaming server"}}, nil
 		}
 		s.rtmpServer.EnsureStream(streamPath)
-		ingestURL = s.rtmpServer.IngestURL(streamPath)
+		ingestURL := s.rtmpServer.IngestURL(streamPath)
 		playbackURL, securePlaybackURL = s.rtmpServer.PlaybackURLs("", streamPath)
+		params := stream.Params{
+			FrameRate:         frameRate,
+			DisplayNum:        s.streamDefaults.DisplayNum,
+			Mode:              mode,
+			IngestURL:         ingestURL,
+			PlaybackURL:       playbackURL,
+			SecurePlaybackURL: securePlaybackURL,
+		}
+		var err error
+		streamer, err = s.streamFactory(streamID, params)
+		if err != nil {
+			log.Error("failed to create streamer", "err", err, "stream_id", streamID)
+			return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to create streamer"}}, nil
+		}
 	case stream.ModeRemote:
 		if req.Body.TargetUrl == nil || *req.Body.TargetUrl == "" {
 			return oapi.StartStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "target_url is required for remote streaming"}}, nil
 		}
-		ingestURL = *req.Body.TargetUrl
-		playbackURL = &ingestURL
-	}
-
-	params := stream.Params{
-		FrameRate:         frameRate,
-		DisplayNum:        s.streamDefaults.DisplayNum,
-		Mode:              mode,
-		IngestURL:         ingestURL,
-		PlaybackURL:       playbackURL,
-		SecurePlaybackURL: securePlaybackURL,
-	}
-
-	streamer, err := s.streamFactory(streamID, params)
-	if err != nil {
-		log.Error("failed to create streamer", "err", err, "stream_id", streamID)
-		return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to create streamer"}}, nil
+		target := *req.Body.TargetUrl
+		params := stream.Params{
+			FrameRate:         frameRate,
+			DisplayNum:        s.streamDefaults.DisplayNum,
+			Mode:              mode,
+			IngestURL:         target,
+			PlaybackURL:       &target,
+			SecurePlaybackURL: nil,
+		}
+		var err error
+		streamer, err = s.streamFactory(streamID, params)
+		if err != nil {
+			log.Error("failed to create streamer", "err", err, "stream_id", streamID)
+			return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to create streamer"}}, nil
+		}
+	case stream.ModeSocket:
+		params := stream.Params{
+			FrameRate:  frameRate,
+			DisplayNum: s.streamDefaults.DisplayNum,
+			Mode:       mode,
+		}
+		var err error
+		streamer, err = stream.NewSocketStreamer(streamID, params, s.ffmpegPath, s.stz)
+		if err != nil {
+			log.Error("failed to create socket streamer", "err", err, "stream_id", streamID)
+			return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to create streamer"}}, nil
+		}
+	case stream.ModeWebRTC:
+		params := stream.Params{
+			FrameRate:  frameRate,
+			DisplayNum: s.streamDefaults.DisplayNum,
+			Mode:       mode,
+		}
+		var err error
+		streamer, err = stream.NewWebRTCStreamer(streamID, params, s.ffmpegPath, s.stz)
+		if err != nil {
+			log.Error("failed to create webrtc streamer", "err", err, "stream_id", streamID)
+			return oapi.StartStream500JSONResponse{InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to create streamer"}}, nil
+		}
+	default:
+		return oapi.StartStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "invalid stream mode"}}, nil
 	}
 	if err := s.streamManager.RegisterStream(ctx, streamer); err != nil {
 		log.Error("failed to register stream", "err", err, "stream_id", streamID)
@@ -399,6 +439,8 @@ func streamMetadataToOAPI(meta stream.Metadata, isStreaming bool) oapi.StreamInf
 		SecurePlaybackUrl: meta.SecurePlaybackURL,
 		StartedAt:         meta.StartedAt,
 		IsStreaming:       isStreaming,
+		WebsocketUrl:      meta.WebsocketURL,
+		WebrtcOfferUrl:    meta.WebRTCOfferURL,
 	}
 }
 

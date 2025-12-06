@@ -150,6 +150,7 @@ func main() {
 	// OpenAPI handler does not expose the ResponseWriter needed for upgrades.
 	r.Get("/input/devices/virtual/socket/audio", apiService.HandleVirtualInputAudioSocket)
 	r.Get("/input/devices/virtual/socket/video", apiService.HandleVirtualInputVideoSocket)
+	r.Get("/stream/socket/{id}", apiService.HandleStreamSocket)
 	oapi.HandlerFromMux(strictHandler, r)
 
 	// endpoints to expose the spec
