@@ -295,7 +295,7 @@ func (s *ApiService) StartStream(ctx context.Context, req oapi.StartStreamReques
 	if req.Body.Mode != nil && *req.Body.Mode != "" {
 		mode = stream.Mode(*req.Body.Mode)
 	}
-	if mode != stream.ModeInternal && mode != stream.ModeRemote {
+	if mode != stream.ModeInternal && mode != stream.ModeRemote && mode != stream.ModeWebRTC && mode != stream.ModeSocket {
 		return oapi.StartStream400JSONResponse{BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{Message: "invalid stream mode"}}, nil
 	}
 

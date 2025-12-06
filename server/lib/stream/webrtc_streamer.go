@@ -250,6 +250,7 @@ func (w *WebRTCStreamer) Metadata() Metadata {
 	return Metadata{
 		ID:             w.id,
 		Mode:           ModeWebRTC,
+		IngestURL:      "",
 		StartedAt:      w.startedAt,
 		WebRTCOfferURL: &offerURL,
 	}

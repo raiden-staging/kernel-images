@@ -112,6 +112,9 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 			Type: virtualinputs.SourceType(body.Video.Type),
 			URL:  body.Video.Url,
 		}
+		if body.Video.Format != nil {
+			cfg.Video.Format = *body.Video.Format
+		}
 		if body.Video.Loop != nil {
 			cfg.Video.Loop = *body.Video.Loop
 		}
@@ -120,6 +123,9 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 		cfg.Audio = &virtualinputs.MediaSource{
 			Type: virtualinputs.SourceType(body.Audio.Type),
 			URL:  body.Audio.Url,
+		}
+		if body.Audio.Format != nil {
+			cfg.Audio.Format = *body.Audio.Format
 		}
 		if body.Audio.Loop != nil {
 			cfg.Audio.Loop = *body.Audio.Loop
@@ -175,6 +181,12 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 			Type: oapi.VirtualInputType(status.Video.Type),
 			Url:  status.Video.URL,
 			Loop: &status.Video.Loop,
+			Format: func() *string {
+				if status.Video.Format == "" {
+					return nil
+				}
+				return &status.Video.Format
+			}(),
 		}
 	}
 	if status.Audio != nil {
@@ -182,6 +194,41 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 			Type: oapi.VirtualInputType(status.Audio.Type),
 			Url:  status.Audio.URL,
 			Loop: &status.Audio.Loop,
+			Format: func() *string {
+				if status.Audio.Format == "" {
+					return nil
+				}
+				return &status.Audio.Format
+			}(),
+		}
+	}
+	if status.Ingest != nil {
+		resp.Ingest = &oapi.VirtualInputsIngest{}
+		if status.Ingest.Audio != nil {
+			audioURL := status.Ingest.Audio.Path
+			if status.Ingest.Audio.Protocol == string(virtualinputs.SourceTypeSocket) {
+				audioURL = "/input/devices/virtual/socket/audio"
+			} else if status.Ingest.Audio.Protocol == string(virtualinputs.SourceTypeWebRTC) {
+				audioURL = "/input/devices/virtual/webrtc/offer"
+			}
+			resp.Ingest.Audio = &oapi.VirtualInputIngestEndpoint{
+				Protocol: status.Ingest.Audio.Protocol,
+				Format:   status.Ingest.Audio.Format,
+				Url:      audioURL,
+			}
+		}
+		if status.Ingest.Video != nil {
+			videoURL := status.Ingest.Video.Path
+			if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeSocket) {
+				videoURL = "/input/devices/virtual/socket/video"
+			} else if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeWebRTC) {
+				videoURL = "/input/devices/virtual/webrtc/offer"
+			}
+			resp.Ingest.Video = &oapi.VirtualInputIngestEndpoint{
+				Protocol: status.Ingest.Video.Protocol,
+				Format:   status.Ingest.Video.Format,
+				Url:      videoURL,
+			}
 		}
 	}
 	return resp
