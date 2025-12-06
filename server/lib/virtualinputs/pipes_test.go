@@ -17,18 +17,13 @@ func TestOpenPipeWriterSucceedsWithReader(t *testing.T) {
 	pipe := filepath.Join(dir, "video.pipe")
 	require.NoError(t, syscall.Mkfifo(pipe, 0o666))
 
-	done := make(chan struct{})
-	go func() {
-		reader, err := os.OpenFile(pipe, os.O_RDONLY, 0)
-		require.NoError(t, err)
-		defer reader.Close()
-		<-done
-	}()
+	reader, err := os.OpenFile(pipe, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+	require.NoError(t, err)
+	defer reader.Close()
 
 	writer, err := OpenPipeWriter(pipe, time.Second)
 	require.NoError(t, err)
 	require.NotNil(t, writer)
-	close(done)
 	require.NoError(t, writer.Close())
 }
 
