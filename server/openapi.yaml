@@ -597,6 +597,36 @@ paths:
                 $ref: "#/components/schemas/VirtualInputsStatus"
         "500":
           $ref: "#/components/responses/InternalError"
+  /input/devices/virtual/feed:
+    get:
+      summary: Render a fullscreen HTML page with the virtual video feed
+      description: |
+        Serves a minimal HTML page that plays the configured virtual input video.
+        The source can be overridden via query parameters or auto-detected from the current virtual input status.
+      operationId: getVirtualInputFeed
+      parameters:
+        - in: query
+          name: fit
+          required: false
+          schema:
+            type: string
+            description: Object-fit mode for the video element.
+            default: cover
+        - in: query
+          name: source
+          required: false
+          schema:
+            type: string
+            description: Explicit video source to render (HTTP/HLS/WebSocket/WebRTC helper).
+      responses:
+        "200":
+          description: Fullscreen HTML feed page
+          content:
+            text/html:
+              schema:
+                type: string
+        "500":
+          $ref: "#/components/responses/InternalError"
   /input/devices/virtual/webrtc/offer:
     post:
       summary: Negotiate a WebRTC ingest session for virtual inputs
