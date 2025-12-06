@@ -127,19 +127,21 @@ func (w *WebRTCStreamer) Start(ctx context.Context) error {
 	args := append([]string{"-hide_banner", "-loglevel", "warning", "-nostdin"}, videoInput...)
 	args = append(args, audioInput...)
 	args = append(args,
+		// Video output
+		"-map", "0:v:0",
 		"-c:v", "libvpx",
 		"-b:v", "2M",
 		"-g", strconv.Itoa(*w.params.FrameRate*2),
 		"-pix_fmt", "yuv420p",
-		"-map", "0:v:0",
+		"-f", "rtp",
+		"-payload_type", "96",
+		fmt.Sprintf("rtp://127.0.0.1:%d", videoPort),
+		// Audio output
 		"-map", "1:a:0",
 		"-c:a", "libopus",
 		"-b:a", "128k",
 		"-ar", "48000",
 		"-ac", "2",
-		"-f", "rtp",
-		"-payload_type", "96",
-		fmt.Sprintf("rtp://127.0.0.1:%d", videoPort),
 		"-f", "rtp",
 		"-payload_type", "111",
 		fmt.Sprintf("rtp://127.0.0.1:%d", audioPort),
