@@ -83,6 +83,31 @@ paths:
                   $ref: "#/components/schemas/StreamInfo"
         "500":
           $ref: "#/components/responses/InternalError"
+  /stream/webrtc/offer:
+    post:
+      summary: Exchange SDP for a WebRTC livestream
+      operationId: streamWebrtcOffer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StreamWebRTCOffer"
+      responses:
+        "200":
+          description: SDP answer created for the provided offer.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StreamWebRTCAnswer"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "404":
+          $ref: "#/components/responses/NotFoundError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /process/exec:
     post:
       summary: Execute a command synchronously
@@ -570,6 +595,29 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VirtualInputsStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /input/devices/virtual/webrtc/offer:
+    post:
+      summary: Negotiate a WebRTC ingest session for virtual inputs
+      operationId: negotiateVirtualInputsWebrtc
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VirtualInputWebRTCOffer"
+      responses:
+        "200":
+          description: Answer SDP ready for the caller to set as remote description.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VirtualInputWebRTCAnswer"
+        "400":
+          $ref: "#/components/responses/BadRequestError"
+        "409":
+          $ref: "#/components/responses/ConflictError"
         "500":
           $ref: "#/components/responses/InternalError"
   /logs/stream:
@@ -1128,7 +1176,9 @@ components:
           description: |
             Where to send the stream output. "internal" starts a local RTMP(S) server and streams to it.
             "remote" pushes the stream to the provided RTMP/RTMPS target_url.
-          enum: [internal, remote]
+            "webrtc" exposes a WebRTC offer/answer endpoint for browser-friendly playback.
+            "socket" broadcasts MPEG-TS chunks over a websocket endpoint.
+          enum: [internal, remote, webrtc, socket]
           default: internal
         target_url:
           type: string
@@ -1157,8 +1207,8 @@ components:
           description: Stream identifier
         mode:
           type: string
-          enum: [internal, remote]
-          description: Whether the stream is using the internal RTMP server or a remote endpoint
+          enum: [internal, remote, webrtc, socket]
+          description: Whether the stream is using the internal RTMP server, remote endpoint, WebRTC, or websocket broadcast.
         ingest_url:
           type: string
           description: URL ffmpeg is publishing to
@@ -1168,6 +1218,12 @@ components:
         secure_playback_url:
           type: [string, "null"]
           description: RTMPS playback URL when TLS is enabled for the internal server
+        websocket_url:
+          type: [string, "null"]
+          description: Websocket endpoint that streams MPEG-TS chunks when mode is "socket"
+        webrtc_offer_url:
+          type: [string, "null"]
+          description: HTTP endpoint to post SDP offers to when mode is "webrtc"
         started_at:
           type: string
           format: date-time
@@ -1175,6 +1231,24 @@ components:
         is_streaming:
           type: boolean
           description: Whether the ffmpeg streaming process is currently running
+      additionalProperties: false
+    StreamWebRTCOffer:
+      type: object
+      required: [sdp]
+      properties:
+        id:
+          type: string
+          description: Stream identifier (defaults to "default" if omitted)
+        sdp:
+          type: string
+          description: SDP offer from the viewer
+      additionalProperties: false
+    StreamWebRTCAnswer:
+      type: object
+      properties:
+        sdp:
+          type: string
+          description: SDP answer to set as the remote description on the viewer
       additionalProperties: false
     StartRecordingRequest:
       type: object
@@ -1742,11 +1816,11 @@ components:
       additionalProperties: false
     VirtualInputType:
       type: string
-      enum: [stream, file]
+      enum: [stream, file, socket, webrtc]
       description: Type of media source being injected.
     VirtualInputSource:
       type: object
-      required: [type, url]
+      required: [type]
       properties:
         type:
           $ref: "#/components/schemas/VirtualInputType"
@@ -1756,6 +1830,10 @@ components:
         loop:
           type: boolean
           description: When true, loop file inputs indefinitely.
+        format:
+          type: string
+          description: |
+            Optional format hint for socket/WebRTC feeds (e.g. "mp3", "mjpeg", "ogg", "ivf").
       additionalProperties: false
     VirtualInputsRequest:
       type: object
@@ -1837,6 +1915,45 @@ components:
         last_error:
           type: string
           description: Last observed error (if any).
+        ingest:
+          $ref: "#/components/schemas/VirtualInputsIngest"
+      additionalProperties: false
+    VirtualInputsIngest:
+      type: object
+      description: Network endpoints that accept realtime media for the configured virtual inputs.
+      properties:
+        video:
+          $ref: "#/components/schemas/VirtualInputIngestEndpoint"
+        audio:
+          $ref: "#/components/schemas/VirtualInputIngestEndpoint"
+      additionalProperties: false
+    VirtualInputIngestEndpoint:
+      type: object
+      properties:
+        protocol:
+          type: string
+          description: Protocol used to ingest media (socket or webrtc).
+        format:
+          type: string
+          description: Expected format/codec for the ingest stream.
+        url:
+          type: string
+          description: URL to push media to (ws:// or HTTP offer endpoint).
+      additionalProperties: false
+    VirtualInputWebRTCOffer:
+      type: object
+      required: [sdp]
+      properties:
+        sdp:
+          type: string
+          description: SDP offer from the publisher.
+      additionalProperties: false
+    VirtualInputWebRTCAnswer:
+      type: object
+      properties:
+        sdp:
+          type: string
+          description: SDP answer to set on the publisher.
       additionalProperties: false
     ExecutePlaywrightRequest:
       type: object
