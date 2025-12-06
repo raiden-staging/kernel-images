@@ -20,6 +20,9 @@ type WebRTCIngestor struct {
 
 	pc     *webrtc.PeerConnection
 	cancel context.CancelFunc
+
+	videoSink io.Writer
+	audioSink io.Writer
 }
 
 type webrtcIngestConfig struct {
@@ -58,6 +61,14 @@ func (w *WebRTCIngestor) Clear() {
 		w.pc = nil
 	}
 	w.config = nil
+}
+
+// SetSinks sets optional mirror writers for incoming media.
+func (w *WebRTCIngestor) SetSinks(video io.Writer, audio io.Writer) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.videoSink = video
+	w.audioSink = audio
 }
 
 // HandleOffer negotiates a PeerConnection and starts forwarding tracks into the configured pipes.
@@ -156,7 +167,16 @@ func (w *WebRTCIngestor) forwardVideo(ctx context.Context, cfg *webrtcIngestConf
 	}
 	defer out.Close() // best-effort on exit
 
-	writer, err := ivfwriter.NewWith(out)
+	w.mu.Lock()
+	videoSink := w.videoSink
+	w.mu.Unlock()
+
+	target := io.Writer(out)
+	if videoSink != nil {
+		target = io.MultiWriter(out, videoSink)
+	}
+
+	writer, err := ivfwriter.NewWith(target)
 	if err != nil {
 		return fmt.Errorf("create ivf writer: %w", err)
 	}
@@ -195,7 +215,16 @@ func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConf
 	}
 	defer out.Close()
 
-	writer, err := oggwriter.NewWith(out, track.Codec().ClockRate, track.Codec().Channels)
+	w.mu.Lock()
+	audioSink := w.audioSink
+	w.mu.Unlock()
+
+	target := io.Writer(out)
+	if audioSink != nil {
+		target = io.MultiWriter(out, audioSink)
+	}
+
+	writer, err := oggwriter.NewWith(target, track.Codec().ClockRate, track.Codec().Channels)
 	if err != nil {
 		return fmt.Errorf("create ogg writer: %w", err)
 	}

@@ -78,6 +78,7 @@ func (s *ApiService) ResumeVirtualInputs(ctx context.Context, _ oapi.ResumeVirtu
 			InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to resume virtual inputs"},
 		}, nil
 	}
+	s.updateVirtualInputIngest(status)
 	return oapi.ResumeVirtualInputs200JSONResponse(toVirtualInputsStatus(status)), nil
 }
 
@@ -331,6 +332,9 @@ func (s *ApiService) updateVirtualInputIngest(status virtualinputs.Status) {
 
 	if status.Ingest == nil {
 		s.virtualInputsWebRTC.Clear()
+		if s.virtualFeed != nil {
+			s.virtualFeed.clear()
+		}
 		return
 	}
 
@@ -347,4 +351,23 @@ func (s *ApiService) updateVirtualInputIngest(status virtualinputs.Status) {
 		audioFmt = status.Ingest.Audio.Format
 	}
 	s.virtualInputsWebRTC.Configure(videoPath, videoFmt, audioPath, audioFmt)
+
+	if s.virtualFeed != nil {
+		format := ""
+		if status.Ingest.Video == nil {
+			s.virtualFeed.clear()
+			return
+		}
+		format = status.Ingest.Video.Format
+		if format == "" {
+			if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeWebRTC) {
+				format = "ivf"
+			} else if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeSocket) {
+				format = "mpegts"
+			}
+		}
+		if format != "" {
+			s.virtualFeed.setFormat(format)
+		}
+	}
 }
