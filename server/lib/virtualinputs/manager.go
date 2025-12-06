@@ -266,7 +266,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
 		return m.statusLocked(), err
 	}
-	m.openPipeKeepalivesLocked(ctx, normalized)
+	m.openPipeKeepalivesLocked(ctx, normalized, startPaused)
 
 	log.Info("virtual inputs started", "state", func() string {
 		if startPaused {
@@ -313,7 +313,7 @@ func (m *Manager) Pause(ctx context.Context) (Status, error) {
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
 		return m.statusLocked(), err
 	}
-	m.openPipeKeepalivesLocked(ctx, *m.lastCfg)
+	m.openPipeKeepalivesLocked(ctx, *m.lastCfg, true)
 	now := time.Now()
 	m.startedAt = &now
 	m.state = statePaused
@@ -344,7 +344,7 @@ func (m *Manager) Resume(ctx context.Context) (Status, error) {
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
 		return m.statusLocked(), err
 	}
-	m.openPipeKeepalivesLocked(ctx, *m.lastCfg)
+	m.openPipeKeepalivesLocked(ctx, *m.lastCfg, false)
 	now := time.Now()
 	m.startedAt = &now
 	m.state = stateRunning
@@ -961,9 +961,13 @@ func (m *Manager) closePipeKeepalivesLocked() {
 	}
 }
 
-func (m *Manager) openPipeKeepalivesLocked(ctx context.Context, cfg Config) {
+func (m *Manager) openPipeKeepalivesLocked(ctx context.Context, cfg Config, paused bool) {
 	log := logger.FromContext(ctx)
 	m.closePipeKeepalivesLocked()
+
+	if paused {
+		return
+	}
 
 	if needsVideoPipe(cfg) && m.videoPipe != "" {
 		writer, err := OpenPipeWriter(m.videoPipe, DefaultPipeOpenTimeout)
