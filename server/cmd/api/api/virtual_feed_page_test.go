@@ -119,3 +119,49 @@ func TestVirtualFeedSocketBroadcasts(t *testing.T) {
 	require.Equal(t, websocket.MessageBinary, msgType)
 	require.Equal(t, payload, msg)
 }
+
+func TestGetVirtualInputFeedSocketInfo(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+
+	t.Run("returns 409 when no ingest is active", func(t *testing.T) {
+		svc, vimgr := newTestApiService(t, recorder.NewFFmpegManager())
+		vimgr.status.Ingest = nil
+
+		resp, err := svc.GetVirtualInputFeedSocketInfo(ctx, oapi.GetVirtualInputFeedSocketInfoRequestObject{})
+		require.NoError(t, err)
+		_, ok := resp.(oapi.GetVirtualInputFeedSocketInfo409JSONResponse)
+		require.True(t, ok, "expected 409 when no ingest")
+	})
+
+	t.Run("reports websocket URL and mpegts for socket ingest", func(t *testing.T) {
+		svc, vimgr := newTestApiService(t, recorder.NewFFmpegManager())
+		vimgr.status.Ingest = &virtualinputs.IngestStatus{
+			Video: &virtualinputs.IngestEndpoint{Protocol: string(virtualinputs.SourceTypeSocket)},
+		}
+
+		resp, err := svc.GetVirtualInputFeedSocketInfo(ctx, oapi.GetVirtualInputFeedSocketInfoRequestObject{})
+		require.NoError(t, err)
+		out, ok := resp.(oapi.GetVirtualInputFeedSocketInfo200JSONResponse)
+		require.True(t, ok, "expected 200 response")
+		require.Equal(t, "/input/devices/virtual/feed/socket", out.Url)
+		require.NotNil(t, out.Format)
+		require.Equal(t, "mpegts", *out.Format)
+	})
+
+	t.Run("reports ivf for webrtc ingest", func(t *testing.T) {
+		svc, vimgr := newTestApiService(t, recorder.NewFFmpegManager())
+		vimgr.status.Ingest = &virtualinputs.IngestStatus{
+			Video: &virtualinputs.IngestEndpoint{Protocol: string(virtualinputs.SourceTypeWebRTC), Format: "ivf"},
+		}
+
+		resp, err := svc.GetVirtualInputFeedSocketInfo(ctx, oapi.GetVirtualInputFeedSocketInfoRequestObject{})
+		require.NoError(t, err)
+		out, ok := resp.(oapi.GetVirtualInputFeedSocketInfo200JSONResponse)
+		require.True(t, ok, "expected 200 response")
+		require.Equal(t, "/input/devices/virtual/feed/socket", out.Url)
+		require.NotNil(t, out.Format)
+		require.Equal(t, "ivf", *out.Format)
+	})
+}
