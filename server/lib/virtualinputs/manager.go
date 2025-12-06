@@ -905,9 +905,9 @@ func normalizeSource(src *MediaSource, isVideo bool) *MediaSource {
 		}
 		if out.Format == "" {
 			if isVideo {
-				out.Format = "mjpeg"
+				out.Format = "mpegts"
 			} else {
-				out.Format = "mp3"
+				out.Format = "wav"
 			}
 		}
 	}

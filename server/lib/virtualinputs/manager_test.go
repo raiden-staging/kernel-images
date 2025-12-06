@@ -17,18 +17,18 @@ func TestNormalizeSourceDefaults(t *testing.T) {
 		wantFmt string
 	}{
 		{
-			name:    "socket video uses default pipe and mjpeg",
+			name:    "socket video uses default pipe and mpegts",
 			src:     &MediaSource{Type: SourceTypeSocket},
 			isVideo: true,
 			wantURL: defaultVideoPipe,
-			wantFmt: "mjpeg",
+			wantFmt: "mpegts",
 		},
 		{
-			name:    "socket audio uses default pipe and mp3",
+			name:    "socket audio uses default pipe and wav",
 			src:     &MediaSource{Type: SourceTypeSocket},
 			isVideo: false,
 			wantURL: defaultAudioPipe,
-			wantFmt: "mp3",
+			wantFmt: "wav",
 		},
 		{
 			name:    "webrtc video uses default pipe and ivf",
