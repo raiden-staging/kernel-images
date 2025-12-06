@@ -99,5 +99,12 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 			log.Error("failed writing websocket chunk to pipe", "err", err, "kind", kind)
 			return
 		}
+		if kind == "video" && s.virtualFeed != nil {
+			format := endpoint.Format
+			if format == "" {
+				format = "mpegts"
+			}
+			s.virtualFeed.broadcastWithFormat(format, data)
+		}
 	}
 }

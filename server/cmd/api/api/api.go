@@ -63,6 +63,7 @@ type ApiService struct {
 	virtualInputs VirtualInputsManager
 
 	virtualInputsWebRTC *virtualinputs.WebRTCIngestor
+	virtualFeed       *virtualFeedBroadcaster
 	socketMu            sync.Mutex
 	audioSocketActive   bool
 	videoSocketActive   bool
@@ -93,7 +94,10 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		return nil, fmt.Errorf("streamDefaults must include frame rate and display number")
 	}
 
-	return &ApiService{
+	virtualFeed := newVirtualFeedBroadcaster()
+	virtualInputsWebRTC := virtualinputs.NewWebRTCIngestor()
+
+	svc := &ApiService{
 		recordManager:       recordManager,
 		factory:             factory,
 		defaultRecorderID:   "default",
@@ -109,8 +113,13 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		stz:                 stz,
 		nekoAuthClient:      nekoAuthClient,
 		virtualInputs:       virtualInputsMgr,
-		virtualInputsWebRTC: virtualinputs.NewWebRTCIngestor(),
-	}, nil
+		virtualInputsWebRTC: virtualInputsWebRTC,
+		virtualFeed:         virtualFeed,
+	}
+
+	virtualInputsWebRTC.SetSinks(virtualFeed.writer(""), nil)
+
+	return svc, nil
 }
 
 func (s *ApiService) StartRecording(ctx context.Context, req oapi.StartRecordingRequestObject) (oapi.StartRecordingResponseObject, error) {
