@@ -59,6 +59,7 @@ Send MPEG-TS chunks over a websocket into the virtual camera. The server expects
    PY
    ```
 4. View the feed while ingesting: `http://localhost:10001/input/devices/virtual/feed?fit=cover`
+5. Discover the preview websocket URL + format (useful for clients that need to know the container): `curl http://localhost:10001/input/devices/virtual/feed/socket/info | jq`
 
 ## WebRTC ingest
 Use WebRTC when the publisher prefers SDP negotiation. The `/input/devices/virtual/feed` page mirrors the incoming IVF stream via WebCodecs.

@@ -128,6 +128,7 @@ Open `http://localhost:10001/input/devices/virtual/feed` for a fullscreen, muted
 
 - `fit`: CSS object-fit mode (default `cover`)
 - `source`: override the detected video source (HTTP/HLS/WebSocket/WebRTC)
+- `GET /input/devices/virtual/feed/socket/info`: helper to discover the websocket mirror URL and expected format when the feed is sourced from socket/WebRTC ingest
 
 ### Useful Requests
 
