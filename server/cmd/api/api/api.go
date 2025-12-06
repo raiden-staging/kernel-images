@@ -38,6 +38,7 @@ type ApiService struct {
 	streamFactory  stream.FFmpegStreamerFactory
 	rtmpServer     stream.InternalServer
 	streamDefaults stream.Params
+	ffmpegPath     string
 	// Filesystem watch management
 	watchMu sync.RWMutex
 	watches map[string]*fsWatch

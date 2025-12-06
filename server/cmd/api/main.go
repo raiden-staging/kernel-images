@@ -145,6 +145,10 @@ func main() {
 	}
 
 	strictHandler := oapi.NewStrictHandler(apiService, nil)
+	// WebSocket chunk ingest endpoints for virtual inputs are mounted directly because the strict
+	// OpenAPI handler does not expose the ResponseWriter needed for upgrades.
+	r.Get("/input/devices/virtual/socket/audio", apiService.HandleVirtualInputAudioSocket)
+	r.Get("/input/devices/virtual/socket/video", apiService.HandleVirtualInputVideoSocket)
 	oapi.HandlerFromMux(strictHandler, r)
 
 	// endpoints to expose the spec
