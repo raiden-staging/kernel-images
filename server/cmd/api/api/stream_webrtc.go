@@ -43,7 +43,5 @@ func (s *ApiService) StreamWebrtcOffer(ctx context.Context, req oapi.StreamWebrt
 		}, nil
 	}
 
-	return oapi.StreamWebrtcOffer200JSONResponse{
-		StreamWebRTCAnswer: oapi.StreamWebRTCAnswer{Sdp: &answer},
-	}, nil
+	return oapi.StreamWebrtcOffer200JSONResponse(oapi.StreamWebRTCAnswer{Sdp: &answer}), nil
 }

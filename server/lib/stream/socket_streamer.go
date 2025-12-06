@@ -206,7 +206,7 @@ func (s *SocketStreamer) RegisterClient(conn WebSocketConn) error {
 	s.mu.Unlock()
 
 	// best-effort hint
-	_ = conn.Write(context.Background(), websocket.MessageText, []byte("mpegts"))
+	_ = conn.Write(context.Background(), int(websocket.MessageText), []byte("mpegts"))
 	return nil
 }
 
@@ -228,7 +228,7 @@ func (s *SocketStreamer) writeChunk(chunk []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for c := range s.clients {
-		if err := c.Write(context.Background(), websocket.MessageBinary, chunk); err != nil {
+		if err := c.Write(context.Background(), int(websocket.MessageBinary), chunk); err != nil {
 			_ = c.Close(int(websocket.StatusInternalError), "write failed")
 			delete(s.clients, c)
 		}

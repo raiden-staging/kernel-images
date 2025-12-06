@@ -38,7 +38,7 @@ type WebRTCStreamer struct {
 	startedAt time.Time
 
 	cancel context.CancelFunc
-	peers map[*webrtc.PeerConnection]struct{}
+	peers  map[*webrtc.PeerConnection]struct{}
 }
 
 // NewWebRTCStreamer constructs a WebRTC streamer for the given params.

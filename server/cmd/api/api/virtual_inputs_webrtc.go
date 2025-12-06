@@ -32,7 +32,5 @@ func (s *ApiService) NegotiateVirtualInputsWebrtc(ctx context.Context, req oapi.
 		}, nil
 	}
 
-	return oapi.NegotiateVirtualInputsWebrtc200JSONResponse{
-		VirtualInputWebRTCAnswer: oapi.VirtualInputWebRTCAnswer{Sdp: &answer},
-	}, nil
+	return oapi.NegotiateVirtualInputsWebrtc200JSONResponse(oapi.VirtualInputWebRTCAnswer{Sdp: &answer}), nil
 }

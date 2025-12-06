@@ -110,7 +110,9 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 	if body.Video != nil {
 		cfg.Video = &virtualinputs.MediaSource{
 			Type: virtualinputs.SourceType(body.Video.Type),
-			URL:  body.Video.Url,
+		}
+		if body.Video.Url != nil {
+			cfg.Video.URL = *body.Video.Url
 		}
 		if body.Video.Format != nil {
 			cfg.Video.Format = *body.Video.Format
@@ -122,7 +124,9 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 	if body.Audio != nil {
 		cfg.Audio = &virtualinputs.MediaSource{
 			Type: virtualinputs.SourceType(body.Audio.Type),
-			URL:  body.Audio.Url,
+		}
+		if body.Audio.Url != nil {
+			cfg.Audio.URL = *body.Audio.Url
 		}
 		if body.Audio.Format != nil {
 			cfg.Audio.Format = *body.Audio.Format
@@ -177,9 +181,10 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 		resp.AudioFile = &status.AudioFile
 	}
 	if status.Video != nil {
+		url := status.Video.URL
 		resp.Video = &oapi.VirtualInputSource{
 			Type: oapi.VirtualInputType(status.Video.Type),
-			Url:  status.Video.URL,
+			Url:  &url,
 			Loop: &status.Video.Loop,
 			Format: func() *string {
 				if status.Video.Format == "" {
@@ -190,9 +195,10 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 		}
 	}
 	if status.Audio != nil {
+		url := status.Audio.URL
 		resp.Audio = &oapi.VirtualInputSource{
 			Type: oapi.VirtualInputType(status.Audio.Type),
-			Url:  status.Audio.URL,
+			Url:  &url,
 			Loop: &status.Audio.Loop,
 			Format: func() *string {
 				if status.Audio.Format == "" {
@@ -211,11 +217,14 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 			} else if status.Ingest.Audio.Protocol == string(virtualinputs.SourceTypeWebRTC) {
 				audioURL = "/input/devices/virtual/webrtc/offer"
 			}
-			resp.Ingest.Audio = &oapi.VirtualInputIngestEndpoint{
-				Protocol: status.Ingest.Audio.Protocol,
-				Format:   status.Ingest.Audio.Format,
-				Url:      audioURL,
+			resp.Ingest.Audio = &oapi.VirtualInputIngestEndpoint{}
+			if status.Ingest.Audio.Protocol != "" {
+				resp.Ingest.Audio.Protocol = &status.Ingest.Audio.Protocol
 			}
+			if status.Ingest.Audio.Format != "" {
+				resp.Ingest.Audio.Format = &status.Ingest.Audio.Format
+			}
+			resp.Ingest.Audio.Url = &audioURL
 		}
 		if status.Ingest.Video != nil {
 			videoURL := status.Ingest.Video.Path
@@ -224,11 +233,14 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 			} else if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeWebRTC) {
 				videoURL = "/input/devices/virtual/webrtc/offer"
 			}
-			resp.Ingest.Video = &oapi.VirtualInputIngestEndpoint{
-				Protocol: status.Ingest.Video.Protocol,
-				Format:   status.Ingest.Video.Format,
-				Url:      videoURL,
+			resp.Ingest.Video = &oapi.VirtualInputIngestEndpoint{}
+			if status.Ingest.Video.Protocol != "" {
+				resp.Ingest.Video.Protocol = &status.Ingest.Video.Protocol
 			}
+			if status.Ingest.Video.Format != "" {
+				resp.Ingest.Video.Format = &status.Ingest.Video.Format
+			}
+			resp.Ingest.Video.Url = &videoURL
 		}
 	}
 	return resp

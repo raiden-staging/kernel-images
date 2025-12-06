@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/coder/websocket"
@@ -53,6 +54,15 @@ func (s *ApiService) HandleStreamSocket(w http.ResponseWriter, r *http.Request) 
 // wsConnAdapter adapts coder/websocket.Conn to the stream.WebSocketConn interface.
 type wsConnAdapter struct {
 	*websocket.Conn
+}
+
+func (w wsConnAdapter) Read(ctx context.Context) (int, []byte, error) {
+	mt, data, err := w.Conn.Read(ctx)
+	return int(mt), data, err
+}
+
+func (w wsConnAdapter) Write(ctx context.Context, messageType int, data []byte) error {
+	return w.Conn.Write(ctx, websocket.MessageType(messageType), data)
 }
 
 func (w wsConnAdapter) Close(status int, reason string) error {
