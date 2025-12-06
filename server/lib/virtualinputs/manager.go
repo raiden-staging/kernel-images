@@ -200,9 +200,9 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 		return m.statusLocked(), err
 	}
 
-	useFakeMode := false
+	useVirtualFileMode := false
 	if usesRealtimeSource(normalized) {
-		useFakeMode = true
+		useVirtualFileMode = true
 	}
 	// Avoid accidentally routing injected audio into the playback sink; force the
 	// dedicated virtual input sink when the configured sink is the output sink.
@@ -212,7 +212,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 	}
 	if normalized.Video != nil && normalized.Video.Type != SourceTypeSocket && normalized.Video.Type != SourceTypeWebRTC {
 		if ok, err := m.ensureVideoDevice(ctx); err != nil || !ok {
-			useFakeMode = true
+			useVirtualFileMode = true
 			log.Warn("v4l2loopback unavailable, using virtual capture files instead", "err", err)
 		}
 	}
@@ -224,7 +224,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 
 	m.killAllFFmpeg()
 
-	if useFakeMode {
+	if useVirtualFileMode {
 		m.mode = modeVirtualFile
 		m.videoFile = defaultVideoFile
 		m.audioFile = ""
@@ -804,7 +804,7 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 		routeToPulse := m.mode != modeVirtualFile
 		if !routeToPulse && (cfg.Audio.Type == SourceTypeSocket || cfg.Audio.Type == SourceTypeWebRTC) {
 			// Realtime ingest feeds should still be mirrored into the microphone sink
-			// so consumers can read from Pulse in addition to the fake capture file.
+			// so consumers can read from Pulse in addition to the virtual capture file.
 			routeToPulse = true
 		}
 		if routeToPulse {

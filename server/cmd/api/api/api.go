@@ -63,7 +63,7 @@ type ApiService struct {
 	virtualInputs VirtualInputsManager
 
 	virtualInputsWebRTC *virtualinputs.WebRTCIngestor
-	virtualFeed       *virtualFeedBroadcaster
+	virtualFeed         *virtualFeedBroadcaster
 	socketMu            sync.Mutex
 	audioSocketActive   bool
 	videoSocketActive   bool
