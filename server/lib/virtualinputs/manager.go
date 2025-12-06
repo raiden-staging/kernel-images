@@ -29,6 +29,8 @@ const (
 
 	defaultVideoFile = "/tmp/virtual-inputs/video.y4m"
 	defaultAudioFile = "/tmp/virtual-inputs/audio.wav"
+	defaultVideoPipe = "/tmp/virtual-inputs/ingest-video.pipe"
+	defaultAudioPipe = "/tmp/virtual-inputs/ingest-audio.pipe"
 
 	stateIdle    = "idle"
 	stateRunning = "running"
@@ -53,6 +55,8 @@ type SourceType string
 const (
 	SourceTypeStream SourceType = "stream"
 	SourceTypeFile   SourceType = "file"
+	SourceTypeSocket SourceType = "socket"
+	SourceTypeWebRTC SourceType = "webrtc"
 )
 
 // MediaSource represents a single audio or video input definition.
@@ -60,6 +64,9 @@ type MediaSource struct {
 	Type SourceType
 	URL  string
 	Loop bool
+	// Format hints the expected container/codec when the source is a socket or WebRTC feed
+	// (e.g. "mp3" for audio sockets, "mjpeg" for video sockets, "ivf"/"ogg" for WebRTC).
+	Format string
 }
 
 // Config describes the desired virtual input pipeline.
@@ -87,6 +94,20 @@ type Status struct {
 	Mode             string
 	VideoFile        string
 	AudioFile        string
+	Ingest           *IngestStatus
+}
+
+// IngestEndpoint describes how callers can push realtime media into the pipelines.
+type IngestEndpoint struct {
+	Protocol string
+	Format   string
+	Path     string
+}
+
+// IngestStatus surfaces the ingest endpoints for audio/video when socket or WebRTC sources are active.
+type IngestStatus struct {
+	Video *IngestEndpoint
+	Audio *IngestEndpoint
 }
 
 // Manager coordinates FFmpeg pipelines that feed virtual camera and microphone devices.
@@ -112,6 +133,9 @@ type Manager struct {
 	startedAt      *time.Time
 	videoFile      string
 	audioFile      string
+	audioPipe      string
+	videoPipe      string
+	ingest         *IngestStatus
 
 	stz           *scaletozero.Oncer
 	scaleDisabled bool
@@ -175,6 +199,9 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 	}
 
 	useFakeMode := false
+	if usesRealtimeSource(normalized) {
+		useFakeMode = true
+	}
 	// Avoid accidentally routing injected audio into the playback sink; force the
 	// dedicated virtual input sink when the configured sink is the output sink.
 	if m.audioSink == "audio_output" {
@@ -213,6 +240,20 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 		m.mode = modeDevice
 		m.videoFile = ""
 		m.audioFile = ""
+	}
+
+	m.ingest = buildIngestStatus(normalized)
+	if needsVideoPipe(normalized) {
+		if err := preparePipe(defaultVideoPipe); err != nil {
+			return m.statusLocked(), err
+		}
+		m.videoPipe = defaultVideoPipe
+	}
+	if needsAudioPipe(normalized) {
+		if err := preparePipe(defaultAudioPipe); err != nil {
+			return m.statusLocked(), err
+		}
+		m.audioPipe = defaultAudioPipe
 	}
 
 	args, err := m.buildFFmpegArgs(normalized, startPaused)
@@ -324,6 +365,9 @@ func (m *Manager) Stop(ctx context.Context) (Status, error) {
 	m.mode = modeDevice
 	m.videoFile = ""
 	m.audioFile = ""
+	m.videoPipe = ""
+	m.audioPipe = ""
+	m.ingest = nil
 	return m.statusLocked(), nil
 }
 
@@ -348,6 +392,7 @@ func (m *Manager) statusLocked() Status {
 		Mode:             m.mode,
 		VideoFile:        m.videoFile,
 		AudioFile:        m.audioFile,
+		Ingest:           m.ingest,
 	}
 	if m.lastCfg != nil {
 		status.Width = m.lastCfg.Width
@@ -363,10 +408,10 @@ func (m *Manager) normalizeConfig(cfg Config) (Config, error) {
 	if cfg.Video == nil && cfg.Audio == nil {
 		return Config{}, ErrMissingSources
 	}
-	if cfg.Video != nil && cfg.Video.URL == "" {
+	if cfg.Video != nil && cfg.Video.URL == "" && cfg.Video.Type != SourceTypeSocket && cfg.Video.Type != SourceTypeWebRTC {
 		return Config{}, ErrVideoURLRequired
 	}
-	if cfg.Audio != nil && cfg.Audio.URL == "" {
+	if cfg.Audio != nil && cfg.Audio.URL == "" && cfg.Audio.Type != SourceTypeSocket && cfg.Audio.Type != SourceTypeWebRTC {
 		return Config{}, ErrAudioURLRequired
 	}
 	if cfg.Video != nil && cfg.Video.Type == "" {
@@ -377,6 +422,8 @@ func (m *Manager) normalizeConfig(cfg Config) (Config, error) {
 	}
 
 	out := cfg
+	out.Video = normalizeSource(cfg.Video, true)
+	out.Audio = normalizeSource(cfg.Audio, false)
 	if out.Width <= 0 {
 		out.Width = m.defaultWidth
 	}
@@ -748,7 +795,13 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 		// Only route audio into Pulse when using a v4l2loopback device; in virtual-file
 		// mode Chromium consumes the WAV via --use-file-for-fake-audio-capture, so
 		// sending audio to a sink risks leaking it to the output path.
-		if m.mode != modeVirtualFile {
+		routeToPulse := m.mode != modeVirtualFile
+		if !routeToPulse && (cfg.Audio.Type == SourceTypeSocket || cfg.Audio.Type == SourceTypeWebRTC) {
+			// Realtime ingest feeds should still be mirrored into the microphone sink
+			// so consumers can read from Pulse in addition to the fake capture file.
+			routeToPulse = true
+		}
+		if routeToPulse {
 			args = append(args,
 				"-map", fmt.Sprintf("%d:a:0", audioIdx),
 				"-ac", "2",
@@ -785,6 +838,11 @@ func buildInputArgs(src *MediaSource) []string {
 	parts = append(parts, "-thread_queue_size", "64")
 	if src.Type == SourceTypeFile {
 		parts = append(parts, "-re")
+	}
+	if src.Type == SourceTypeSocket || src.Type == SourceTypeWebRTC {
+		if src.Format != "" {
+			parts = append(parts, "-f", src.Format)
+		}
 	}
 	parts = append(parts, "-i", src.URL)
 	return parts
