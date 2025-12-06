@@ -60,6 +60,11 @@ type ApiService struct {
 	playwrightMu sync.Mutex
 
 	virtualInputs VirtualInputsManager
+
+	virtualInputsWebRTC *virtualinputs.WebRTCIngestor
+	socketMu            sync.Mutex
+	audioSocketActive   bool
+	videoSocketActive   bool
 }
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
@@ -102,6 +107,7 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		stz:               stz,
 		nekoAuthClient:    nekoAuthClient,
 		virtualInputs:     virtualInputsMgr,
+		virtualInputsWebRTC: virtualinputs.NewWebRTCIngestor(),
 	}, nil
 }
 
@@ -437,6 +443,9 @@ func (s *ApiService) Shutdown(ctx context.Context) error {
 		if _, err := s.virtualInputs.Stop(ctx); err != nil {
 			errs = append(errs, err)
 		}
+	}
+	if s.virtualInputsWebRTC != nil {
+		s.virtualInputsWebRTC.Clear()
 	}
 	if len(errs) > 0 {
 		return errors.Join(errs...)

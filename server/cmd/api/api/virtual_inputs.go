@@ -42,6 +42,7 @@ func (s *ApiService) ConfigureVirtualInputs(ctx context.Context, req oapi.Config
 			InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to apply chromium flags"},
 		}, nil
 	}
+	s.updateVirtualInputIngest(status)
 
 	return oapi.ConfigureVirtualInputs200JSONResponse(toVirtualInputsStatus(status)), nil
 }
@@ -95,6 +96,7 @@ func (s *ApiService) StopVirtualInputs(ctx context.Context, _ oapi.StopVirtualIn
 			InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{Message: "failed to clear chromium flags"},
 		}, nil
 	}
+	s.updateVirtualInputIngest(status)
 	return oapi.StopVirtualInputs200JSONResponse(toVirtualInputsStatus(status)), nil
 }
 
@@ -261,4 +263,29 @@ func isVirtualInputBadRequest(err error) bool {
 		errors.Is(err, virtualinputs.ErrPauseWithoutSession) ||
 		errors.Is(err, virtualinputs.ErrNoConfigToPause) ||
 		errors.Is(err, virtualinputs.ErrNoConfigToResume)
+}
+
+func (s *ApiService) updateVirtualInputIngest(status virtualinputs.Status) {
+	if s.virtualInputsWebRTC == nil {
+		return
+	}
+
+	if status.Ingest == nil {
+		s.virtualInputsWebRTC.Clear()
+		return
+	}
+
+	videoPath := ""
+	videoFmt := ""
+	audioPath := ""
+	audioFmt := ""
+	if status.Ingest.Video != nil {
+		videoPath = status.Ingest.Video.Path
+		videoFmt = status.Ingest.Video.Format
+	}
+	if status.Ingest.Audio != nil {
+		audioPath = status.Ingest.Audio.Path
+		audioFmt = status.Ingest.Audio.Format
+	}
+	s.virtualInputsWebRTC.Configure(videoPath, videoFmt, audioPath, audioFmt)
 }
