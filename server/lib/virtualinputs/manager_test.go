@@ -10,11 +10,11 @@ func TestNormalizeSourceDefaults(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name     string
-		src      *MediaSource
-		isVideo  bool
-		wantURL  string
-		wantFmt  string
+		name    string
+		src     *MediaSource
+		isVideo bool
+		wantURL string
+		wantFmt string
 	}{
 		{
 			name:    "socket video uses default pipe and mjpeg",
