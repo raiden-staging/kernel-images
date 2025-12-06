@@ -49,7 +49,10 @@ func (s *ApiService) GetVirtualInputFeed(ctx context.Context, req oapi.GetVirtua
 	}
 
 	page := renderVirtualFeedPage(fit, source, defaultFormat)
-	return oapi.GetVirtualInputFeed200TexthtmlResponse(page), nil
+	return oapi.GetVirtualInputFeed200TexthtmlResponse{
+		Body:          strings.NewReader(page),
+		ContentLength: int64(len(page)),
+	}, nil
 }
 
 func renderVirtualFeedPage(fit, source, format string) string {
