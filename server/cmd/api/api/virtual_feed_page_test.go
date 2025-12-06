@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"io"
+	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -62,7 +63,7 @@ func TestGetVirtualInputFeed_AutoDetectsSources(t *testing.T) {
 	t.Run("falls back to configured video url when no ingest", func(t *testing.T) {
 		svc, vimgr := newTestApiService(t, mgr)
 		vimgr.status.Ingest = nil
-		vimgr.status.Video = &virtualinputs.Source{URL: "https://example.com/feed.m3u8"}
+		vimgr.status.Video = &virtualinputs.MediaSource{URL: "https://example.com/feed.m3u8"}
 
 		resp, err := svc.GetVirtualInputFeed(ctx, oapi.GetVirtualInputFeedRequestObject{Params: oapi.GetVirtualInputFeedParams{}})
 		require.NoError(t, err)
