@@ -302,15 +302,17 @@ func TestApiService_VirtualInputs(t *testing.T) {
 		height := 480
 		fr := 24
 		startPaused := true
+		videoURL := "https://example.com/vid.m3u8"
+		audioURL := "https://example.com/audio.mp3"
 		body := oapi.VirtualInputsRequest{
 			Video: &oapi.VirtualInputSource{
 				Type: oapi.Stream,
-				Url:  "https://example.com/vid.m3u8",
+				Url:  &videoURL,
 				Loop: &videoLoop,
 			},
 			Audio: &oapi.VirtualInputSource{
 				Type: oapi.File,
-				Url:  "https://example.com/audio.mp3",
+				Url:  &audioURL,
 				Loop: &audioLoop,
 			},
 			Width:       &width,
@@ -351,7 +353,7 @@ func TestApiService_VirtualInputs(t *testing.T) {
 		vimgr.configureErr = errors.New("boom")
 		svc := newSvc(t, vimgr)
 		reqBody := oapi.VirtualInputsRequest{
-			Audio: &oapi.VirtualInputSource{Type: oapi.Stream, Url: "http://a"},
+			Audio: &oapi.VirtualInputSource{Type: oapi.Stream, Url: ptr("http://a")},
 		}
 		resp, err := svc.ConfigureVirtualInputs(ctx, oapi.ConfigureVirtualInputsRequestObject{Body: &reqBody})
 		require.NoError(t, err)
@@ -567,6 +569,10 @@ func newMockNekoClient(t *testing.T) *nekoclient.AuthClient {
 	client, err := nekoclient.NewAuthClient("http://localhost:9999", "admin", "admin")
 	require.NoError(t, err)
 	return client
+}
+
+func ptr[T any](v T) *T {
+	return &v
 }
 
 type mockVirtualInputsManager struct {
