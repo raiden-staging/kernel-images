@@ -46,6 +46,7 @@ func newApiServiceWithVirtualInputs(t *testing.T, mgr recorder.RecordManager, vi
 		newMockStreamFactory(),
 		mockRTMPServer{},
 		defaults,
+		"ffmpeg",
 	)
 	require.NoError(t, err)
 	return svc

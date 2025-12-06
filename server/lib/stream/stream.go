@@ -10,6 +10,8 @@ type Mode string
 const (
 	ModeInternal Mode = "internal"
 	ModeRemote   Mode = "remote"
+	ModeWebRTC   Mode = "webrtc"
+	ModeSocket   Mode = "socket"
 )
 
 // Params holds stream creation settings.
@@ -30,6 +32,8 @@ type Metadata struct {
 	PlaybackURL       *string
 	SecurePlaybackURL *string
 	StartedAt         time.Time
+	WebsocketURL      *string
+	WebRTCOfferURL    *string
 }
 
 // Streamer defines the interface for a streaming session.
@@ -39,6 +43,25 @@ type Streamer interface {
 	Stop(ctx context.Context) error
 	IsStreaming(ctx context.Context) bool
 	Metadata() Metadata
+}
+
+// WebSocketEndpoint allows clients to register for chunked playback.
+type WebSocketEndpoint interface {
+	Streamer
+	RegisterClient(conn WebSocketConn) error
+}
+
+// WebSocketConn mirrors the subset of websocket.Conn needed by streamers to remain decoupled.
+type WebSocketConn interface {
+	Read(ctx context.Context) (messageType int, p []byte, err error)
+	Write(ctx context.Context, messageType int, data []byte) error
+	Close(status int, reason string) error
+}
+
+// WebRTCNegotiator supports SDP offer/answer exchange for live streaming.
+type WebRTCNegotiator interface {
+	Streamer
+	HandleOffer(ctx context.Context, offer string) (string, error)
 }
 
 // Manager defines the interface for tracking streaming sessions.

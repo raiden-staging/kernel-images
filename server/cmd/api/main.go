@@ -138,6 +138,7 @@ func main() {
 		stream.NewFFmpegStreamerFactory(config.PathToFFmpeg, streamDefaults, stz),
 		rtmpServer,
 		streamDefaults,
+		config.PathToFFmpeg,
 	)
 	if err != nil {
 		slogger.Error("failed to create api service", "err", err)

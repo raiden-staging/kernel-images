@@ -70,7 +70,7 @@ type ApiService struct {
 
 var _ oapi.StrictServerInterface = (*ApiService)(nil)
 
-func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient, virtualInputsMgr VirtualInputsManager, streamManager stream.Manager, streamFactory stream.FFmpegStreamerFactory, rtmpServer stream.InternalServer, streamDefaults stream.Params) (*ApiService, error) {
+func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFactory, upstreamMgr *devtoolsproxy.UpstreamManager, stz scaletozero.Controller, nekoAuthClient *nekoclient.AuthClient, virtualInputsMgr VirtualInputsManager, streamManager stream.Manager, streamFactory stream.FFmpegStreamerFactory, rtmpServer stream.InternalServer, streamDefaults stream.Params, ffmpegPath string) (*ApiService, error) {
 	switch {
 	case recordManager == nil:
 		return nil, fmt.Errorf("recordManager cannot be nil")
@@ -101,6 +101,7 @@ func New(recordManager recorder.RecordManager, factory recorder.FFmpegRecorderFa
 		streamFactory:     streamFactory,
 		rtmpServer:        rtmpServer,
 		streamDefaults:    streamDefaults,
+		ffmpegPath:        ffmpegPath,
 		defaultStreamID:   "default",
 		watches:           make(map[string]*fsWatch),
 		procs:             make(map[string]*processHandle),
