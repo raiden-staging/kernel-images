@@ -122,6 +122,13 @@ Environment variables control the virtual devices and output shape:
 
 If the host kernel cannot load `v4l2loopback`, the server automatically falls back to streaming into Chromium’s virtual capture flags using Y4M/WAV pipes under `/tmp/virtual-inputs/*` and restarts Chromium to pick them up.
 
+### Preview the virtual feed
+
+Open `http://localhost:10001/input/devices/virtual/feed` for a fullscreen, muted preview of the configured video input. Optional query params:
+
+- `fit`: CSS object-fit mode (default `cover`)
+- `source`: override the detected video source (HTTP/HLS/WebSocket/WebRTC)
+
 ### Useful Requests
 
 Configure a virtual webcam + mic from mixed sources (looping the audio file):
