@@ -151,7 +151,7 @@ func (w *WebRTCIngestor) forwardVideo(ctx context.Context, cfg *webrtcIngestConf
 		return fmt.Errorf("unsupported video codec %s", track.Codec().MimeType)
 	}
 
-	out, err := openPipeWriter(cfg.videoPath)
+	out, err := OpenPipeWriter(cfg.videoPath, DefaultPipeOpenTimeout)
 	if err != nil {
 		return err
 	}
@@ -190,7 +190,7 @@ func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConf
 		return fmt.Errorf("unsupported audio codec %s", track.Codec().MimeType)
 	}
 
-	out, err := openPipeWriter(cfg.audioPath)
+	out, err := OpenPipeWriter(cfg.audioPath, DefaultPipeOpenTimeout)
 	if err != nil {
 		return err
 	}
@@ -219,12 +219,4 @@ func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConf
 			return err
 		}
 	}
-}
-
-func openPipeWriter(path string) (*os.File, error) {
-	f, err := os.OpenFile(path, os.O_WRONLY, 0)
-	if err != nil {
-		return nil, fmt.Errorf("open pipe %s: %w", path, err)
-	}
-	return f, nil
 }

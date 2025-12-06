@@ -2,7 +2,6 @@ package api
 
 import (
 	"net/http"
-	"os"
 
 	"github.com/coder/websocket"
 
@@ -72,7 +71,7 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	pipe, err := os.OpenFile(endpoint.Path, os.O_WRONLY, 0)
+	pipe, err := virtualinputs.OpenPipeWriter(endpoint.Path, virtualinputs.DefaultPipeOpenTimeout)
 	if err != nil {
 		log.Error("failed to open ingest pipe", "err", err, "path", endpoint.Path)
 		_ = conn.Close(websocket.StatusInternalError, "pipe unavailable")

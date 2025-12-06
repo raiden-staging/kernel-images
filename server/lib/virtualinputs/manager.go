@@ -136,6 +136,8 @@ type Manager struct {
 	audioPipe      string
 	videoPipe      string
 	ingest         *IngestStatus
+	videoKeepalive *os.File
+	audioKeepalive *os.File
 
 	stz           *scaletozero.Oncer
 	scaleDisabled bool
@@ -264,6 +266,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
 		return m.statusLocked(), err
 	}
+	m.openPipeKeepalivesLocked(ctx, normalized)
 
 	log.Info("virtual inputs started", "state", func() string {
 		if startPaused {
@@ -310,6 +313,7 @@ func (m *Manager) Pause(ctx context.Context) (Status, error) {
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
 		return m.statusLocked(), err
 	}
+	m.openPipeKeepalivesLocked(ctx, *m.lastCfg)
 	now := time.Now()
 	m.startedAt = &now
 	m.state = statePaused
@@ -340,6 +344,7 @@ func (m *Manager) Resume(ctx context.Context) (Status, error) {
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
 		return m.statusLocked(), err
 	}
+	m.openPipeKeepalivesLocked(ctx, *m.lastCfg)
 	now := time.Now()
 	m.startedAt = &now
 	m.state = stateRunning
@@ -437,6 +442,7 @@ func (m *Manager) normalizeConfig(cfg Config) (Config, error) {
 }
 
 func (m *Manager) stopLocked(ctx context.Context) error {
+	m.closePipeKeepalivesLocked()
 	if m.cmd == nil {
 		if m.processGroupID > 0 {
 			m.killAllFFmpeg()
@@ -907,7 +913,7 @@ func normalizeSource(src *MediaSource, isVideo bool) *MediaSource {
 			if isVideo {
 				out.Format = "mpegts"
 			} else {
-				out.Format = "wav"
+				out.Format = "mp3"
 			}
 		}
 	}
@@ -942,6 +948,39 @@ func preparePipe(path string) error {
 		return fmt.Errorf("create fifo %s: %w", path, err)
 	}
 	return nil
+}
+
+func (m *Manager) closePipeKeepalivesLocked() {
+	if m.videoKeepalive != nil {
+		_ = m.videoKeepalive.Close()
+		m.videoKeepalive = nil
+	}
+	if m.audioKeepalive != nil {
+		_ = m.audioKeepalive.Close()
+		m.audioKeepalive = nil
+	}
+}
+
+func (m *Manager) openPipeKeepalivesLocked(ctx context.Context, cfg Config) {
+	log := logger.FromContext(ctx)
+	m.closePipeKeepalivesLocked()
+
+	if needsVideoPipe(cfg) && m.videoPipe != "" {
+		writer, err := OpenPipeWriter(m.videoPipe, DefaultPipeOpenTimeout)
+		if err != nil {
+			log.Warn("failed to open keepalive for virtual video pipe", "err", err, "path", m.videoPipe)
+		} else {
+			m.videoKeepalive = writer
+		}
+	}
+	if needsAudioPipe(cfg) && m.audioPipe != "" {
+		writer, err := OpenPipeWriter(m.audioPipe, DefaultPipeOpenTimeout)
+		if err != nil {
+			log.Warn("failed to open keepalive for virtual audio pipe", "err", err, "path", m.audioPipe)
+		} else {
+			m.audioKeepalive = writer
+		}
+	}
 }
 
 func (m *Manager) startFFmpegLocked(ctx context.Context, args []string) error {
@@ -982,6 +1021,7 @@ func (m *Manager) startFFmpegLocked(ctx context.Context, args []string) error {
 		}
 		m.cmd = nil
 		m.processGroupID = 0
+		m.closePipeKeepalivesLocked()
 		close(exited)
 		m.enableScaleToZero(context.Background())
 	}()
