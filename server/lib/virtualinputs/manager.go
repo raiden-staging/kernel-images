@@ -970,7 +970,7 @@ func (m *Manager) openPipeKeepalivesLocked(ctx context.Context, cfg Config, paus
 	}
 
 	if needsVideoPipe(cfg) && m.videoPipe != "" {
-		writer, err := OpenPipeWriter(m.videoPipe, DefaultPipeOpenTimeout)
+		writer, err := OpenPipeReadWriter(m.videoPipe, DefaultPipeOpenTimeout)
 		if err != nil {
 			log.Warn("failed to open keepalive for virtual video pipe", "err", err, "path", m.videoPipe)
 		} else {
@@ -978,7 +978,7 @@ func (m *Manager) openPipeKeepalivesLocked(ctx context.Context, cfg Config, paus
 		}
 	}
 	if needsAudioPipe(cfg) && m.audioPipe != "" {
-		writer, err := OpenPipeWriter(m.audioPipe, DefaultPipeOpenTimeout)
+		writer, err := OpenPipeReadWriter(m.audioPipe, DefaultPipeOpenTimeout)
 		if err != nil {
 			log.Warn("failed to open keepalive for virtual audio pipe", "err", err, "path", m.audioPipe)
 		} else {
