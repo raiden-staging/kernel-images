@@ -117,7 +117,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
     .hidden { display: none; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.9/dist/hls.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/npm/jsmpeg@0.4.0/jsmpeg.min.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/gh/phoboslab/jsmpeg@924acfbd96fdf15e6748d1368a36d79d8f4cecf6/jsmpeg.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <video id="video" class="frame" autoplay muted playsinline></video>
