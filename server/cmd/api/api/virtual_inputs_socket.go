@@ -1,12 +1,17 @@
 package api
 
 import (
+	"io"
 	"net/http"
 
 	"github.com/coder/websocket"
 
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	"github.com/onkernel/kernel-images/server/lib/virtualinputs"
+)
+
+const (
+	socketChunkSize = 64 * 1024
 )
 
 // HandleVirtualInputAudioSocket upgrades the connection and streams binary chunks into the audio FIFO.
@@ -96,22 +101,53 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 		if len(data) == 0 {
 			continue
 		}
-		log.Info("received websocket chunk", "kind", kind, "len", len(data))
-		if _, err := pipe.Write(data); err != nil {
-			log.Error("failed writing websocket chunk to pipe", "err", err, "kind", kind)
-			return
-		}
+		chunkCount := (len(data) + socketChunkSize - 1) / socketChunkSize
+		log.Info("received websocket chunk", "kind", kind, "len", len(data), "chunks", chunkCount)
+
+		var broadcaster *virtualFeedBroadcaster
+		format := ""
 		if kind == "video" {
 			if s.virtualFeed == nil {
 				log.Warn("virtual feed not available for websocket broadcasting")
 			} else {
-				format := endpoint.Format
+				broadcaster = s.virtualFeed
+				format = endpoint.Format
 				if format == "" {
 					format = "mpegts"
 				}
-				log.Info("broadcasting chunk to virtual feed", "format", format, "len", len(data))
-				s.virtualFeed.broadcastWithFormat(format, data)
 			}
 		}
+
+		if err := writeChunkedToPipe(pipe, broadcaster, format, data); err != nil {
+			log.Error("failed writing websocket chunk to pipe", "err", err, "kind", kind)
+			return
+		}
 	}
+}
+
+// writeChunkedToPipe slices large websocket payloads into pipe-friendly segments, preserving order
+// and mirroring video chunks to the virtual feed when requested.
+func writeChunkedToPipe(pipe io.Writer, broadcaster *virtualFeedBroadcaster, format string, payload []byte) error {
+	for len(payload) > 0 {
+		size := len(payload)
+		if size > socketChunkSize {
+			size = socketChunkSize
+		}
+
+		written, err := pipe.Write(payload[:size])
+		if err != nil {
+			return err
+		}
+
+		if broadcaster != nil && written > 0 {
+			broadcaster.broadcastWithFormat(format, payload[:written])
+		}
+
+		if written == 0 {
+			// Avoid an infinite loop on unexpected short writes.
+			return io.ErrShortWrite
+		}
+		payload = payload[written:]
+	}
+	return nil
 }

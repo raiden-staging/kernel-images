@@ -117,7 +117,6 @@ func renderVirtualFeedPage(fit, source, format string) string {
     .hidden { display: none; }
   </style>
   <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.9/dist/hls.min.js" crossorigin="anonymous"></script>
-  <script src="https://cdn.jsdelivr.net/gh/phoboslab/jsmpeg@924acfbd96fdf15e6748d1368a36d79d8f4cecf6/jsmpeg.min.js" crossorigin="anonymous"></script>
 </head>
 <body>
   <video id="video" class="frame" autoplay muted playsinline></video>
@@ -150,6 +149,36 @@ func renderVirtualFeedPage(fit, source, format string) string {
         decoder: null,
         decoderInit: false,
       };
+      const jsmpegSources = [
+        'https://cdn.jsdelivr.net/npm/jsmpeg@0.2.6/build/jsmpeg.min.js',
+        'https://unpkg.com/jsmpeg@0.2.6/build/jsmpeg.min.js',
+      ];
+
+      function loadScript(src) {
+        return new Promise((resolve, reject) => {
+          const el = document.createElement('script');
+          el.src = src;
+          el.async = true;
+          el.crossOrigin = 'anonymous';
+          el.onload = () => resolve();
+          el.onerror = () => reject(new Error('failed to load ' + src));
+          document.head.appendChild(el);
+        });
+      }
+
+      async function ensureJsmpeg() {
+        if (window.JSMpeg) return;
+        let lastErr = null;
+        for (const src of jsmpegSources) {
+          try {
+            await loadScript(src);
+            if (window.JSMpeg) return;
+          } catch (err) {
+            lastErr = err;
+          }
+        }
+        throw lastErr || new Error('jsmpeg failed to load');
+      }
 
       function setStatus(msg, isError = false) {
         statusEl.textContent = msg;
@@ -235,7 +264,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
         if (source.kind === 'direct') {
           startDirect(source.url);
         } else if (source.kind === 'ws') {
-          startWebsocket(source.url, source.format || 'mpegts');
+          await startWebsocket(source.url, source.format || 'mpegts');
         } else {
           setStatus('Unsupported source type.', true);
         }
@@ -266,10 +295,17 @@ func renderVirtualFeedPage(fit, source, format string) string {
         }
       }
 
-      function startWebsocket(url, format) {
+      async function startWebsocket(url, format) {
         cleanup();
         if (format === 'ivf') {
           startIvfWebsocket(url);
+          return;
+        }
+        try {
+          await ensureJsmpeg();
+        } catch (err) {
+          console.error('jsmpeg failed to load', err);
+          setStatus('Unable to load MPEG-TS player.', true);
           return;
         }
         canvasEl.classList.remove('hidden');
@@ -369,7 +405,10 @@ func renderVirtualFeedPage(fit, source, format string) string {
         socket.onerror = () => setStatus('Feed websocket error', true);
       }
 
-      start();
+      start().catch((err) => {
+        console.error('failed to start virtual feed', err);
+        setStatus('Unable to load virtual feed.', true);
+      });
     })();
   </script>
 </body>

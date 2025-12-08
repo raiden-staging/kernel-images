@@ -51,6 +51,10 @@ func OpenPipeWriter(path string, timeout time.Duration) (*os.File, error) {
 	for {
 		f, err := os.OpenFile(path, os.O_WRONLY|syscall.O_NONBLOCK, 0)
 		if err == nil {
+			if err := syscall.SetNonblock(int(f.Fd()), false); err != nil {
+				_ = f.Close()
+				return nil, fmt.Errorf("open pipe %s: %w", path, err)
+			}
 			return f, nil
 		}
 		if errors.Is(err, syscall.ENXIO) || errors.Is(err, os.ErrNotExist) {
