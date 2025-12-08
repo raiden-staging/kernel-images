@@ -3,6 +3,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SCRIPT_DIR"
+VENV_PATH="${VENV_PATH:-/tmp/kernel-virtual-inputs-webrtc-venv}"
 
 if command -v python3 >/dev/null 2>&1; then
     PY=python3
@@ -30,8 +31,8 @@ if [ -z "$UV" ]; then
     exit 1
 fi
 
-"$UV" venv .venv
-. .venv/bin/activate
+"$UV" venv "$VENV_PATH"
+. "$VENV_PATH/bin/activate"
 "$UV" pip install aiohttp aiortc
 
 API_URL="${API_URL:-http://localhost:444/input/devices/virtual/webrtc/offer}"

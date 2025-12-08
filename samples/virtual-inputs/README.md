@@ -52,9 +52,10 @@ curl -s http://localhost:444/input/devices/virtual/configure \
 Use the bundled Python helper (keeps everything under `samples/virtual-inputs`, installs `uv`, and uses `MediaPlayer` from `aiortc.contrib.media`):
 ```bash
 cd samples/virtual-inputs
-./run_webrtc.sh
+sh run_webrtc.sh
 ```
-Override the API target with `API_URL=http://localhost:444/input/devices/virtual/webrtc/offer ./run_webrtc.sh` if needed.
+If your working directory is mounted with `noexec`, the `sh` prefix avoids execution errors. The script defaults to a venv in `/tmp/kernel-virtual-inputs-webrtc-venv` (override with `VENV_PATH=...`) so native libraries can be loaded even on `noexec` workspaces.
+Override the API target with `API_URL=http://localhost:444/input/devices/virtual/webrtc/offer sh run_webrtc.sh` if needed.
 When the WebRTC negotiation completes, reload `/input/devices/virtual/feed` to watch the mirrored stream.
 
 ## Pause/stop helpers
