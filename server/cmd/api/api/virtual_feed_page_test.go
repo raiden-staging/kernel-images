@@ -100,7 +100,8 @@ func TestVirtualFeedPageUsesWebsocketURLs(t *testing.T) {
 	body := readFeedBody(t, resp)
 
 	require.Contains(t, body, "function toWebSocketURL")
-	require.Contains(t, body, "new JSMpeg.Player(toWebSocketURL")
+	require.Contains(t, body, "const wsURL = toWebSocketURL")
+	require.Contains(t, body, "new JSMpeg.Player(wsURL")
 	require.Contains(t, body, "new WebSocket(toWebSocketURL")
 }
 

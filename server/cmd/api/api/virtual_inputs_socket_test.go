@@ -42,7 +42,22 @@ func TestVirtualInputVideoSocketMirrorsFeed(t *testing.T) {
 		}
 		close(readerReady)
 		defer f.Close()
-		_, _ = io.Copy(io.Discard, f)
+		buf := make([]byte, 1024)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			default:
+			}
+			if _, err := f.Read(buf); err != nil {
+				if errors.Is(err, io.EOF) {
+					time.Sleep(20 * time.Millisecond)
+					continue
+				}
+				readerErr <- err
+				return
+			}
+		}
 	}()
 	select {
 	case <-readerReady:
