@@ -32,13 +32,15 @@ func TestVirtualInputVideoSocketMirrorsFeed(t *testing.T) {
 	require.NoError(t, syscall.Mkfifo(pipePath, 0o666))
 
 	readerReady := make(chan struct{})
+	readerErr := make(chan error, 1)
 	go func() {
-		defer close(readerReady)
 		f, err := openPipeReader(pipePath)
 		if err != nil {
-			t.Errorf("open pipe reader: %v", err)
+			readerErr <- err
+			close(readerReady)
 			return
 		}
+		close(readerReady)
 		defer f.Close()
 		_, _ = io.Copy(io.Discard, f)
 	}()
@@ -46,6 +48,11 @@ func TestVirtualInputVideoSocketMirrorsFeed(t *testing.T) {
 	case <-readerReady:
 	case <-time.After(2 * time.Second):
 		t.Fatal("pipe reader did not open in time")
+	}
+	select {
+	case err := <-readerErr:
+		require.NoError(t, err, "pipe reader failed")
+	default:
 	}
 
 	svc, vimgr := newTestApiService(t, recorder.NewFFmpegManager())

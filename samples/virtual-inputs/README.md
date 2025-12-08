@@ -41,6 +41,7 @@ node samples/virtual-inputs/ws_chunk_ingest.js
 
 Open the live preview while the sockets run: `http://localhost:444/input/devices/virtual/feed?fit=cover`  
 Discover the preview websocket URL/format: `curl http://localhost:444/input/devices/virtual/feed/socket/info | jq`
+To sanity-check the mirrored feed directly, capture it to disk with `node samples/virtual-inputs/feed_capture.js` (override `VIRTUAL_INPUT_HOST` or `FEED_CAPTURE_FILE` as needed).
 
 ## WebRTC ingest (Python)
 Prepare the ingest endpoints for WebRTC (both tracks stay on the same transport):
