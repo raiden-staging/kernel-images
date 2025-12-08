@@ -33,7 +33,7 @@ curl -s http://localhost:444/input/devices/virtual/configure \
 ```
 Chunk TS + MP3 samples over the sockets with Node.js (keeps the sockets open so the pipeline stays alive):
 ```bash
-node - <<'NODE'
+node --input-type=module - <<'NODE'
 import { createReadStream } from 'node:fs';
 import { once } from 'node:events';
 import WebSocket from 'ws';
@@ -73,7 +73,8 @@ NODE
 ```
 To stream MP4 over the websocket instead, reconfigure with `"format": "mp4"` for the video source and point the `video` path in the snippet to `samples/virtual-inputs/media/sample_video.mp4`. MP4 requires the full header before playback, so let the chunker finish before expecting video in the preview.
 
-Open the live preview while the sockets run: `http://localhost:444/input/devices/virtual/feed?fit=cover`
+Open the live preview while the sockets run: `http://localhost:444/input/devices/virtual/feed?fit=cover`  
+Discover the preview websocket URL/format: `curl http://localhost:444/input/devices/virtual/feed/socket/info | jq`
 
 ## WebRTC ingest (Python)
 Prepare the ingest endpoints for WebRTC (both tracks stay on the same transport):
