@@ -193,3 +193,7 @@ infra/tests/*
 .venv/
 env/
 venv/
+
+# sample capture artifacts
+samples/virtual-inputs/feed_capture*.mpegts
+samples/virtual-inputs/feed_capture*.ivf
