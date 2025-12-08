@@ -31,56 +31,13 @@ curl -s http://localhost:444/input/devices/virtual/configure \
     "width": 1280, "height": 720, "frame_rate": 30
   }' | jq
 ```
-Chunk TS + MP3 samples over the sockets with Node.js (keeps the sockets open so the pipeline stays alive):
+Use the bundled chunk sender to stream TS or MP4 video (and MP3 audio) in real chunks and keep the sockets alive:
 ```bash
-node --input-type=module - <<'NODE'
-import { createReadStream } from 'node:fs';
-import { once } from 'node:events';
-import WebSocket from 'ws';
-
-const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function pump(url, path, label, throttleMs = 35) {
-  const ws = new WebSocket(url);
-  ws.binaryType = 'arraybuffer';
-  ws.on('message', (msg) => console.log(`${label} format hint:`, msg.toString()));
-  await once(ws, 'open');
-  console.log(`${label} connected`);
-
-  for await (const chunk of createReadStream(path, { highWaterMark: 64 * 1024 })) {
-    ws.send(chunk);
-    await delay(throttleMs);
-  }
-
-  console.log(`${label} file sent; keep the socket open to push more chunks or switch to a live source`);
-  return ws;
-}
-
-const video = await pump(
-  'ws://localhost:444/input/devices/virtual/socket/video',
-  'samples/virtual-inputs/media/sample_video.ts',
-  'video'
-);
-const audio = await pump(
-  'ws://localhost:444/input/devices/virtual/socket/audio',
-  'samples/virtual-inputs/media/sample_audio.mp3',
-  'audio'
-);
-
-console.log('Streaming... press Ctrl+C to stop or send extra chunks manually');
-await new Promise(() => {});
-NODE
+npm install ws
+node samples/virtual-inputs/ws_chunk_ingest.js
 ```
-To stream MP4 over the websocket instead, reconfigure with `"format": "mp4"` for the video source and point the `video` path in the snippet to `samples/virtual-inputs/media/sample_video.mp4`. MP4 requires the full header before playback, so let the chunker finish before expecting video in the preview.
-```bash
-curl -s http://localhost:444/input/devices/virtual/configure \
-  -H "Content-Type: application/json" \
-  -d '{
-    "video": {"type": "socket", "format": "mp4"},
-    "audio": {"type": "socket", "format": "mp3"},
-    "width": 1280, "height": 720, "frame_rate": 30
-  }' | jq
-```
+- Defaults: TS video + MP3 audio. Set `VIDEO_FORMAT=mp4` to use the MP4 sample or override `VIDEO_FILE/AUDIO_FILE`, `VIRTUAL_INPUT_HOST`, or `CHUNK_DELAY_MS`.
+- Reconfigure the ingest to match when switching formats, e.g. set `"format": "mp4"` for the video source before sending MP4 chunks.
 
 Open the live preview while the sockets run: `http://localhost:444/input/devices/virtual/feed?fit=cover`  
 Discover the preview websocket URL/format: `curl http://localhost:444/input/devices/virtual/feed/socket/info | jq`
@@ -92,79 +49,12 @@ curl -s http://localhost:444/input/devices/virtual/configure \
   -H "Content-Type: application/json" \
   -d '{"video":{"type":"webrtc"},"audio":{"type":"webrtc"}}' | jq
 ```
-Use a self-contained shell helper that installs dependencies via `uv` and sends a local MP4 track:
+Use the bundled Python helper (keeps everything under `samples/virtual-inputs`, installs `uv`, and uses `MediaPlayer` from `aiortc.contrib.media`):
 ```bash
-cat > run_webrtc.sh <<'EOF'
-#!/usr/bin/env sh
-set -e
-
-if command -v python3 >/dev/null 2>&1; then
-    PY=python3
-elif command -v python >/dev/null 2>&1; then
-    PY=python
-else
-    echo "no python interpreter found"
-    exit 1
-fi
-
-UV=""
-[ -x "$HOME/.local/bin/uv" ] && UV="$HOME/.local/bin/uv"
-[ -x "/usr/local/bin/uv" ] && UV="/usr/local/bin/uv"
-[ -x "/usr/bin/uv" ] && UV="/usr/bin/uv"
-
-if [ -z "$UV" ]; then
-    curl -LsSf https://astral.sh/uv/install.sh | sh
-    [ -x "$HOME/.local/bin/uv" ] && UV="$HOME/.local/bin/uv"
-    [ -x "/usr/local/bin/uv" ] && UV="/usr/local/bin/uv"
-    [ -x "/usr/bin/uv" ] && UV="/usr/bin/uv"
-fi
-
-if [ -z "$UV" ]; then
-    echo "uv installation failed"
-    exit 1
-fi
-
-"$UV" venv .venv
-. .venv/bin/activate
-"$UV" pip install aiohttp aiortc
-
-$PY - <<'PY'
-import asyncio, aiohttp
-from pathlib import Path
-from aiortc import RTCPeerConnection, RTCSessionDescription
-from aiortc.contrib.media import MediaPlayer
-
-async def main():
-    pc = RTCPeerConnection()
-    media = Path('samples/virtual-inputs/media/sample_video.mp4').resolve()
-    player = MediaPlayer(media.as_posix())
-    if player.video:
-        pc.addTrack(player.video)
-    if player.audio:
-        pc.addTrack(player.audio)
-    offer = await pc.createOffer()
-    await pc.setLocalDescription(offer)
-
-    async with aiohttp.ClientSession() as session:
-        resp = await session.post(
-            'http://localhost:444/input/devices/virtual/webrtc/offer',
-            json={'sdp': pc.localDescription.sdp}
-        )
-        answer = await resp.json()
-
-    await pc.setRemoteDescription(
-        RTCSessionDescription(sdp=answer['sdp'], type='answer')
-    )
-    print('Streaming... press Ctrl+C to stop')
-    await asyncio.Future()
-
-asyncio.run(main())
-PY
-EOF
-
-chmod +x run_webrtc.sh
+cd samples/virtual-inputs
 ./run_webrtc.sh
 ```
+Override the API target with `API_URL=http://localhost:444/input/devices/virtual/webrtc/offer ./run_webrtc.sh` if needed.
 When the WebRTC negotiation completes, reload `/input/devices/virtual/feed` to watch the mirrored stream.
 
 ## Pause/stop helpers
