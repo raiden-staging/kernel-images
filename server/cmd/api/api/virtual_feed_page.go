@@ -150,8 +150,8 @@ func renderVirtualFeedPage(fit, source, format string) string {
         decoderInit: false,
       };
       const jsmpegSources = [
-        'https://cdn.jsdelivr.net/npm/jsmpeg@0.2.6/build/jsmpeg.min.js',
-        'https://unpkg.com/jsmpeg@0.2.6/build/jsmpeg.min.js',
+        'https://cdn.jsdelivr.net/npm/jsmpeg@1.0.0/jsmpg.js',
+        'https://unpkg.com/jsmpeg@1.0.0/jsmpg.js',
       ];
 
       function loadScript(src) {
