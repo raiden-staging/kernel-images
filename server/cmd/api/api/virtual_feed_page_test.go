@@ -89,6 +89,21 @@ func TestGetVirtualInputFeed_AutoDetectsSources(t *testing.T) {
 	})
 }
 
+func TestVirtualFeedPageUsesWebsocketURLs(t *testing.T) {
+	t.Parallel()
+
+	svc, _ := newTestApiService(t, recorder.NewFFmpegManager())
+	resp, err := svc.GetVirtualInputFeed(context.Background(), oapi.GetVirtualInputFeedRequestObject{
+		Params: oapi.GetVirtualInputFeedParams{},
+	})
+	require.NoError(t, err)
+	body := readFeedBody(t, resp)
+
+	require.Contains(t, body, "function toWebSocketURL")
+	require.Contains(t, body, "new JSMpeg.Player(toWebSocketURL")
+	require.Contains(t, body, "new WebSocket(toWebSocketURL")
+}
+
 func TestVirtualFeedSocketBroadcasts(t *testing.T) {
 	t.Parallel()
 

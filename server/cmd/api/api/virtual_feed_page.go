@@ -181,6 +181,18 @@ func renderVirtualFeedPage(fit, source, format string) string {
         throw lastErr || new Error('jsmpeg failed to load');
       }
 
+      function toWebSocketURL(raw) {
+        try {
+          const url = new URL(raw, window.location.href);
+          if (url.protocol === 'http:') url.protocol = 'ws:';
+          if (url.protocol === 'https:') url.protocol = 'wss:';
+          return url.toString();
+        } catch (err) {
+          console.error('invalid websocket url', raw, err);
+          return raw;
+        }
+      }
+
       function setStatus(msg, isError = false) {
         statusEl.textContent = msg;
         statusEl.style.color = isError ? '#ffb4b4' : '#d9dee9';
@@ -302,6 +314,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
           startIvfWebsocket(url);
           return;
         }
+        const wsURL = toWebSocketURL(url);
         try {
           await ensureJsmpeg();
         } catch (err) {
@@ -312,7 +325,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
         canvasEl.classList.remove('hidden');
         videoEl.classList.add('hidden');
         hideStatus();
-        state.jsmpeg = new JSMpeg.Player(new URL(url, window.location.href).toString(), {
+        state.jsmpeg = new JSMpeg.Player(wsURL, {
           canvas: canvasEl,
           autoplay: true,
           audio: false,
@@ -329,7 +342,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
         videoEl.classList.add('hidden');
         hideStatus();
 
-        const socket = new WebSocket(new URL(url, window.location.href));
+        const socket = new WebSocket(toWebSocketURL(url));
         socket.binaryType = 'arraybuffer';
         state.ws = socket;
 
