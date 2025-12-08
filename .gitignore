@@ -188,3 +188,8 @@ infra/tests/*
 
 # mise-en-place
 .mise.toml
+
+# uv
+.venv/
+env/
+venv/
