@@ -88,3 +88,40 @@ func TestBuildInputArgsIncludesFormatForRealtimeSources(t *testing.T) {
 	audioArgs := buildInputArgs(&MediaSource{Type: SourceTypeWebRTC, URL: "/tmp/audio.pipe", Format: "ogg"})
 	require.Equal(t, []string{"-thread_queue_size", "64", "-f", "ogg", "-i", "/tmp/audio.pipe"}, audioArgs)
 }
+
+func TestNormalizeConfigAcceptsRealtimeSourcesWithoutURLs(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager("", "", "", "", 0, 0, 0, nil)
+	cfg, err := mgr.normalizeConfig(Config{
+		Video: &MediaSource{Type: SourceTypeSocket},
+		Audio: &MediaSource{Type: SourceTypeWebRTC},
+	})
+	require.NoError(t, err)
+	require.Equal(t, SourceTypeSocket, cfg.Video.Type)
+	require.Equal(t, defaultVideoPipe, cfg.Video.URL)
+	require.Equal(t, "mpegts", cfg.Video.Format)
+	require.Equal(t, SourceTypeWebRTC, cfg.Audio.Type)
+	require.Equal(t, defaultAudioPipe, cfg.Audio.URL)
+	require.Equal(t, "ogg", cfg.Audio.Format)
+}
+
+func TestNormalizeConfigValidatesTypesAndNormalizes(t *testing.T) {
+	t.Parallel()
+
+	mgr := NewManager("", "", "", "", 0, 0, 0, nil)
+
+	_, err := mgr.normalizeConfig(Config{Video: &MediaSource{}})
+	require.ErrorIs(t, err, ErrVideoTypeRequired)
+
+	_, err = mgr.normalizeConfig(Config{Audio: &MediaSource{}})
+	require.ErrorIs(t, err, ErrAudioTypeRequired)
+
+	cfg, err := mgr.normalizeConfig(Config{
+		Video: &MediaSource{Type: "WebRTC"},
+		Audio: &MediaSource{Type: "SoCkEt"},
+	})
+	require.NoError(t, err)
+	require.Equal(t, SourceTypeWebRTC, cfg.Video.Type)
+	require.Equal(t, SourceTypeSocket, cfg.Audio.Type)
+}

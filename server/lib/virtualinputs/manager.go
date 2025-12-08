@@ -413,17 +413,25 @@ func (m *Manager) normalizeConfig(cfg Config) (Config, error) {
 	if cfg.Video == nil && cfg.Audio == nil {
 		return Config{}, ErrMissingSources
 	}
-	if cfg.Video != nil && cfg.Video.URL == "" && cfg.Video.Type != SourceTypeSocket && cfg.Video.Type != SourceTypeWebRTC {
-		return Config{}, ErrVideoURLRequired
+
+	if cfg.Video != nil {
+		cfg.Video.Type = normalizeSourceType(cfg.Video.Type)
 	}
-	if cfg.Audio != nil && cfg.Audio.URL == "" && cfg.Audio.Type != SourceTypeSocket && cfg.Audio.Type != SourceTypeWebRTC {
-		return Config{}, ErrAudioURLRequired
+	if cfg.Audio != nil {
+		cfg.Audio.Type = normalizeSourceType(cfg.Audio.Type)
 	}
+
 	if cfg.Video != nil && cfg.Video.Type == "" {
 		return Config{}, ErrVideoTypeRequired
 	}
 	if cfg.Audio != nil && cfg.Audio.Type == "" {
 		return Config{}, ErrAudioTypeRequired
+	}
+	if cfg.Video != nil && cfg.Video.URL == "" && cfg.Video.Type != SourceTypeSocket && cfg.Video.Type != SourceTypeWebRTC {
+		return Config{}, ErrVideoURLRequired
+	}
+	if cfg.Audio != nil && cfg.Audio.URL == "" && cfg.Audio.Type != SourceTypeSocket && cfg.Audio.Type != SourceTypeWebRTC {
+		return Config{}, ErrAudioURLRequired
 	}
 
 	out := cfg
@@ -894,6 +902,21 @@ func buildIngestStatus(cfg Config) *IngestStatus {
 		return nil
 	}
 	return &status
+}
+
+func normalizeSourceType(t SourceType) SourceType {
+	switch strings.TrimSpace(strings.ToLower(string(t))) {
+	case string(SourceTypeStream):
+		return SourceTypeStream
+	case string(SourceTypeFile):
+		return SourceTypeFile
+	case string(SourceTypeSocket):
+		return SourceTypeSocket
+	case string(SourceTypeWebRTC):
+		return SourceTypeWebRTC
+	default:
+		return t
+	}
 }
 
 func normalizeSource(src *MediaSource, isVideo bool) *MediaSource {
