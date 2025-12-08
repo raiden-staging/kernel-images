@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import fs from 'node:fs';
-import { once } from 'node:events';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,27 +14,88 @@ try {
 }
 
 const HOST = process.env.VIRTUAL_INPUT_HOST || 'localhost:444';
-const OUT_FILE = process.env.FEED_CAPTURE_FILE || 'feed_capture.mpegts';
 const FEED_URL = process.env.FEED_SOCKET_URL || `ws://${HOST}/input/devices/virtual/feed/socket`;
-const outPath = resolve(__dirname, OUT_FILE);
+const DEFAULT_BASE = 'feed_capture';
+const DEFAULT_FORMAT = 'mpegts';
+const CUSTOM_PATH = process.env.FEED_CAPTURE_FILE ? resolve(__dirname, process.env.FEED_CAPTURE_FILE) : null;
+
+let formatHint = null;
+let outPath = CUSTOM_PATH;
+let outStream = null;
+let captureClosed = false;
+let closeResolver;
+const closed = new Promise((resolve) => {
+  closeResolver = resolve;
+});
+
+function resolveClosed() {
+  if (captureClosed) {
+    return;
+  }
+  captureClosed = true;
+  closeResolver();
+}
+
+function formatExtension(format) {
+  if (!format) {
+    return '.bin';
+  }
+  switch (format.toLowerCase()) {
+    case 'mpegts':
+      return '.mpegts';
+    case 'ivf':
+      return '.ivf';
+    default:
+      return format.startsWith('.') ? format : `.${format}`;
+  }
+}
+
+function determinePath() {
+  if (CUSTOM_PATH) {
+    return CUSTOM_PATH;
+  }
+  const ext = formatExtension(formatHint || DEFAULT_FORMAT);
+  return resolve(__dirname, `${DEFAULT_BASE}${ext}`);
+}
+
+function ensureStream() {
+  if (outStream) {
+    return outStream;
+  }
+  outPath = determinePath();
+  console.log(`feed capture writing to ${outPath} (format ${formatHint || DEFAULT_FORMAT})`);
+  outStream = fs.createWriteStream(outPath);
+  outStream.once('close', resolveClosed);
+  return outStream;
+}
 
 const ws = new WebSocket(FEED_URL);
 ws.binaryType = 'arraybuffer';
 
-const out = fs.createWriteStream(outPath);
-ws.on('open', () => console.log(`feed connected -> ${FEED_URL} (writing to ${outPath})`));
+ws.on('open', () => {
+  console.log(`feed connected -> ${FEED_URL}`);
+});
 ws.on('message', (msg) => {
   if (typeof msg === 'string') {
-    console.log(`format hint: ${msg}`);
+    const fmt = msg.trim();
+    if (fmt) {
+      formatHint = fmt;
+      console.log(`format hint: ${formatHint}`);
+    }
     return;
   }
-  out.write(new Uint8Array(msg));
+  const stream = ensureStream();
+  stream.write(new Uint8Array(msg));
 });
 ws.on('close', () => {
   console.log('feed websocket closed');
-  out.end();
+  if (outStream) {
+    outStream.end();
+  } else {
+    resolveClosed();
+  }
 });
 ws.on('error', (err) => console.error('feed socket error', err));
 
-await once(out, 'close');
+await closed;
 console.log('capture saved');
