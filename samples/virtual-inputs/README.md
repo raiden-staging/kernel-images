@@ -72,6 +72,15 @@ await new Promise(() => {});
 NODE
 ```
 To stream MP4 over the websocket instead, reconfigure with `"format": "mp4"` for the video source and point the `video` path in the snippet to `samples/virtual-inputs/media/sample_video.mp4`. MP4 requires the full header before playback, so let the chunker finish before expecting video in the preview.
+```bash
+curl -s http://localhost:444/input/devices/virtual/configure \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video": {"type": "socket", "format": "mp4"},
+    "audio": {"type": "socket", "format": "mp3"},
+    "width": 1280, "height": 720, "frame_rate": 30
+  }' | jq
+```
 
 Open the live preview while the sockets run: `http://localhost:444/input/devices/virtual/feed?fit=cover`  
 Discover the preview websocket URL/format: `curl http://localhost:444/input/devices/virtual/feed/socket/info | jq`
