@@ -21,6 +21,7 @@ func (s *ApiService) HandleVirtualInputVideoSocket(w http.ResponseWriter, r *htt
 
 func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Request, kind string) {
 	log := logger.FromContext(r.Context())
+	log.Info("virtual input socket connection", "kind", kind)
 	status := s.virtualInputs.Status(r.Context())
 	var endpoint *virtualinputs.IngestEndpoint
 	switch kind {
@@ -95,16 +96,22 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 		if len(data) == 0 {
 			continue
 		}
+		log.Info("received websocket chunk", "kind", kind, "len", len(data))
 		if _, err := pipe.Write(data); err != nil {
 			log.Error("failed writing websocket chunk to pipe", "err", err, "kind", kind)
 			return
 		}
-		if kind == "video" && s.virtualFeed != nil {
-			format := endpoint.Format
-			if format == "" {
-				format = "mpegts"
+		if kind == "video" {
+			if s.virtualFeed == nil {
+				log.Warn("virtual feed not available for websocket broadcasting")
+			} else {
+				format := endpoint.Format
+				if format == "" {
+					format = "mpegts"
+				}
+				log.Info("broadcasting chunk to virtual feed", "format", format, "len", len(data))
+				s.virtualFeed.broadcastWithFormat(format, data)
 			}
-			s.virtualFeed.broadcastWithFormat(format, data)
 		}
 	}
 }
