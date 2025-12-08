@@ -1,6 +1,9 @@
 #!/usr/bin/env sh
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
 if command -v python3 >/dev/null 2>&1; then
     PY=python3
 elif command -v python >/dev/null 2>&1; then
@@ -31,7 +34,9 @@ fi
 . .venv/bin/activate
 "$UV" pip install aiohttp aiortc
 
-$PY - <<'PY'
+API_URL="${API_URL:-http://localhost:444/input/devices/virtual/webrtc/offer}"
+
+$PY - <<PY
 import asyncio, aiohttp
 from pathlib import Path
 from aiortc import RTCPeerConnection, RTCSessionDescription
@@ -39,7 +44,7 @@ from aiortc.contrib.media import MediaPlayer
 
 async def main():
     pc = RTCPeerConnection()
-    media = Path('samples/virtual-inputs/media/sample_video.mp4').resolve()
+    media = Path("media/sample_video.mp4").resolve()
     player = MediaPlayer(media.as_posix())
     if player.video:
         pc.addTrack(player.video)
@@ -50,15 +55,15 @@ async def main():
 
     async with aiohttp.ClientSession() as session:
         resp = await session.post(
-            'http://localhost:444/input/devices/virtual/webrtc/offer',
-            json={'sdp': pc.localDescription.sdp}
+            "${API_URL}",
+            json={"sdp": pc.localDescription.sdp},
         )
         answer = await resp.json()
 
     await pc.setRemoteDescription(
-        RTCSessionDescription(sdp=answer['sdp'], type='answer')
+        RTCSessionDescription(sdp=answer["sdp"], type="answer")
     )
-    print('Streaming... press Ctrl+C to stop')
+    print("Streaming... press Ctrl+C to stop")
     await asyncio.Future()
 
 asyncio.run(main())
