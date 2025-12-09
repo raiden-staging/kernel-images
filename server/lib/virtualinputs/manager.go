@@ -270,10 +270,14 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 		return m.statusLocked(), err
 	}
 
+	// Open keepalives BEFORE starting FFmpeg so pipes have readers/writers available.
+	// This prevents FFmpeg from blocking or failing when opening the FIFO.
+	m.openPipeKeepalivesLocked(ctx, normalized, startPaused)
+
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
+		m.closePipeKeepalivesLocked()
 		return m.statusLocked(), err
 	}
-	m.openPipeKeepalivesLocked(ctx, normalized, startPaused)
 
 	log.Info("virtual inputs started", "state", func() string {
 		if startPaused {
@@ -317,10 +321,12 @@ func (m *Manager) Pause(ctx context.Context) (Status, error) {
 	if err != nil {
 		return m.statusLocked(), err
 	}
+	// Open keepalives before starting FFmpeg
+	m.openPipeKeepalivesLocked(ctx, *m.lastCfg, true)
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
+		m.closePipeKeepalivesLocked()
 		return m.statusLocked(), err
 	}
-	m.openPipeKeepalivesLocked(ctx, *m.lastCfg, true)
 	now := time.Now()
 	m.startedAt = &now
 	m.state = statePaused
@@ -348,10 +354,12 @@ func (m *Manager) Resume(ctx context.Context) (Status, error) {
 	if err != nil {
 		return m.statusLocked(), err
 	}
+	// Open keepalives before starting FFmpeg
+	m.openPipeKeepalivesLocked(ctx, *m.lastCfg, false)
 	if err := m.startFFmpegLocked(ctx, args); err != nil {
+		m.closePipeKeepalivesLocked()
 		return m.statusLocked(), err
 	}
-	m.openPipeKeepalivesLocked(ctx, *m.lastCfg, false)
 	now := time.Now()
 	m.startedAt = &now
 	m.state = stateRunning
