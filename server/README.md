@@ -132,17 +132,20 @@ Open `http://localhost:10001/input/devices/virtual/feed` for a fullscreen, muted
 
 ### Useful Requests
 
-Configure a virtual webcam + mic from mixed sources (looping the audio file):
+Configure a virtual webcam + mic from mixed sources:
 
 ```bash
 curl -X POST http://localhost:10001/input/devices/virtual/configure \
   -H "Content-Type: application/json" \
   -d '{
-    "video": {"type": "stream", "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"},
-    "audio": {"type": "file", "url": "https://download.samplelib.com/mp3/sample-15s.mp3", "loop": true},
-    "width": 1280,
-    "height": 720,
-    "frame_rate": 30
+    "video": {
+      "type": "stream",
+      "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+      "width": 1280,
+      "height": 720,
+      "frame_rate": 30
+    },
+    "audio": {"type": "file", "url": "https://download.samplelib.com/mp3/sample-15s.mp3"}
   }'
 ```
 

@@ -259,7 +259,12 @@ func renderVirtualFeedPage(fit, source, format string) string {
 
       function classifySource(src, fmt) {
         if (!src) return null;
-        if (src.startsWith('ws://') || src.startsWith('wss://') || src.startsWith('/input/devices/virtual/feed/socket')) {
+        if (
+          src.startsWith('ws://') ||
+          src.startsWith('wss://') ||
+          src.startsWith('/input/devices/virtual/feed/socket') ||
+          src.includes('/input/devices/virtual/feed/socket')
+        ) {
           return { kind: 'ws', url: src, format: fmt || (defaultFormat || 'mpegts') };
         }
         if (src.startsWith('http://') || src.startsWith('https://') || src.startsWith('/')) {
