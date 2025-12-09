@@ -16,9 +16,9 @@ try {
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const HOST = process.env.VIRTUAL_INPUT_HOST || 'localhost:444';
-const VIDEO_FORMAT = (process.env.VIDEO_FORMAT || 'mpegts').toLowerCase();
+const VIDEO_FORMAT = 'mpegts';
 const AUDIO_FORMAT = (process.env.AUDIO_FORMAT || 'mp3').toLowerCase();
-const VIDEO_FILE = process.env.VIDEO_FILE || (VIDEO_FORMAT === 'mp4' ? 'sample_video.mp4' : 'sample_video.ts');
+const VIDEO_FILE = process.env.VIDEO_FILE || 'sample_video.ts';
 const AUDIO_FILE = process.env.AUDIO_FILE || 'sample_audio.mp3';
 const parsedDelay = Number(process.env.CHUNK_DELAY_MS || '35');
 const CHUNK_DELAY_MS = Number.isFinite(parsedDelay) ? parsedDelay : 35;

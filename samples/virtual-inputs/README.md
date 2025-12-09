@@ -41,13 +41,13 @@ curl -s http://localhost:444/input/devices/virtual/configure \
     "audio": {"type": "socket", "format": "mp3"}
   }' | jq
 ```
-Use the bundled chunk sender to stream TS or MP4 video (and MP3 audio) in real chunks and keep the sockets alive:
+Socket ingest is validated: video must be MPEG-TS chunks and audio must be MP3.
+Use the bundled chunk sender to stream TS video (and MP3 audio) in real chunks and keep the sockets alive:
 ```bash
 npm install ws
 node samples/virtual-inputs/ws_chunk_ingest.js
 ```
-- Defaults: TS video + MP3 audio. Set `VIDEO_FORMAT=mp4` to use the MP4 sample or override `VIDEO_FILE/AUDIO_FILE`, `VIRTUAL_INPUT_HOST`, or `CHUNK_DELAY_MS`.
-- Reconfigure the ingest to match when switching formats, e.g. set `"format": "mp4"` for the video source before sending MP4 chunks.
+- Defaults: TS video + MP3 audio. Override `VIDEO_FILE/AUDIO_FILE`, `VIRTUAL_INPUT_HOST`, or `CHUNK_DELAY_MS` as needed.
 
 Open the live preview while the sockets run: `http://localhost:444/input/devices/virtual/feed?fit=cover`  
 Discover the preview websocket URL/format: `curl http://localhost:444/input/devices/virtual/feed/socket/info | jq`
