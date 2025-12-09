@@ -326,12 +326,16 @@ func renderVirtualFeedPage(fit, source, format string) string {
         videoEl.classList.add('hidden');
         hideStatus();
         state.jsmpeg = new JSMpeg.Player(wsURL, {
-          canvas: canvasEl,
-          autoplay: true,
-          audio: false,
-          loop: true,
-        });
-      }
+        canvas: canvasEl,
+        autoplay: true,
+        audio: false,
+        loop: true,
+        onDisconnect: () => {
+          setStatus('Feed disconnected. Reconnecting…');
+          setTimeout(() => startWebsocket(url, format), 900);
+        },
+      });
+    }
 
       function startIvfWebsocket(url) {
         if (!('VideoDecoder' in window)) {
@@ -432,10 +436,15 @@ func renderVirtualFeedPage(fit, source, format string) string {
           process();
         };
         socket.onclose = () => {
+          resetDecoderState();
+          buffer = new Uint8Array();
           setStatus('Feed disconnected. Reconnecting…');
           setTimeout(() => startWebsocket(url, 'ivf'), 1200);
         };
-        socket.onerror = () => setStatus('Feed websocket error', true);
+        socket.onerror = () => {
+          resetDecoderState();
+          setStatus('Feed websocket error', true);
+        };
       }
 
       start().catch((err) => {
