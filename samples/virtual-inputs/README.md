@@ -3,9 +3,15 @@
 These examples target `/input/devices/virtual/*` and pair with the fullscreen preview page served from `/input/devices/virtual/feed`. When using the Docker helpers, host traffic should go to `http://localhost:444/...`; inside the container the API listens on `10001`. Override the preview with `fit` (CSS object-fit) or `source` query params as needed.
 
 Local media helpers live in `samples/virtual-inputs/media/`:
-- `sample_video.ts` (small MPEG-TS video)
+- `sample_video_mpeg1.ts` (MPEG-1 video in MPEG-TS container - required for JSMpeg playback on feed page)
+- `sample_video.ts` (H.264 MPEG-TS - for file-based inputs only)
 - `sample_video.mp4` (longer MP4 clip)
 - `sample_audio.mp3` and `sample_audio.wav`
+
+**Important**: The feed page uses JSMpeg for WebSocket video playback, which only supports **MPEG-1 video codec**. For real-time streaming, encode your source with MPEG-1:
+```bash
+ffmpeg -i input.mp4 -c:v mpeg1video -b:v 1500k -f mpegts output.ts
+```
 
 ## HTTP/HLS inputs
 Configure both video and audio from URLs and immediately preview them in the feed page:
