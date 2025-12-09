@@ -33,6 +33,8 @@ type SocketStreamer struct {
 	pr      *io.PipeReader
 	pw      *io.PipeWriter
 	clients map[WebSocketConn]struct{}
+
+	introBuf []byte
 }
 
 func NewSocketStreamer(id string, params Params, ffmpegPath string, ctrl scaletozero.Controller) (*SocketStreamer, error) {
@@ -117,6 +119,7 @@ func (s *SocketStreamer) Start(ctx context.Context) error {
 	s.startedAt = time.Now()
 	s.pr = pr
 	s.pw = pw
+	s.introBuf = nil
 	s.mu.Unlock()
 
 	if err := cmd.Start(); err != nil {
@@ -177,6 +180,7 @@ func (s *SocketStreamer) Stop(ctx context.Context) error {
 		_ = c.Close(int(websocket.StatusNormalClosure), "stream stopped")
 	}
 	s.clients = make(map[WebSocketConn]struct{})
+	s.introBuf = nil
 	s.mu.Unlock()
 
 	return s.stz.Enable(context.WithoutCancel(ctx))
@@ -211,7 +215,12 @@ func (s *SocketStreamer) RegisterClient(conn WebSocketConn) error {
 		s.clients = make(map[WebSocketConn]struct{})
 	}
 	s.clients[conn] = struct{}{}
+	intro := append([]byte(nil), s.introBuf...)
 	s.mu.Unlock()
+
+	if len(intro) > 0 {
+		_ = conn.Write(context.Background(), int(websocket.MessageBinary), intro)
+	}
 
 	return nil
 }
@@ -233,6 +242,16 @@ func (s *SocketStreamer) broadcastLoop(r io.Reader) {
 func (s *SocketStreamer) writeChunk(chunk []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	if cap(s.introBuf)-len(s.introBuf) < len(chunk) && len(s.introBuf) < 512*1024 {
+		remaining := 512*1024 - len(s.introBuf)
+		if remaining > 0 {
+			s.introBuf = append(s.introBuf, chunk[:remaining]...)
+		}
+	} else if len(s.introBuf) < 512*1024 {
+		s.introBuf = append(s.introBuf, chunk...)
+	}
+
 	for c := range s.clients {
 		if err := c.Write(context.Background(), int(websocket.MessageBinary), chunk); err != nil {
 			_ = c.Close(int(websocket.StatusInternalError), "write failed")
