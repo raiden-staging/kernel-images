@@ -2,6 +2,7 @@ package stream
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -55,6 +56,8 @@ func (s *SocketStreamer) Start(ctx context.Context) error {
 	log := logger.FromContext(ctx)
 	runCtx := context.WithoutCancel(ctx)
 
+	keyInt := *s.params.FrameRate * 2
+
 	s.mu.Lock()
 	if s.cmd != nil {
 		s.mu.Unlock()
@@ -85,7 +88,8 @@ func (s *SocketStreamer) Start(ctx context.Context) error {
 		"-preset", "veryfast",
 		"-tune", "zerolatency",
 		"-pix_fmt", "yuv420p",
-		"-g", strconv.Itoa(*s.params.FrameRate*2),
+		"-g", strconv.Itoa(keyInt),
+		"-x264-params", fmt.Sprintf("keyint=%d:min-keyint=%d:scenecut=0:repeat-headers=1", keyInt, keyInt),
 		"-map", "0:v:0",
 		"-map", "1:a:0",
 		"-c:a", "aac",
@@ -94,6 +98,9 @@ func (s *SocketStreamer) Start(ctx context.Context) error {
 		"-ac", "2",
 		"-use_wallclock_as_timestamps", "1",
 		"-fflags", "nobuffer",
+		"-mpegts_flags", "resend_headers",
+		"-muxdelay", "0",
+		"-muxpreload", "0",
 		"-f", "mpegts",
 		"pipe:1",
 	)
@@ -206,8 +213,6 @@ func (s *SocketStreamer) RegisterClient(conn WebSocketConn) error {
 	s.clients[conn] = struct{}{}
 	s.mu.Unlock()
 
-	// best-effort hint
-	_ = conn.Write(context.Background(), int(websocket.MessageText), []byte("mpegts"))
 	return nil
 }
 

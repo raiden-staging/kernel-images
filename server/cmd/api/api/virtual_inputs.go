@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 
@@ -359,6 +360,7 @@ func (s *ApiService) updateVirtualInputIngest(status virtualinputs.Status) {
 
 	if status.Ingest == nil {
 		s.virtualInputsWebRTC.Clear()
+		s.virtualInputsWebRTC.SetSinks(nil, nil)
 		if s.virtualFeed != nil {
 			s.virtualFeed.clear()
 		}
@@ -379,22 +381,28 @@ func (s *ApiService) updateVirtualInputIngest(status virtualinputs.Status) {
 	}
 	s.virtualInputsWebRTC.Configure(videoPath, videoFmt, audioPath, audioFmt)
 
-	if s.virtualFeed != nil {
-		format := ""
-		if status.Ingest.Video == nil {
-			s.virtualFeed.clear()
-			return
-		}
-		format = status.Ingest.Video.Format
-		if format == "" {
-			if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeWebRTC) {
-				format = "ivf"
-			} else if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeSocket) {
-				format = "mpegts"
-			}
-		}
-		if format != "" {
-			s.virtualFeed.setFormat(format)
+	if s.virtualFeed == nil {
+		return
+	}
+
+	format := ""
+	if status.Ingest.Video == nil {
+		s.virtualInputsWebRTC.SetSinks(nil, nil)
+		s.virtualFeed.clear()
+		return
+	}
+	format = status.Ingest.Video.Format
+	if format == "" {
+		if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeWebRTC) {
+			format = "ivf"
+		} else if status.Ingest.Video.Protocol == string(virtualinputs.SourceTypeSocket) {
+			format = "mpegts"
 		}
 	}
+
+	videoSink := s.virtualFeed.writer(format)
+	if format != "" {
+		s.virtualFeed.setFormat(format)
+	}
+	s.virtualInputsWebRTC.SetSinks(videoSink, nil)
 }

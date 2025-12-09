@@ -75,7 +75,18 @@ ws.binaryType = 'arraybuffer';
 ws.on('open', () => {
   console.log(`feed connected -> ${FEED_URL}`);
 });
-ws.on('message', (msg) => {
+ws.on('message', (msg, isBinary) => {
+  // Format hints arrive as text frames, but some websocket clients surface them
+  // as Uint8Array/Buffer even when `isBinary` is false. Treat any non-binary
+  // payload as a hint so it doesn't contaminate the capture file.
+  if (isBinary === false) {
+    const fmt = Buffer.from(msg).toString('utf8').trim();
+    if (fmt) {
+      formatHint = fmt;
+      console.log(`format hint: ${formatHint}`);
+    }
+    return;
+  }
   if (typeof msg === 'string') {
     const fmt = msg.trim();
     if (fmt) {
