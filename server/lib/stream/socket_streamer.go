@@ -37,6 +37,8 @@ type SocketStreamer struct {
 	introBuf []byte
 }
 
+const introMirrorLimit = 512 * 1024
+
 func NewSocketStreamer(id string, params Params, ffmpegPath string, ctrl scaletozero.Controller) (*SocketStreamer, error) {
 	if params.FrameRate == nil || params.DisplayNum == nil {
 		return nil, ErrInvalidParams
@@ -243,13 +245,14 @@ func (s *SocketStreamer) writeChunk(chunk []byte) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if cap(s.introBuf)-len(s.introBuf) < len(chunk) && len(s.introBuf) < 512*1024 {
-		remaining := 512*1024 - len(s.introBuf)
+	if len(s.introBuf) < introMirrorLimit {
+		remaining := introMirrorLimit - len(s.introBuf)
+		if remaining > len(chunk) {
+			remaining = len(chunk)
+		}
 		if remaining > 0 {
 			s.introBuf = append(s.introBuf, chunk[:remaining]...)
 		}
-	} else if len(s.introBuf) < 512*1024 {
-		s.introBuf = append(s.introBuf, chunk...)
 	}
 
 	for c := range s.clients {
