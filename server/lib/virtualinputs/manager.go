@@ -255,31 +255,21 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 	}
 
 	m.ingest = buildIngestStatus(normalized)
-	if needsVideoPipe(normalized) {
-		if err := preparePipe(normalized.Video.URL); err != nil {
-			return m.statusLocked(), err
-		}
-		m.videoPipe = normalized.Video.URL
-	}
-	if needsAudioPipe(normalized) {
-		if err := preparePipe(normalized.Audio.URL); err != nil {
-			return m.statusLocked(), err
-		}
-		m.audioPipe = normalized.Audio.URL
-	}
+	// For realtime sources, we don't need pipes - data goes directly to broadcaster/pulse
+	// Only create pipes for non-realtime sources that FFmpeg will read from
+	m.videoPipe = ""
+	m.audioPipe = ""
 
 	args, err := m.buildFFmpegArgs(normalized, startPaused)
 	if err != nil {
 		return m.statusLocked(), err
 	}
 
-	// Open keepalives BEFORE starting FFmpeg so pipes have readers/writers available.
-	// This prevents FFmpeg from blocking or failing when opening the FIFO.
-	m.openPipeKeepalivesLocked(ctx, normalized, startPaused)
-
-	if err := m.startFFmpegLocked(ctx, args); err != nil {
-		m.closePipeKeepalivesLocked()
-		return m.statusLocked(), err
+	// Only start FFmpeg if we have args (non-realtime sources or paused mode)
+	if args != nil {
+		if err := m.startFFmpegLocked(ctx, args); err != nil {
+			return m.statusLocked(), err
+		}
 	}
 
 	log.Info("virtual inputs started", "state", func() string {
@@ -287,7 +277,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 			return statePaused
 		}
 		return stateRunning
-	}(), "video_device", m.videoDevice, "audio_sink", m.audioSink, "mode", m.mode, "video_file", m.videoFile, "audio_file", m.audioFile)
+	}(), "video_device", m.videoDevice, "audio_sink", m.audioSink, "mode", m.mode, "video_file", m.videoFile, "audio_file", m.audioFile, "ffmpeg", args != nil)
 
 	m.lastCfg = &normalized
 	if startPaused {

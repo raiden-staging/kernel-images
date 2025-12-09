@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os/exec"
 	"sync"
 
 	"github.com/pion/webrtc/v4"
@@ -12,8 +13,9 @@ import (
 	"github.com/pion/webrtc/v4/pkg/media/oggwriter"
 )
 
-// WebRTCIngestor handles inbound WebRTC offers and writes received media into named pipes that
-// the FFmpeg pipeline already consumes.
+// WebRTCIngestor handles inbound WebRTC offers and writes received media to sinks.
+// Video goes to the broadcaster (for the virtual feed page).
+// Audio goes to PulseAudio via ffmpeg.
 type WebRTCIngestor struct {
 	mu     sync.Mutex
 	config *webrtcIngestConfig
@@ -36,7 +38,9 @@ func NewWebRTCIngestor() *WebRTCIngestor {
 	return &WebRTCIngestor{}
 }
 
-// Configure sets the target pipes/formats for subsequent WebRTC offers.
+// Configure sets the target formats for subsequent WebRTC offers.
+// Note: paths are kept for API compatibility but video goes directly to sink,
+// and audio goes to PulseAudio via ffmpeg.
 func (w *WebRTCIngestor) Configure(videoPath, videoFormat, audioPath, audioFormat string) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -63,7 +67,9 @@ func (w *WebRTCIngestor) Clear() {
 	w.config = nil
 }
 
-// SetSinks sets optional mirror writers for incoming media.
+// SetSinks sets the writers for incoming media.
+// Video sink is required for the virtual feed broadcaster.
+// Audio sink is optional (audio goes to PulseAudio via ffmpeg).
 func (w *WebRTCIngestor) SetSinks(video io.Writer, audio io.Writer) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -71,7 +77,7 @@ func (w *WebRTCIngestor) SetSinks(video io.Writer, audio io.Writer) {
 	w.audioSink = audio
 }
 
-// HandleOffer negotiates a PeerConnection and starts forwarding tracks into the configured pipes.
+// HandleOffer negotiates a PeerConnection and starts forwarding tracks.
 func (w *WebRTCIngestor) HandleOffer(ctx context.Context, offerSDP string) (string, error) {
 	runCtx := context.WithoutCancel(ctx)
 
@@ -81,9 +87,12 @@ func (w *WebRTCIngestor) HandleOffer(ctx context.Context, offerSDP string) (stri
 		w.mu.Unlock()
 		return "", fmt.Errorf("webrtc ingest not configured")
 	}
-	if cfg.videoPath == "" && cfg.audioPath == "" {
+	// We need either video or audio configured
+	hasVideo := cfg.videoPath != "" || cfg.videoFormat != ""
+	hasAudio := cfg.audioPath != "" || cfg.audioFormat != ""
+	if !hasVideo && !hasAudio {
 		w.mu.Unlock()
-		return "", fmt.Errorf("webrtc ingest paths not configured")
+		return "", fmt.Errorf("webrtc ingest not configured for video or audio")
 	}
 	if w.cancel != nil {
 		w.cancel()
@@ -102,6 +111,7 @@ func (w *WebRTCIngestor) HandleOffer(ctx context.Context, offerSDP string) (stri
 	ctx, cancel := context.WithCancel(runCtx)
 	w.pc = pc
 	w.cancel = cancel
+	videoSink := w.videoSink
 	w.mu.Unlock()
 
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
@@ -114,12 +124,12 @@ func (w *WebRTCIngestor) HandleOffer(ctx context.Context, offerSDP string) (stri
 	pc.OnTrack(func(track *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		switch track.Kind() {
 		case webrtc.RTPCodecTypeVideo:
-			if cfg.videoPath == "" {
+			if !hasVideo {
 				return
 			}
-			_ = w.forwardVideo(ctx, cfg, track)
+			_ = w.forwardVideo(ctx, cfg, track, videoSink)
 		case webrtc.RTPCodecTypeAudio:
-			if cfg.audioPath == "" {
+			if !hasAudio {
 				return
 			}
 			_ = w.forwardAudio(ctx, cfg, track)
@@ -152,7 +162,8 @@ func (w *WebRTCIngestor) HandleOffer(ctx context.Context, offerSDP string) (stri
 	return local.SDP, nil
 }
 
-func (w *WebRTCIngestor) forwardVideo(ctx context.Context, cfg *webrtcIngestConfig, track *webrtc.TrackRemote) error {
+// forwardVideo writes incoming video RTP packets as IVF to the video sink (broadcaster).
+func (w *WebRTCIngestor) forwardVideo(ctx context.Context, cfg *webrtcIngestConfig, track *webrtc.TrackRemote, videoSink io.Writer) error {
 	if cfg.videoFormat != "" && cfg.videoFormat != "ivf" {
 		return fmt.Errorf("unsupported video format %s", cfg.videoFormat)
 	}
@@ -160,22 +171,11 @@ func (w *WebRTCIngestor) forwardVideo(ctx context.Context, cfg *webrtcIngestConf
 		return fmt.Errorf("unsupported video codec %s", track.Codec().MimeType)
 	}
 
-	out, err := OpenPipeWriter(cfg.videoPath, DefaultPipeOpenTimeout)
-	if err != nil {
-		return err
-	}
-	defer out.Close() // best-effort on exit
-
-	w.mu.Lock()
-	videoSink := w.videoSink
-	w.mu.Unlock()
-
-	target := io.Writer(out)
-	if videoSink != nil {
-		target = io.MultiWriter(out, videoSink)
+	if videoSink == nil {
+		return fmt.Errorf("video sink not configured")
 	}
 
-	writer, err := ivfwriter.NewWith(target)
+	writer, err := ivfwriter.NewWith(videoSink)
 	if err != nil {
 		return fmt.Errorf("create ivf writer: %w", err)
 	}
@@ -200,6 +200,7 @@ func (w *WebRTCIngestor) forwardVideo(ctx context.Context, cfg *webrtcIngestConf
 	}
 }
 
+// forwardAudio pipes incoming audio RTP packets through ffmpeg to PulseAudio.
 func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConfig, track *webrtc.TrackRemote) error {
 	if cfg.audioFormat != "" && cfg.audioFormat != "ogg" {
 		return fmt.Errorf("unsupported audio format %s", cfg.audioFormat)
@@ -208,26 +209,47 @@ func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConf
 		return fmt.Errorf("unsupported audio codec %s", track.Codec().MimeType)
 	}
 
-	out, err := OpenPipeWriter(cfg.audioPath, DefaultPipeOpenTimeout)
-	if err != nil {
-		return err
+	// Create a pipe to connect oggwriter output to ffmpeg input
+	pr, pw := io.Pipe()
+
+	// Start ffmpeg to decode OGG/Opus and output to PulseAudio
+	args := []string{
+		"-hide_banner", "-loglevel", "warning",
+		"-f", "ogg",
+		"-i", "pipe:0",
+		"-ac", "2",
+		"-ar", "48000",
+		"-f", "pulse",
+		"audio_input",
 	}
-	defer out.Close()
 
-	w.mu.Lock()
-	audioSink := w.audioSink
-	w.mu.Unlock()
+	cmd := exec.CommandContext(ctx, "ffmpeg", args...)
+	cmd.Stdin = pr
 
-	target := io.Writer(out)
-	if audioSink != nil {
-		target = io.MultiWriter(out, audioSink)
+	if err := cmd.Start(); err != nil {
+		pw.Close()
+		pr.Close()
+		return fmt.Errorf("failed to start ffmpeg for audio: %w", err)
 	}
 
-	writer, err := oggwriter.NewWith(target, track.Codec().ClockRate, track.Codec().Channels)
+	// Clean up ffmpeg when done
+	go func() {
+		_ = cmd.Wait()
+	}()
+
+	// Create OGG writer that writes to the pipe
+	writer, err := oggwriter.NewWith(pw, track.Codec().ClockRate, track.Codec().Channels)
 	if err != nil {
+		pw.Close()
+		pr.Close()
 		return fmt.Errorf("create ogg writer: %w", err)
 	}
-	defer writer.Close()
+
+	defer func() {
+		writer.Close()
+		pw.Close()
+		pr.Close()
+	}()
 
 	for {
 		select {

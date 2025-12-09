@@ -3,6 +3,7 @@ package api
 import (
 	"io"
 	"net/http"
+	"os/exec"
 
 	"github.com/coder/websocket"
 
@@ -17,12 +18,12 @@ const (
 	socketReadLimit = 64 * 1024 * 1024
 )
 
-// HandleVirtualInputAudioSocket upgrades the connection and streams binary chunks into the audio FIFO.
+// HandleVirtualInputAudioSocket upgrades the connection and streams binary chunks to PulseAudio.
 func (s *ApiService) HandleVirtualInputAudioSocket(w http.ResponseWriter, r *http.Request) {
 	s.handleVirtualInputSocket(w, r, "audio")
 }
 
-// HandleVirtualInputVideoSocket upgrades the connection and streams binary chunks into the video FIFO.
+// HandleVirtualInputVideoSocket upgrades the connection and streams binary chunks to the virtual feed broadcaster.
 func (s *ApiService) HandleVirtualInputVideoSocket(w http.ResponseWriter, r *http.Request) {
 	s.handleVirtualInputSocket(w, r, "video")
 }
@@ -43,7 +44,7 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	if endpoint == nil || endpoint.Protocol != "socket" || endpoint.Path == "" {
+	if endpoint == nil || endpoint.Protocol != "socket" {
 		http.Error(w, "socket ingest not configured", http.StatusConflict)
 		return
 	}
@@ -81,38 +82,46 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 	conn.SetReadLimit(socketReadLimit)
 	defer conn.Close(websocket.StatusNormalClosure, "done")
 
-	pipe, err := virtualinputs.OpenPipeWriter(endpoint.Path, virtualinputs.DefaultPipeOpenTimeout)
-	if err != nil {
-		log.Error("failed to open ingest pipe", "err", err, "path", endpoint.Path)
-		_ = conn.Close(websocket.StatusInternalError, "pipe unavailable")
-		return
-	}
-	defer pipe.Close()
-
 	// send a tiny hint to the client about the expected format
 	if endpoint.Format != "" {
 		_ = conn.Write(r.Context(), websocket.MessageText, []byte(endpoint.Format))
 	}
 
-	var broadcaster *virtualFeedBroadcaster
-	format := ""
-	if kind == "video" {
-		if s.virtualFeed == nil {
-			log.Warn("virtual feed not available for websocket broadcasting")
+	format := endpoint.Format
+	if format == "" {
+		if kind == "video" {
+			format = "mpegts"
 		} else {
-			broadcaster = s.virtualFeed
-			format = endpoint.Format
-			if format == "" {
-				format = "mpegts"
-			}
+			format = "mp3"
 		}
 	}
+
+	if kind == "video" {
+		// Video goes directly to the broadcaster - no pipe/FFmpeg needed
+		s.handleVideoSocketIngest(r, conn, log, format)
+	} else {
+		// Audio goes to PulseAudio virtual microphone via ffmpeg
+		s.handleAudioSocketIngest(r, conn, log, format)
+	}
+}
+
+// handleVideoSocketIngest streams video chunks directly to the virtual feed broadcaster.
+// The broadcaster fans out to all connected websocket clients watching the feed page.
+func (s *ApiService) handleVideoSocketIngest(r *http.Request, conn *websocket.Conn, log logger.Logger, format string) {
+	if s.virtualFeed == nil {
+		log.Error("virtual feed broadcaster not available")
+		_ = conn.Close(websocket.StatusInternalError, "broadcaster unavailable")
+		return
+	}
+
+	// Set the format on the broadcaster so clients know what to expect
+	s.virtualFeed.setFormat(format)
 
 	buf := make([]byte, socketChunkSize)
 	for {
 		msgType, reader, err := conn.Reader(r.Context())
 		if err != nil {
-			log.Info("virtual input socket closed", "kind", kind, "err", err)
+			log.Info("virtual input video socket closed", "err", err)
 			return
 		}
 		if msgType != websocket.MessageBinary {
@@ -120,18 +129,72 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 			continue
 		}
 
-		written, chunks, err := writeChunkedToPipe(reader, pipe, broadcaster, format, buf)
-		if err != nil {
-			log.Error("failed writing websocket chunk to pipe", "err", err, "kind", kind)
-			return
-		}
-		log.Info("received websocket chunk", "kind", kind, "len", written, "chunks", chunks)
+		// Read and broadcast directly - no pipe intermediary
+		written, chunks := broadcastFromReader(reader, s.virtualFeed, format, buf)
+		log.Debug("received video websocket chunk", "len", written, "chunks", chunks)
 	}
 }
 
-// writeChunkedToPipe slices websocket payloads into pipe-friendly segments, preserving order
-// and mirroring video chunks to the virtual feed when requested.
-func writeChunkedToPipe(src io.Reader, pipe io.Writer, broadcaster *virtualFeedBroadcaster, format string, buf []byte) (int64, int, error) {
+// handleAudioSocketIngest streams audio chunks to PulseAudio via ffmpeg.
+// This creates a long-running ffmpeg process that decodes the incoming audio format
+// and outputs to the virtual microphone sink.
+func (s *ApiService) handleAudioSocketIngest(r *http.Request, conn *websocket.Conn, log logger.Logger, format string) {
+	// Start ffmpeg to decode incoming audio and pipe to PulseAudio
+	// ffmpeg -f mp3 -i pipe:0 -f pulse audio_input
+	args := []string{
+		"-hide_banner", "-loglevel", "warning",
+		"-f", format,
+		"-i", "pipe:0",
+		"-ac", "2",
+		"-ar", "48000",
+		"-f", "pulse",
+		"audio_input",
+	}
+
+	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		log.Error("failed to create ffmpeg stdin pipe", "err", err)
+		_ = conn.Close(websocket.StatusInternalError, "ffmpeg setup failed")
+		return
+	}
+
+	if err := cmd.Start(); err != nil {
+		log.Error("failed to start ffmpeg for audio ingest", "err", err)
+		_ = conn.Close(websocket.StatusInternalError, "ffmpeg start failed")
+		return
+	}
+
+	// Ensure ffmpeg is cleaned up when we're done
+	defer func() {
+		stdin.Close()
+		_ = cmd.Wait()
+	}()
+
+	buf := make([]byte, socketChunkSize)
+	for {
+		msgType, reader, err := conn.Reader(r.Context())
+		if err != nil {
+			log.Info("virtual input audio socket closed", "err", err)
+			return
+		}
+		if msgType != websocket.MessageBinary {
+			_, _ = io.Copy(io.Discard, reader)
+			continue
+		}
+
+		// Write audio data to ffmpeg's stdin
+		written, err := io.CopyBuffer(stdin, reader, buf)
+		if err != nil {
+			log.Error("failed writing audio to ffmpeg", "err", err)
+			return
+		}
+		log.Debug("received audio websocket chunk", "len", written)
+	}
+}
+
+// broadcastFromReader reads from src and broadcasts chunks to the virtual feed.
+func broadcastFromReader(src io.Reader, broadcaster *virtualFeedBroadcaster, format string, buf []byte) (int64, int) {
 	var (
 		totalWritten int64
 		chunks       int
@@ -139,30 +202,13 @@ func writeChunkedToPipe(src io.Reader, pipe io.Writer, broadcaster *virtualFeedB
 	for {
 		n, readErr := src.Read(buf)
 		if n > 0 {
-			remaining := buf[:n]
-			for len(remaining) > 0 {
-				written, err := pipe.Write(remaining)
-				if err != nil {
-					return totalWritten, chunks, err
-				}
-				if broadcaster != nil && written > 0 {
-					broadcaster.broadcastWithFormat(format, remaining[:written])
-				}
-
-				totalWritten += int64(written)
-				chunks++
-				if written == 0 {
-					return totalWritten, chunks, io.ErrShortWrite
-				}
-				remaining = remaining[written:]
-			}
+			broadcaster.broadcastWithFormat(format, buf[:n])
+			totalWritten += int64(n)
+			chunks++
 		}
 
 		if readErr != nil {
-			if readErr == io.EOF {
-				return totalWritten, chunks, nil
-			}
-			return totalWritten, chunks, readErr
+			return totalWritten, chunks
 		}
 	}
 }
