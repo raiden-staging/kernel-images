@@ -11,9 +11,10 @@ import (
 
 // virtualFeedBroadcaster fans out binary video chunks to multiple websocket listeners.
 type virtualFeedBroadcaster struct {
-	mu     sync.Mutex
-	conns  map[*websocket.Conn]struct{}
-	format string
+	mu       sync.Mutex
+	conns    map[*websocket.Conn]struct{}
+	format   string
+	preamble []byte
 }
 
 func newVirtualFeedBroadcaster() *virtualFeedBroadcaster {
@@ -24,11 +25,18 @@ func newVirtualFeedBroadcaster() *virtualFeedBroadcaster {
 
 func (b *virtualFeedBroadcaster) add(conn *websocket.Conn) {
 	b.mu.Lock()
-	if b.format != "" && b.format != "mpegts" {
-		_ = writeWithTimeout(context.Background(), conn, websocket.MessageText, []byte(b.format))
-	}
+	format := b.format
+	needsHint := format != "" && format != "mpegts"
+	preamble := append([]byte(nil), b.preamble...)
 	b.conns[conn] = struct{}{}
 	b.mu.Unlock()
+
+	if needsHint {
+		_ = writeWithTimeout(context.Background(), conn, websocket.MessageText, []byte(format))
+	}
+	if len(preamble) > 0 {
+		_ = writeWithTimeout(context.Background(), conn, websocket.MessageBinary, preamble)
+	}
 }
 
 func (b *virtualFeedBroadcaster) remove(conn *websocket.Conn) {
@@ -40,6 +48,9 @@ func (b *virtualFeedBroadcaster) remove(conn *websocket.Conn) {
 
 func (b *virtualFeedBroadcaster) setFormat(format string) {
 	b.mu.Lock()
+	if format != "" && format != b.format {
+		b.preamble = nil
+	}
 	b.format = format
 	// Avoid sending a text frame when using MPEG-TS so consumers like jsmpeg aren't confused.
 	if format != "" && format != "mpegts" {
@@ -57,6 +68,7 @@ func (b *virtualFeedBroadcaster) clear() {
 	}
 	b.conns = make(map[*websocket.Conn]struct{})
 	b.format = ""
+	b.preamble = nil
 	b.mu.Unlock()
 }
 
@@ -67,11 +79,21 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 
 	b.mu.Lock()
 	if format != "" && format != b.format {
+		b.preamble = nil
 		b.format = format
 		if format != "mpegts" {
 			for conn := range b.conns {
 				_ = writeWithTimeout(context.Background(), conn, websocket.MessageText, []byte(format))
 			}
+		}
+	}
+	if format == "ivf" && len(b.preamble) < 32 {
+		needed := 32 - len(b.preamble)
+		if needed > len(data) {
+			needed = len(data)
+		}
+		if needed > 0 {
+			b.preamble = append(b.preamble, data[:needed]...)
 		}
 	}
 	currentFormat := b.format
