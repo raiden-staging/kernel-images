@@ -101,8 +101,13 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 		// Video goes directly to the broadcaster - no pipe/FFmpeg needed
 		s.handleVideoSocketIngest(r, conn, log, format)
 	} else {
-		// Audio goes to PulseAudio virtual microphone via ffmpeg
-		s.handleAudioSocketIngest(r, conn, log, format)
+		// Audio goes to PulseAudio via ffmpeg
+		// Destination determines whether it goes to virtual mic (audio_input) or speaker (audio_output)
+		destination := endpoint.Destination
+		if destination == "" {
+			destination = virtualinputs.AudioDestinationMicrophone // default to virtual mic
+		}
+		s.handleAudioSocketIngest(r, conn, log, format, destination)
 	}
 }
 
@@ -138,10 +143,16 @@ func (s *ApiService) handleVideoSocketIngest(r *http.Request, conn *websocket.Co
 
 // handleAudioSocketIngest streams audio chunks to PulseAudio via ffmpeg.
 // This creates a long-running ffmpeg process that decodes the incoming audio format
-// and outputs to the virtual microphone sink.
-func (s *ApiService) handleAudioSocketIngest(r *http.Request, conn *websocket.Conn, log *slog.Logger, format string) {
+// and outputs to either the virtual microphone sink (audio_input) or speaker (audio_output).
+func (s *ApiService) handleAudioSocketIngest(r *http.Request, conn *websocket.Conn, log *slog.Logger, format string, destination virtualinputs.AudioDestination) {
+	// Determine the PulseAudio sink based on destination
+	sink := "audio_input" // default: virtual microphone
+	if destination == virtualinputs.AudioDestinationSpeaker {
+		sink = "audio_output"
+	}
+
 	// Start ffmpeg to decode incoming audio and pipe to PulseAudio
-	// ffmpeg -f mp3 -i pipe:0 -f pulse audio_input
+	// ffmpeg -f mp3 -i pipe:0 -f pulse <sink>
 	args := []string{
 		"-hide_banner", "-loglevel", "warning",
 		"-f", format,
@@ -149,8 +160,9 @@ func (s *ApiService) handleAudioSocketIngest(r *http.Request, conn *websocket.Co
 		"-ac", "2",
 		"-ar", "48000",
 		"-f", "pulse",
-		"audio_input",
+		sink,
 	}
+	log.Info("starting audio socket ingest", "format", format, "destination", destination, "sink", sink)
 
 	cmd := exec.CommandContext(r.Context(), "ffmpeg", args...)
 	stdin, err := cmd.StdinPipe()

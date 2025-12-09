@@ -374,6 +374,7 @@ func (s *ApiService) updateVirtualInputIngest(status virtualinputs.Status) {
 	videoFmt := ""
 	audioPath := ""
 	audioFmt := ""
+	var audioDest virtualinputs.AudioDestination
 	if status.Ingest.Video != nil {
 		videoPath = status.Ingest.Video.Path
 		videoFmt = status.Ingest.Video.Format
@@ -381,8 +382,9 @@ func (s *ApiService) updateVirtualInputIngest(status virtualinputs.Status) {
 	if status.Ingest.Audio != nil {
 		audioPath = status.Ingest.Audio.Path
 		audioFmt = status.Ingest.Audio.Format
+		audioDest = status.Ingest.Audio.Destination
 	}
-	s.virtualInputsWebRTC.Configure(videoPath, videoFmt, audioPath, audioFmt)
+	s.virtualInputsWebRTC.Configure(videoPath, videoFmt, audioPath, audioFmt, audioDest)
 
 	if s.virtualFeed == nil {
 		return

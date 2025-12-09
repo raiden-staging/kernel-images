@@ -61,6 +61,18 @@ const (
 	SourceTypeWebRTC SourceType = "webrtc"
 )
 
+// AudioDestination specifies where to route virtual input audio.
+type AudioDestination string
+
+const (
+	// AudioDestinationMicrophone routes audio to the virtual microphone input (default).
+	// Applications reading from the virtual mic will receive this audio.
+	AudioDestinationMicrophone AudioDestination = "microphone"
+	// AudioDestinationSpeaker routes audio directly to the container's audio output.
+	// Use this for monitoring/playback purposes.
+	AudioDestinationSpeaker AudioDestination = "speaker"
+)
+
 // MediaSource represents a single audio or video input definition.
 type MediaSource struct {
 	Type SourceType
@@ -68,6 +80,9 @@ type MediaSource struct {
 	// Format hints the expected container/codec when the source is a socket or WebRTC feed
 	// (e.g. "wav" for audio sockets, "mpegts" for video sockets, "ivf"/"ogg" for WebRTC).
 	Format string
+	// Destination specifies where to route audio (only applicable for audio sources).
+	// "microphone" routes to virtual mic input (default), "speaker" routes to audio output.
+	Destination AudioDestination
 }
 
 // Config describes the desired virtual input pipeline.
@@ -100,9 +115,10 @@ type Status struct {
 
 // IngestEndpoint describes how callers can push realtime media into the pipelines.
 type IngestEndpoint struct {
-	Protocol string
-	Format   string
-	Path     string
+	Protocol    string
+	Format      string
+	Path        string
+	Destination AudioDestination // Only applicable for audio endpoints
 }
 
 // IngestStatus surfaces the ingest endpoints for audio/video when socket or WebRTC sources are active.
@@ -854,12 +870,17 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 		// sending audio to a sink risks leaking it to the output path.
 		routeToPulse := m.mode != modeVirtualFile
 		if routeToPulse {
+			// Determine the audio sink based on destination setting
+			sink := m.audioSink
+			if cfg.Audio != nil && cfg.Audio.Destination == AudioDestinationSpeaker {
+				sink = "audio_output"
+			}
 			args = append(args,
 				"-map", fmt.Sprintf("%d:a:0", audioIdx),
 				"-ac", "2",
 				"-ar", "48000",
 				"-f", "pulse",
-				m.audioSink,
+				sink,
 			)
 		}
 		if m.audioFile != "" {
@@ -927,10 +948,15 @@ func buildIngestStatus(cfg Config) *IngestStatus {
 		}
 	}
 	if cfg.Audio != nil && (cfg.Audio.Type == SourceTypeSocket || cfg.Audio.Type == SourceTypeWebRTC) {
+		dest := cfg.Audio.Destination
+		if dest == "" {
+			dest = AudioDestinationMicrophone // default
+		}
 		status.Audio = &IngestEndpoint{
-			Protocol: string(cfg.Audio.Type),
-			Format:   cfg.Audio.Format,
-			Path:     cfg.Audio.URL,
+			Protocol:    string(cfg.Audio.Type),
+			Format:      cfg.Audio.Format,
+			Path:        cfg.Audio.URL,
+			Destination: dest,
 		}
 	}
 	if status.Audio == nil && status.Video == nil {

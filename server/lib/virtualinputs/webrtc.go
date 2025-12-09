@@ -28,10 +28,11 @@ type WebRTCIngestor struct {
 }
 
 type webrtcIngestConfig struct {
-	videoPath   string
-	videoFormat string
-	audioPath   string
-	audioFormat string
+	videoPath        string
+	videoFormat      string
+	audioPath        string
+	audioFormat      string
+	audioDestination AudioDestination
 }
 
 func NewWebRTCIngestor() *WebRTCIngestor {
@@ -41,14 +42,19 @@ func NewWebRTCIngestor() *WebRTCIngestor {
 // Configure sets the target formats for subsequent WebRTC offers.
 // Note: paths are kept for API compatibility but video goes directly to sink,
 // and audio goes to PulseAudio via ffmpeg.
-func (w *WebRTCIngestor) Configure(videoPath, videoFormat, audioPath, audioFormat string) {
+// audioDestination specifies where to route audio: "microphone" (default) or "speaker".
+func (w *WebRTCIngestor) Configure(videoPath, videoFormat, audioPath, audioFormat string, audioDestination AudioDestination) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if audioDestination == "" {
+		audioDestination = AudioDestinationMicrophone // default
+	}
 	w.config = &webrtcIngestConfig{
-		videoPath:   videoPath,
-		videoFormat: videoFormat,
-		audioPath:   audioPath,
-		audioFormat: audioFormat,
+		videoPath:        videoPath,
+		videoFormat:      videoFormat,
+		audioPath:        audioPath,
+		audioFormat:      audioFormat,
+		audioDestination: audioDestination,
 	}
 }
 
@@ -201,12 +207,19 @@ func (w *WebRTCIngestor) forwardVideo(ctx context.Context, cfg *webrtcIngestConf
 }
 
 // forwardAudio pipes incoming audio RTP packets through ffmpeg to PulseAudio.
+// The destination determines whether audio goes to virtual mic (audio_input) or speaker (audio_output).
 func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConfig, track *webrtc.TrackRemote) error {
 	if cfg.audioFormat != "" && cfg.audioFormat != "ogg" {
 		return fmt.Errorf("unsupported audio format %s", cfg.audioFormat)
 	}
 	if track.Codec().MimeType != webrtc.MimeTypeOpus {
 		return fmt.Errorf("unsupported audio codec %s", track.Codec().MimeType)
+	}
+
+	// Determine the PulseAudio sink based on destination
+	sink := "audio_input" // default: virtual microphone
+	if cfg.audioDestination == AudioDestinationSpeaker {
+		sink = "audio_output"
 	}
 
 	// Create a pipe to connect oggwriter output to ffmpeg input
@@ -220,7 +233,7 @@ func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConf
 		"-ac", "2",
 		"-ar", "48000",
 		"-f", "pulse",
-		"audio_input",
+		sink,
 	}
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)

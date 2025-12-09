@@ -22,7 +22,7 @@ func TestWebRTCIngestorHandleOfferRequiresPaths(t *testing.T) {
 	t.Parallel()
 
 	ing := NewWebRTCIngestor()
-	ing.Configure("", "", "", "")
+	ing.Configure("", "", "", "", "")
 	_, err := ing.HandleOffer(context.Background(), "dummy")
 	require.ErrorContains(t, err, "webrtc ingest not configured for video or audio")
 }
