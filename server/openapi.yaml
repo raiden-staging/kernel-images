@@ -1866,7 +1866,7 @@ components:
       type: string
       enum: [stream, file, socket, webrtc]
       description: Type of media source being injected.
-    VirtualInputSource:
+    VirtualInputAudio:
       type: object
       required: [type]
       properties:
@@ -1875,22 +1875,24 @@ components:
         url:
           type: string
           description: Input URL (supports file URLs, HLS, RTMP(S), DASH, etc).
-        loop:
-          type: boolean
-          description: When true, loop file inputs indefinitely.
         format:
           type: string
           description: |
             Optional format hint for socket/WebRTC feeds (e.g. "wav", "mpegts", "ogg", "ivf").
       additionalProperties: false
-    VirtualInputsRequest:
+    VirtualInputVideo:
       type: object
-      description: Configure virtual webcam and microphone inputs.
+      required: [type]
       properties:
-        video:
-          $ref: "#/components/schemas/VirtualInputSource"
-        audio:
-          $ref: "#/components/schemas/VirtualInputSource"
+        type:
+          $ref: "#/components/schemas/VirtualInputType"
+        url:
+          type: string
+          description: Input URL (supports file URLs, HLS, RTMP(S), DASH, etc).
+        format:
+          type: string
+          description: |
+            Optional format hint for socket/WebRTC feeds (e.g. "wav", "mpegts", "ogg", "ivf").
         width:
           type: integer
           minimum: 1
@@ -1904,6 +1906,15 @@ components:
           minimum: 1
           maximum: 60
           description: Frame rate for the virtual webcam output.
+      additionalProperties: false
+    VirtualInputsRequest:
+      type: object
+      description: Configure virtual webcam and microphone inputs.
+      properties:
+        video:
+          $ref: "#/components/schemas/VirtualInputVideo"
+        audio:
+          $ref: "#/components/schemas/VirtualInputAudio"
         start_paused:
           type: boolean
           description: Start with silence/black frames instead of live media until resumed.
@@ -1915,9 +1926,6 @@ components:
         - video_device
         - audio_sink
         - microphone_source
-        - width
-        - height
-        - frame_rate
         - mode
       properties:
         state:
@@ -1944,18 +1952,9 @@ components:
           type: string
           description: Path to the WAV file/pipe used when virtual-file mode is active.
         video:
-          $ref: "#/components/schemas/VirtualInputSource"
+          $ref: "#/components/schemas/VirtualInputVideo"
         audio:
-          $ref: "#/components/schemas/VirtualInputSource"
-        width:
-          type: integer
-          description: Configured width for the virtual webcam.
-        height:
-          type: integer
-          description: Configured height for the virtual webcam.
-        frame_rate:
-          type: integer
-          description: Configured frame rate for the virtual webcam.
+          $ref: "#/components/schemas/VirtualInputAudio"
         started_at:
           type: string
           format: date-time

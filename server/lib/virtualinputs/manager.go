@@ -63,7 +63,6 @@ const (
 type MediaSource struct {
 	Type SourceType
 	URL  string
-	Loop bool
 	// Format hints the expected container/codec when the source is a socket or WebRTC feed
 	// (e.g. "wav" for audio sockets, "mpegts" for video sockets, "ivf"/"ogg" for WebRTC).
 	Format string
@@ -843,9 +842,6 @@ func buildInputArgs(src *MediaSource) []string {
 	if src == nil {
 		return parts
 	}
-	if src.Type == SourceTypeFile && src.Loop {
-		parts = append(parts, "-stream_loop", "-1")
-	}
 	if src.Type == SourceTypeStream {
 		parts = append(parts, "-reconnect", "1", "-reconnect_streamed", "1", "-reconnect_delay_max", "2")
 	}
@@ -866,7 +862,7 @@ func sourcesShared(cfg Config) bool {
 	if cfg.Video == nil || cfg.Audio == nil {
 		return false
 	}
-	return cfg.Video.URL == cfg.Audio.URL && cfg.Video.Type == cfg.Audio.Type && (!cfg.Video.Loop || cfg.Audio.Loop == cfg.Video.Loop)
+	return cfg.Video.URL == cfg.Audio.URL && cfg.Video.Type == cfg.Audio.Type
 }
 
 func usesRealtimeSource(cfg Config) bool {

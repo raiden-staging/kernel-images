@@ -145,8 +145,14 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 		if body.Video.Format != nil {
 			cfg.Video.Format = *body.Video.Format
 		}
-		if body.Video.Loop != nil {
-			cfg.Video.Loop = *body.Video.Loop
+		if body.Video.Width != nil {
+			cfg.Width = int(*body.Video.Width)
+		}
+		if body.Video.Height != nil {
+			cfg.Height = int(*body.Video.Height)
+		}
+		if body.Video.FrameRate != nil {
+			cfg.FrameRate = int(*body.Video.FrameRate)
 		}
 	}
 	if body.Audio != nil {
@@ -159,18 +165,6 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 		if body.Audio.Format != nil {
 			cfg.Audio.Format = *body.Audio.Format
 		}
-		if body.Audio.Loop != nil {
-			cfg.Audio.Loop = *body.Audio.Loop
-		}
-	}
-	if body.Width != nil {
-		cfg.Width = int(*body.Width)
-	}
-	if body.Height != nil {
-		cfg.Height = int(*body.Height)
-	}
-	if body.FrameRate != nil {
-		cfg.FrameRate = int(*body.FrameRate)
 	}
 
 	startPaused := false
