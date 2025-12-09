@@ -349,6 +349,8 @@ func isVirtualInputBadRequest(err error) bool {
 		errors.Is(err, virtualinputs.ErrAudioURLRequired) ||
 		errors.Is(err, virtualinputs.ErrVideoTypeRequired) ||
 		errors.Is(err, virtualinputs.ErrAudioTypeRequired) ||
+		errors.Is(err, virtualinputs.ErrUnsupportedVideo) ||
+		errors.Is(err, virtualinputs.ErrUnsupportedAudio) ||
 		errors.Is(err, virtualinputs.ErrPauseWithoutSession) ||
 		errors.Is(err, virtualinputs.ErrNoConfigToPause) ||
 		errors.Is(err, virtualinputs.ErrNoConfigToResume)

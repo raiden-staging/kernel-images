@@ -43,6 +43,8 @@ var (
 	ErrAudioURLRequired  = errors.New("audio URL must be provided when audio source is set")
 	ErrVideoTypeRequired = errors.New("video source type is required")
 	ErrAudioTypeRequired = errors.New("audio source type is required")
+	ErrUnsupportedVideo  = errors.New("unsupported video format for realtime ingest")
+	ErrUnsupportedAudio  = errors.New("unsupported audio format for realtime ingest")
 
 	ErrPauseWithoutSession = errors.New("no active virtual input session to pause")
 	ErrNoConfigToPause     = errors.New("no previous configuration to pause")
@@ -442,6 +444,12 @@ func (m *Manager) normalizeConfig(cfg Config) (Config, error) {
 	out := cfg
 	out.Video = normalizeSource(cfg.Video, true)
 	out.Audio = normalizeSource(cfg.Audio, false)
+	if err := validateRealtimeFormat(out.Video, true); err != nil {
+		return Config{}, err
+	}
+	if err := validateRealtimeFormat(out.Audio, false); err != nil {
+		return Config{}, err
+	}
 	if out.Width <= 0 {
 		out.Width = m.defaultWidth
 	}
@@ -959,6 +967,29 @@ func normalizeSource(src *MediaSource, isVideo bool) *MediaSource {
 		}
 	}
 	return &out
+}
+
+func validateRealtimeFormat(src *MediaSource, isVideo bool) error {
+	if src == nil {
+		return nil
+	}
+	switch src.Type {
+	case SourceTypeSocket:
+		if isVideo && src.Format != "" && src.Format != "mpegts" {
+			return fmt.Errorf("%w: expected mpegts for socket video, got %s", ErrUnsupportedVideo, src.Format)
+		}
+		if !isVideo && src.Format != "" && src.Format != "mp3" {
+			return fmt.Errorf("%w: expected mp3 for socket audio, got %s", ErrUnsupportedAudio, src.Format)
+		}
+	case SourceTypeWebRTC:
+		if isVideo && src.Format != "" && src.Format != "ivf" {
+			return fmt.Errorf("%w: expected ivf for webrtc video, got %s", ErrUnsupportedVideo, src.Format)
+		}
+		if !isVideo && src.Format != "" && src.Format != "ogg" {
+			return fmt.Errorf("%w: expected ogg for webrtc audio, got %s", ErrUnsupportedAudio, src.Format)
+		}
+	}
+	return nil
 }
 
 func preparePipe(path string) error {

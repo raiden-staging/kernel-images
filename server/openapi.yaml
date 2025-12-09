@@ -1878,7 +1878,7 @@ components:
         format:
           type: string
           description: |
-            Optional format hint for socket/WebRTC feeds (e.g. "wav", "mpegts", "ogg", "ivf").
+            Optional format hint for socket/WebRTC feeds. Socket audio accepts mp3 chunks; WebRTC ingest expects Ogg/Opus.
       additionalProperties: false
     VirtualInputVideo:
       type: object
@@ -1892,7 +1892,7 @@ components:
         format:
           type: string
           description: |
-            Optional format hint for socket/WebRTC feeds (e.g. "wav", "mpegts", "ogg", "ivf").
+            Optional format hint for socket/WebRTC feeds. Socket video should use MPEG-TS chunks; WebRTC ingest expects IVF (VP8/VP9).
         width:
           type: integer
           minimum: 1
