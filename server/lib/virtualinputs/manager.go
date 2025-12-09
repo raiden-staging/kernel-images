@@ -229,10 +229,13 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 		m.mode = modeVirtualFile
 		m.audioFile = ""
 		m.videoFile = ""
-		if normalized.Video != nil {
+		// Only set video/audio files for non-realtime sources (file/stream).
+		// WebSocket and WebRTC sources use the virtual feed page instead of a Y4M file,
+		// so we skip setting videoFile to avoid --use-file-for-fake-video-capture.
+		if normalized.Video != nil && normalized.Video.Type != SourceTypeSocket && normalized.Video.Type != SourceTypeWebRTC {
 			m.videoFile = defaultVideoFile
 		}
-		if normalized.Audio != nil {
+		if normalized.Audio != nil && normalized.Audio.Type != SourceTypeSocket && normalized.Audio.Type != SourceTypeWebRTC {
 			m.audioFile = defaultAudioFile
 		}
 		captureDir := filepath.Dir(defaultVideoFile)
