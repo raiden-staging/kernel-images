@@ -106,8 +106,7 @@ func (w *WebRTCIngestor) HandleOffer(ctx context.Context, offerSDP string) (stri
 
 	pc.OnConnectionStateChange(func(state webrtc.PeerConnectionState) {
 		if state == webrtc.PeerConnectionStateFailed ||
-			state == webrtc.PeerConnectionStateClosed ||
-			state == webrtc.PeerConnectionStateDisconnected {
+			state == webrtc.PeerConnectionStateClosed {
 			cancel()
 		}
 	})

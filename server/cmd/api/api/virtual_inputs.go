@@ -281,7 +281,8 @@ func (s *ApiService) applyChromiumCaptureFlags(ctx context.Context, status virtu
 		flagsPath      = "/chromium/flags"
 	)
 
-	shouldUseVirtual := status.Mode == "virtual-file" && status.VideoFile != ""
+	useVideoFile := status.Mode == "virtual-file" && status.VideoFile != ""
+	useAudioFile := status.Mode == "virtual-file" && status.AudioFile != ""
 	existing, err := chromiumflags.ReadOptionalFlagFile(flagsPath)
 	if err != nil {
 		return fmt.Errorf("read flags: %w", err)
@@ -289,11 +290,14 @@ func (s *ApiService) applyChromiumCaptureFlags(ctx context.Context, status virtu
 
 	filtered := filterTokens(existing, []string{flagFakeDevice}, []string{videoPrefix, audioPrefix})
 	required := []string{flagAutoAccept}
-	if shouldUseVirtual {
-		required = append(required, flagFakeDevice, videoPrefix+status.VideoFile)
-		if status.AudioFile != "" {
-			required = append(required, audioPrefix+status.AudioFile)
-		}
+	if useVideoFile || useAudioFile {
+		required = append(required, flagFakeDevice)
+	}
+	if useVideoFile {
+		required = append(required, videoPrefix+status.VideoFile)
+	}
+	if useAudioFile {
+		required = append(required, audioPrefix+status.AudioFile)
 	}
 
 	merged := chromiumflags.MergeFlags(filtered, required)

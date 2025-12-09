@@ -13,9 +13,14 @@ Configure both video and audio from URLs and immediately preview them in the fee
 curl -s http://localhost:444/input/devices/virtual/configure \
   -H "Content-Type: application/json" \
   -d '{
-    "video": {"type": "stream", "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8"},
-    "audio": {"type": "stream", "url": "http://icecast.err.ee/r2rock.opus"},
-    "width": 1280, "height": 720, "frame_rate": 30
+    "video": {
+      "type": "stream",
+      "url": "https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8",
+      "width": 1280,
+      "height": 720,
+      "frame_rate": 30
+    },
+    "audio": {"type": "stream", "url": "http://icecast.err.ee/r2rock.opus"}
   }' | jq
 ```
 Open the preview: `http://localhost:444/input/devices/virtual/feed` (use port `10001` only from inside the container).
@@ -26,9 +31,14 @@ Keep both media directions on websockets—no mixing with file inputs. Default t
 curl -s http://localhost:444/input/devices/virtual/configure \
   -H "Content-Type: application/json" \
   -d '{
-    "video": {"type": "socket", "format": "mpegts"},
-    "audio": {"type": "socket", "format": "mp3"},
-    "width": 1280, "height": 720, "frame_rate": 30
+    "video": {
+      "type": "socket",
+      "format": "mpegts",
+      "width": 1280,
+      "height": 720,
+      "frame_rate": 30
+    },
+    "audio": {"type": "socket", "format": "mp3"}
   }' | jq
 ```
 Use the bundled chunk sender to stream TS or MP4 video (and MP3 audio) in real chunks and keep the sockets alive:

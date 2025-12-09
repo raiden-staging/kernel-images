@@ -225,15 +225,21 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 
 	if useVirtualFileMode {
 		m.mode = modeVirtualFile
-		m.videoFile = defaultVideoFile
 		m.audioFile = ""
+		m.videoFile = ""
+		if normalized.Video != nil {
+			m.videoFile = defaultVideoFile
+		}
 		if normalized.Audio != nil {
 			m.audioFile = defaultAudioFile
 		}
-		if err := os.MkdirAll(filepath.Dir(m.videoFile), 0o755); err != nil {
+		captureDir := filepath.Dir(defaultVideoFile)
+		if err := os.MkdirAll(captureDir, 0o755); err != nil {
 			return m.statusLocked(), fmt.Errorf("prepare virtual capture dir: %w", err)
 		}
-		_ = os.Remove(m.videoFile)
+		if m.videoFile != "" {
+			_ = os.Remove(m.videoFile)
+		}
 		if m.audioFile != "" {
 			_ = os.Remove(m.audioFile)
 		}
