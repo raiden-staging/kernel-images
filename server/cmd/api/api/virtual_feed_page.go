@@ -334,7 +334,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
         canvas: canvasEl,
         autoplay: true,
         audio: false,
-        loop: true,
+        loop: false,
         onDisconnect: () => {
           setStatus('Feed disconnected. Reconnecting…');
           setTimeout(() => startWebsocket(url, format), 900);
@@ -359,6 +359,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
         let header = null;
         let decoder = null;
         let frameId = 0;
+        let currentCodec = 'vp8';
 
         const isIvfHeader = (bytes) =>
           bytes.length >= 4 &&
@@ -378,6 +379,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
 
         function ensureDecoder(codec, width, height) {
           if (decoder) return decoder;
+          currentCodec = codec;
           decoder = new VideoDecoder({
             output: async (frame) => {
               try {
@@ -425,7 +427,7 @@ func renderVirtualFeedPage(fit, source, format string) string {
               // VP8: first byte bit 0 = 0 means keyframe
               // VP9: first byte bit 2 = 0 means keyframe (show_existing_frame=0 and frame_type=0)
               const isKeyframe = frameData.length > 0 &&
-                (codec === 'vp8' ? (frameData[0] & 0x01) === 0 : (frameData[0] & 0x02) === 0);
+                (currentCodec === 'vp8' ? (frameData[0] & 0x01) === 0 : (frameData[0] & 0x02) === 0);
               const chunk = new EncodedVideoChunk({
                 timestamp: frameId++,
                 type: isKeyframe ? 'key' : 'delta',
