@@ -3,6 +3,7 @@ package api
 import (
 	"context"
 	"io"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -41,7 +42,10 @@ func (b *virtualFeedBroadcaster) add(conn *websocket.Conn) {
 	preamble := append([]byte(nil), b.preamble...)
 	intro := append([]byte(nil), b.intro...)
 	b.conns[conn] = struct{}{}
+	connCount := len(b.conns)
 	b.mu.Unlock()
+
+	slog.Info("feed broadcaster: client added", "conns", connCount, "format", format, "preamble_len", len(preamble), "intro_len", len(intro))
 
 	if needsHint {
 		_ = writeWithTimeout(context.Background(), conn, websocket.MessageText, []byte(format))
@@ -50,6 +54,7 @@ func (b *virtualFeedBroadcaster) add(conn *websocket.Conn) {
 		_ = writeWithTimeout(context.Background(), conn, websocket.MessageBinary, preamble)
 	}
 	if len(intro) > 0 {
+		slog.Info("feed broadcaster: sending cached intro to new client", "len", len(intro))
 		_ = writeWithTimeout(context.Background(), conn, websocket.MessageBinary, intro)
 	}
 }
@@ -130,11 +135,14 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 		}
 	}
 	currentFormat := b.format
+	introLen := len(b.intro)
 	conns := make([]*websocket.Conn, 0, len(b.conns))
 	for conn := range b.conns {
 		conns = append(conns, conn)
 	}
 	b.mu.Unlock()
+
+	slog.Info("feed broadcaster: broadcast", "format", format, "data_len", len(data), "conns", len(conns), "intro_cached", introLen)
 
 	for _, conn := range conns {
 		if err := writeWithTimeout(context.Background(), conn, websocket.MessageBinary, data); err != nil {
