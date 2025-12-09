@@ -17,6 +17,14 @@ type virtualFeedBroadcaster struct {
 	preamble []byte
 }
 
+func isIVFHeader(data []byte) bool {
+	return len(data) >= 4 &&
+		data[0] == 'D' &&
+		data[1] == 'K' &&
+		data[2] == 'I' &&
+		data[3] == 'F'
+}
+
 func newVirtualFeedBroadcaster() *virtualFeedBroadcaster {
 	return &virtualFeedBroadcaster{
 		conns: make(map[*websocket.Conn]struct{}),
@@ -77,6 +85,7 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 		return
 	}
 
+	resetIVF := format == "ivf" && isIVFHeader(data)
 	b.mu.Lock()
 	if format != "" && format != b.format {
 		b.preamble = nil
@@ -86,6 +95,11 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 				_ = writeWithTimeout(context.Background(), conn, websocket.MessageText, []byte(format))
 			}
 		}
+	}
+	if resetIVF {
+		// Stream restarted with a fresh IVF header; refresh the cached preamble so
+		// new listeners get the correct dimensions and existing clients can reset.
+		b.preamble = nil
 	}
 	if format == "ivf" && len(b.preamble) < 32 {
 		needed := 32 - len(b.preamble)

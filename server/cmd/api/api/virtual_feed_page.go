@@ -351,6 +351,22 @@ func renderVirtualFeedPage(fit, source, format string) string {
         let decoder = null;
         let frameId = 0;
 
+        const isIvfHeader = (bytes) =>
+          bytes.length >= 4 &&
+          bytes[0] === 0x44 &&
+          bytes[1] === 0x4b &&
+          bytes[2] === 0x49 &&
+          bytes[3] === 0x46;
+
+        function resetDecoderState() {
+          if (decoder) {
+            decoder.close();
+            decoder = null;
+          }
+          header = null;
+          frameId = 0;
+        }
+
         function ensureDecoder(codec, width, height) {
           if (decoder) return decoder;
           decoder = new VideoDecoder({
@@ -375,6 +391,9 @@ func renderVirtualFeedPage(fit, source, format string) string {
 
         function process() {
           while (buffer.length > 0) {
+            if (isIvfHeader(buffer)) {
+              resetDecoderState();
+            }
             if (!header) {
               if (buffer.length < 32) return;
               header = buffer.slice(0, 32);
