@@ -181,9 +181,6 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 		VideoDevice:      status.VideoDevice,
 		AudioSink:        status.AudioSink,
 		MicrophoneSource: status.MicrophoneSource,
-		Width:            status.Width,
-		Height:           status.Height,
-		FrameRate:        status.FrameRate,
 	}
 	if status.Mode != "" {
 		resp.Mode = oapi.VirtualInputsStatusMode(status.Mode)
@@ -204,10 +201,9 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 	}
 	if status.Video != nil {
 		url := status.Video.URL
-		resp.Video = &oapi.VirtualInputSource{
+		resp.Video = &oapi.VirtualInputVideo{
 			Type: oapi.VirtualInputType(status.Video.Type),
 			Url:  &url,
-			Loop: &status.Video.Loop,
 			Format: func() *string {
 				if status.Video.Format == "" {
 					return nil
@@ -215,13 +211,21 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 				return &status.Video.Format
 			}(),
 		}
+		if status.Width > 0 {
+			resp.Video.Width = &status.Width
+		}
+		if status.Height > 0 {
+			resp.Video.Height = &status.Height
+		}
+		if status.FrameRate > 0 {
+			resp.Video.FrameRate = &status.FrameRate
+		}
 	}
 	if status.Audio != nil {
 		url := status.Audio.URL
-		resp.Audio = &oapi.VirtualInputSource{
+		resp.Audio = &oapi.VirtualInputAudio{
 			Type: oapi.VirtualInputType(status.Audio.Type),
 			Url:  &url,
-			Loop: &status.Audio.Loop,
 			Format: func() *string {
 				if status.Audio.Format == "" {
 					return nil

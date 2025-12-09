@@ -296,8 +296,6 @@ func TestApiService_VirtualInputs(t *testing.T) {
 	t.Run("configure success", func(t *testing.T) {
 		vimgr := newMockVirtualInputsManager()
 		svc := newSvc(t, vimgr)
-		videoLoop := true
-		audioLoop := false
 		width := 640
 		height := 480
 		fr := 24
@@ -305,19 +303,17 @@ func TestApiService_VirtualInputs(t *testing.T) {
 		videoURL := "https://example.com/vid.m3u8"
 		audioURL := "https://example.com/audio.mp3"
 		body := oapi.VirtualInputsRequest{
-			Video: &oapi.VirtualInputSource{
-				Type: oapi.Stream,
-				Url:  &videoURL,
-				Loop: &videoLoop,
+			Video: &oapi.VirtualInputVideo{
+				Type:      oapi.Stream,
+				Url:       &videoURL,
+				Width:     &width,
+				Height:    &height,
+				FrameRate: &fr,
 			},
-			Audio: &oapi.VirtualInputSource{
+			Audio: &oapi.VirtualInputAudio{
 				Type: oapi.File,
 				Url:  &audioURL,
-				Loop: &audioLoop,
 			},
-			Width:       &width,
-			Height:      &height,
-			FrameRate:   &fr,
 			StartPaused: &startPaused,
 		}
 
@@ -353,7 +349,7 @@ func TestApiService_VirtualInputs(t *testing.T) {
 		vimgr.configureErr = errors.New("boom")
 		svc := newSvc(t, vimgr)
 		reqBody := oapi.VirtualInputsRequest{
-			Audio: &oapi.VirtualInputSource{Type: oapi.Stream, Url: ptr("http://a")},
+			Audio: &oapi.VirtualInputAudio{Type: oapi.Stream, Url: ptr("http://a")},
 		}
 		resp, err := svc.ConfigureVirtualInputs(ctx, oapi.ConfigureVirtualInputsRequestObject{Body: &reqBody})
 		require.NoError(t, err)
