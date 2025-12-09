@@ -10,15 +10,15 @@ import (
 )
 
 // virtualFeedBroadcaster fans out binary video chunks to multiple websocket listeners.
+// This broadcaster operates in real-time mode: no caching of previous chunks.
+// New clients joining the stream start from the current point, not from cached data.
 type virtualFeedBroadcaster struct {
 	mu       sync.Mutex
 	conns    map[*websocket.Conn]struct{}
 	format   string
-	preamble []byte
-	intro    []byte
+	preamble []byte // IVF header only (32 bytes max) - needed for decoder initialization
+	// Note: No intro cache - real-time streaming means no replay of old data
 }
-
-const feedIntroLimit = 512 * 1024
 
 func isIVFHeader(data []byte) bool {
 	return len(data) >= 4 &&
@@ -39,19 +39,20 @@ func (b *virtualFeedBroadcaster) add(conn *websocket.Conn) {
 	format := b.format
 	needsHint := format != "" && format != "mpegts"
 	preamble := append([]byte(nil), b.preamble...)
-	intro := append([]byte(nil), b.intro...)
 	b.conns[conn] = struct{}{}
 	b.mu.Unlock()
 
+	// Send format hint for non-MPEG-TS streams (e.g., IVF)
 	if needsHint {
 		_ = writeWithTimeout(context.Background(), conn, websocket.MessageText, []byte(format))
 	}
+	// Send IVF header (preamble) if available - needed for decoder initialization
+	// This is the only cached data we send; no intro/buffered video data
 	if len(preamble) > 0 {
 		_ = writeWithTimeout(context.Background(), conn, websocket.MessageBinary, preamble)
 	}
-	if len(intro) > 0 {
-		_ = writeWithTimeout(context.Background(), conn, websocket.MessageBinary, intro)
-	}
+	// Real-time mode: client starts receiving from current stream position
+	// No cached video data is sent - this ensures true real-time behavior
 }
 
 func (b *virtualFeedBroadcaster) remove(conn *websocket.Conn) {
@@ -84,7 +85,6 @@ func (b *virtualFeedBroadcaster) clear() {
 	b.conns = make(map[*websocket.Conn]struct{})
 	b.format = ""
 	b.preamble = nil
-	b.intro = nil
 	b.mu.Unlock()
 }
 
@@ -97,7 +97,6 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 	b.mu.Lock()
 	if format != "" && format != b.format {
 		b.preamble = nil
-		b.intro = nil
 		b.format = format
 		if format != "mpegts" {
 			for conn := range b.conns {
@@ -109,8 +108,9 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 		// Stream restarted with a fresh IVF header; refresh the cached preamble so
 		// new listeners get the correct dimensions and existing clients can reset.
 		b.preamble = nil
-		b.intro = nil
 	}
+	// Only cache the IVF header (32 bytes) - needed for decoder initialization
+	// No other video data is cached to ensure true real-time behavior
 	if format == "ivf" && len(b.preamble) < 32 {
 		needed := 32 - len(b.preamble)
 		if needed > len(data) {
@@ -120,15 +120,11 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 			b.preamble = append(b.preamble, data[:needed]...)
 		}
 	}
-	if len(b.intro) < feedIntroLimit {
-		remaining := feedIntroLimit - len(b.intro)
-		if remaining > len(data) {
-			remaining = len(data)
-		}
-		if remaining > 0 {
-			b.intro = append(b.intro, data[:remaining]...)
-		}
-	}
+	// Real-time mode: No intro buffer - all data is broadcast immediately
+	// and not cached for later clients. This ensures:
+	// 1. Page refresh shows current stream state (blank if no data coming in)
+	// 2. No "replay from scratch" behavior
+	// 3. True real-time experience like a live webcam
 	currentFormat := b.format
 	conns := make([]*websocket.Conn, 0, len(b.conns))
 	for conn := range b.conns {

@@ -1879,6 +1879,16 @@ components:
           type: string
           description: |
             Optional format hint for socket/WebRTC feeds. Socket audio accepts mp3 chunks; WebRTC ingest expects Ogg/Opus.
+        destination:
+          type: string
+          enum: [microphone, speaker]
+          default: microphone
+          description: |
+            Where to route the virtual input audio:
+            - "microphone": Route to the virtual microphone input (PulseAudio audio_input sink).
+              This is the default. Applications reading from the virtual mic will receive this audio.
+            - "speaker": Route directly to the container's audio output (PulseAudio audio_output sink).
+              Use this for monitoring/playback purposes.
       additionalProperties: false
     VirtualInputVideo:
       type: object
