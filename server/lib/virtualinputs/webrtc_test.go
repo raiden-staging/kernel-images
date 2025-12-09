@@ -24,7 +24,7 @@ func TestWebRTCIngestorHandleOfferRequiresPaths(t *testing.T) {
 	ing := NewWebRTCIngestor()
 	ing.Configure("", "", "", "")
 	_, err := ing.HandleOffer(context.Background(), "dummy")
-	require.ErrorContains(t, err, "webrtc ingest paths not configured")
+	require.ErrorContains(t, err, "webrtc ingest not configured for video or audio")
 }
 
 func TestWebRTCIngestorHandleOfferNegotiates(t *testing.T) {

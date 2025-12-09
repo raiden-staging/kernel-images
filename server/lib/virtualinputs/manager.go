@@ -292,6 +292,7 @@ func (m *Manager) Configure(ctx context.Context, cfg Config, startPaused bool) (
 }
 
 // Pause replaces active inputs with silence/black while keeping devices alive.
+// For realtime sources, this stops the realtime ingest but keeps the configuration.
 func (m *Manager) Pause(ctx context.Context) (Status, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -310,16 +311,20 @@ func (m *Manager) Pause(ctx context.Context) (Status, error) {
 	}
 	m.killAllFFmpeg()
 	m.setDefaultPulseDevices(ctx)
+
+	// For paused mode, we send black frames/silence via FFmpeg
 	args, err := m.buildFFmpegArgs(*m.lastCfg, true)
 	if err != nil {
 		return m.statusLocked(), err
 	}
-	// Open keepalives before starting FFmpeg
-	m.openPipeKeepalivesLocked(ctx, *m.lastCfg, true)
-	if err := m.startFFmpegLocked(ctx, args); err != nil {
-		m.closePipeKeepalivesLocked()
-		return m.statusLocked(), err
+
+	// Paused mode always has FFmpeg args (for black frames)
+	if args != nil {
+		if err := m.startFFmpegLocked(ctx, args); err != nil {
+			return m.statusLocked(), err
+		}
 	}
+
 	now := time.Now()
 	m.startedAt = &now
 	m.state = statePaused
@@ -328,6 +333,8 @@ func (m *Manager) Pause(ctx context.Context) (Status, error) {
 }
 
 // Resume restarts the last configuration with live inputs.
+// For realtime sources (socket/webrtc), this just sets the state to running
+// since the actual media comes from websocket/webrtc connections, not FFmpeg.
 func (m *Manager) Resume(ctx context.Context) (Status, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -343,16 +350,19 @@ func (m *Manager) Resume(ctx context.Context) (Status, error) {
 	}
 	m.killAllFFmpeg()
 	m.setDefaultPulseDevices(ctx)
+
 	args, err := m.buildFFmpegArgs(*m.lastCfg, false)
 	if err != nil {
 		return m.statusLocked(), err
 	}
-	// Open keepalives before starting FFmpeg
-	m.openPipeKeepalivesLocked(ctx, *m.lastCfg, false)
-	if err := m.startFFmpegLocked(ctx, args); err != nil {
-		m.closePipeKeepalivesLocked()
-		return m.statusLocked(), err
+
+	// Only start FFmpeg if we have args (non-realtime sources)
+	if args != nil {
+		if err := m.startFFmpegLocked(ctx, args); err != nil {
+			return m.statusLocked(), err
+		}
 	}
+
 	now := time.Now()
 	m.startedAt = &now
 	m.state = stateRunning

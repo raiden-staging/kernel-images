@@ -2,6 +2,7 @@ package api
 
 import (
 	"io"
+	"log/slog"
 	"net/http"
 	"os/exec"
 
@@ -107,7 +108,7 @@ func (s *ApiService) handleVirtualInputSocket(w http.ResponseWriter, r *http.Req
 
 // handleVideoSocketIngest streams video chunks directly to the virtual feed broadcaster.
 // The broadcaster fans out to all connected websocket clients watching the feed page.
-func (s *ApiService) handleVideoSocketIngest(r *http.Request, conn *websocket.Conn, log logger.Logger, format string) {
+func (s *ApiService) handleVideoSocketIngest(r *http.Request, conn *websocket.Conn, log *slog.Logger, format string) {
 	if s.virtualFeed == nil {
 		log.Error("virtual feed broadcaster not available")
 		_ = conn.Close(websocket.StatusInternalError, "broadcaster unavailable")
@@ -138,7 +139,7 @@ func (s *ApiService) handleVideoSocketIngest(r *http.Request, conn *websocket.Co
 // handleAudioSocketIngest streams audio chunks to PulseAudio via ffmpeg.
 // This creates a long-running ffmpeg process that decodes the incoming audio format
 // and outputs to the virtual microphone sink.
-func (s *ApiService) handleAudioSocketIngest(r *http.Request, conn *websocket.Conn, log logger.Logger, format string) {
+func (s *ApiService) handleAudioSocketIngest(r *http.Request, conn *websocket.Conn, log *slog.Logger, format string) {
 	// Start ffmpeg to decode incoming audio and pipe to PulseAudio
 	// ffmpeg -f mp3 -i pipe:0 -f pulse audio_input
 	args := []string{
