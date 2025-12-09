@@ -764,6 +764,23 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 		videoIdx = -1
 		audioIdx = -1
 	)
+
+	// For realtime sources (socket/webrtc), video goes directly to the feed broadcaster
+	// and audio goes directly to PulseAudio. FFmpeg is not needed for these cases.
+	// Only build FFmpeg args for non-realtime video or non-realtime audio.
+	realtimeVideo := cfg.Video != nil && (cfg.Video.Type == SourceTypeSocket || cfg.Video.Type == SourceTypeWebRTC)
+	realtimeAudio := cfg.Audio != nil && (cfg.Audio.Type == SourceTypeSocket || cfg.Audio.Type == SourceTypeWebRTC)
+
+	// Skip video in FFmpeg if it's a realtime source (handled by broadcaster)
+	needsFFmpegVideo := cfg.Video != nil && !realtimeVideo
+	// Skip audio in FFmpeg if it's a realtime source (will be handled by direct pulse writer)
+	needsFFmpegAudio := cfg.Audio != nil && !realtimeAudio
+
+	// If neither video nor audio need FFmpeg processing, return empty args
+	if !needsFFmpegVideo && !needsFFmpegAudio && !paused {
+		return nil, nil
+	}
+
 	args = append(args, "-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts", "-threads", "2", "-y")
 
 	// Build inputs and track indexes for mapping.
@@ -784,12 +801,12 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 		}
 	} else {
 		shared := sourcesShared(cfg)
-		if cfg.Video != nil {
+		if needsFFmpegVideo {
 			videoIdx = 0
 			args = append(args, buildInputArgs(cfg.Video)...)
 		}
-		if cfg.Audio != nil {
-			if shared && cfg.Video != nil {
+		if needsFFmpegAudio {
+			if shared && needsFFmpegVideo {
 				audioIdx = videoIdx
 			} else {
 				if videoIdx == -1 {
@@ -802,14 +819,15 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 		}
 	}
 
-	if cfg.Video != nil && videoIdx == -1 {
+	if needsFFmpegVideo && videoIdx == -1 && !paused {
 		return nil, errors.New("video mapping requested without input")
 	}
-	if cfg.Audio != nil && audioIdx == -1 {
+	if needsFFmpegAudio && audioIdx == -1 && !paused {
 		return nil, errors.New("audio mapping requested without input")
 	}
 
-	if cfg.Video != nil {
+	// Only add video output if we have video input for FFmpeg
+	if (needsFFmpegVideo || paused) && videoIdx >= 0 {
 		args = append(args,
 			"-map", fmt.Sprintf("%d:v:0", videoIdx),
 			"-vf", fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease,pad=%d:%d:(ow-iw)/2:(oh-ih)/2", cfg.Width, cfg.Height, cfg.Width, cfg.Height),
@@ -829,16 +847,12 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 		}
 	}
 
-	if cfg.Audio != nil {
+	// Only add audio output if we have audio input for FFmpeg
+	if (needsFFmpegAudio || paused) && audioIdx >= 0 {
 		// Only route audio into Pulse when using a v4l2loopback device; in virtual-file
 		// mode Chromium consumes the WAV via --use-file-for-fake-audio-capture, so
 		// sending audio to a sink risks leaking it to the output path.
 		routeToPulse := m.mode != modeVirtualFile
-		if !routeToPulse && (cfg.Audio.Type == SourceTypeSocket || cfg.Audio.Type == SourceTypeWebRTC) {
-			// Realtime ingest feeds should still be mirrored into the microphone sink
-			// so consumers can read from Pulse in addition to the virtual capture file.
-			routeToPulse = true
-		}
 		if routeToPulse {
 			args = append(args,
 				"-map", fmt.Sprintf("%d:a:0", audioIdx),
