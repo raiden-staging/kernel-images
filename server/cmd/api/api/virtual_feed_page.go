@@ -421,9 +421,14 @@ func renderVirtualFeedPage(fit, source, format string) string {
             const frameData = buffer.slice(12, 12 + size);
             buffer = buffer.slice(12 + size);
             if (decoder && decoder.state === 'configured') {
+              // Detect keyframes from VP8/VP9 bitstream.
+              // VP8: first byte bit 0 = 0 means keyframe
+              // VP9: first byte bit 2 = 0 means keyframe (show_existing_frame=0 and frame_type=0)
+              const isKeyframe = frameData.length > 0 &&
+                (codec === 'vp8' ? (frameData[0] & 0x01) === 0 : (frameData[0] & 0x02) === 0);
               const chunk = new EncodedVideoChunk({
                 timestamp: frameId++,
-                type: frameId === 1 ? 'key' : 'delta',
+                type: isKeyframe ? 'key' : 'delta',
                 data: frameData,
               });
               decoder.decode(chunk);
