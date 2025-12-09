@@ -50,7 +50,7 @@ func TestNegotiateVirtualInputsWebrtc(t *testing.T) {
 		vimgr.status.Ingest = &virtualinputs.IngestStatus{
 			Video: &virtualinputs.IngestEndpoint{Protocol: "webrtc", Path: videoPipe, Format: "ivf"},
 		}
-		svc.virtualInputsWebRTC.Configure(videoPipe, "ivf", "", "")
+		svc.virtualInputsWebRTC.Configure(videoPipe, "ivf", "", "", "")
 
 		body := oapi.VirtualInputWebRTCOffer{Sdp: "bad-sdp"}
 		resp, err := svc.NegotiateVirtualInputsWebrtc(ctx, oapi.NegotiateVirtualInputsWebrtcRequestObject{Body: &body})
@@ -70,7 +70,7 @@ func TestNegotiateVirtualInputsWebrtc(t *testing.T) {
 		vimgr.status.Ingest = &virtualinputs.IngestStatus{
 			Video: &virtualinputs.IngestEndpoint{Protocol: "webrtc", Path: videoPipe, Format: "ivf"},
 		}
-		svc.virtualInputsWebRTC.Configure(videoPipe, "ivf", "", "")
+		svc.virtualInputsWebRTC.Configure(videoPipe, "ivf", "", "", "")
 
 		pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 		require.NoError(t, err)

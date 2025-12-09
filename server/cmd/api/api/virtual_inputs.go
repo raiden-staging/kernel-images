@@ -165,6 +165,17 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 		if body.Audio.Format != nil {
 			cfg.Audio.Format = *body.Audio.Format
 		}
+		// Handle audio destination parameter (default: microphone)
+		if body.Audio.Destination != nil {
+			switch *body.Audio.Destination {
+			case oapi.VirtualInputAudioDestinationSpeaker:
+				cfg.Audio.Destination = virtualinputs.AudioDestinationSpeaker
+			default:
+				cfg.Audio.Destination = virtualinputs.AudioDestinationMicrophone
+			}
+		} else {
+			cfg.Audio.Destination = virtualinputs.AudioDestinationMicrophone
+		}
 	}
 
 	startPaused := false

@@ -35,7 +35,7 @@ func TestWebRTCIngestorHandleOfferNegotiates(t *testing.T) {
 	require.NoError(t, syscall.Mkfifo(videoPipe, 0o666))
 
 	ing := NewWebRTCIngestor()
-	ing.Configure(videoPipe, "ivf", "", "")
+	ing.Configure(videoPipe, "ivf", "", "", "")
 	t.Cleanup(func() { ing.Clear() })
 
 	pc, err := webrtc.NewPeerConnection(webrtc.Configuration{})
