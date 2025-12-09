@@ -400,9 +400,26 @@ func renderVirtualFeedPage(fit, source, format string) string {
           return decoder;
         }
 
+        function findIvfHeader(buf) {
+          // Search for IVF header signature "DKIF" anywhere in the buffer
+          for (let i = 0; i <= buf.length - 4; i++) {
+            if (buf[i] === 0x44 && buf[i+1] === 0x4b && buf[i+2] === 0x49 && buf[i+3] === 0x46) {
+              return i;
+            }
+          }
+          return -1;
+        }
+
         function process() {
           while (buffer.length > 0) {
-            if (isIvfHeader(buffer)) {
+            // Check for new IVF header anywhere in the buffer (stream restart)
+            const headerPos = findIvfHeader(buffer);
+            if (headerPos > 0) {
+              // New header found after some data - discard stale data and reset
+              buffer = buffer.slice(headerPos);
+              resetDecoderState();
+            } else if (headerPos === 0 && header) {
+              // New header at start but we already have one - stream restarted
               resetDecoderState();
             }
             if (!header) {
