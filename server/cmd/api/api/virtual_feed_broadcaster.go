@@ -15,7 +15,10 @@ type virtualFeedBroadcaster struct {
 	conns    map[*websocket.Conn]struct{}
 	format   string
 	preamble []byte
+	intro    []byte
 }
+
+const feedIntroLimit = 512 * 1024
 
 func isIVFHeader(data []byte) bool {
 	return len(data) >= 4 &&
@@ -36,6 +39,7 @@ func (b *virtualFeedBroadcaster) add(conn *websocket.Conn) {
 	format := b.format
 	needsHint := format != "" && format != "mpegts"
 	preamble := append([]byte(nil), b.preamble...)
+	intro := append([]byte(nil), b.intro...)
 	b.conns[conn] = struct{}{}
 	b.mu.Unlock()
 
@@ -44,6 +48,9 @@ func (b *virtualFeedBroadcaster) add(conn *websocket.Conn) {
 	}
 	if len(preamble) > 0 {
 		_ = writeWithTimeout(context.Background(), conn, websocket.MessageBinary, preamble)
+	}
+	if len(intro) > 0 {
+		_ = writeWithTimeout(context.Background(), conn, websocket.MessageBinary, intro)
 	}
 }
 
@@ -77,6 +84,7 @@ func (b *virtualFeedBroadcaster) clear() {
 	b.conns = make(map[*websocket.Conn]struct{})
 	b.format = ""
 	b.preamble = nil
+	b.intro = nil
 	b.mu.Unlock()
 }
 
@@ -89,6 +97,7 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 	b.mu.Lock()
 	if format != "" && format != b.format {
 		b.preamble = nil
+		b.intro = nil
 		b.format = format
 		if format != "mpegts" {
 			for conn := range b.conns {
@@ -100,6 +109,7 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 		// Stream restarted with a fresh IVF header; refresh the cached preamble so
 		// new listeners get the correct dimensions and existing clients can reset.
 		b.preamble = nil
+		b.intro = nil
 	}
 	if format == "ivf" && len(b.preamble) < 32 {
 		needed := 32 - len(b.preamble)
@@ -108,6 +118,15 @@ func (b *virtualFeedBroadcaster) broadcastWithFormat(format string, data []byte)
 		}
 		if needed > 0 {
 			b.preamble = append(b.preamble, data[:needed]...)
+		}
+	}
+	if len(b.intro) < feedIntroLimit {
+		remaining := feedIntroLimit - len(b.intro)
+		if remaining > len(data) {
+			remaining = len(data)
+		}
+		if remaining > 0 {
+			b.intro = append(b.intro, data[:remaining]...)
 		}
 	}
 	currentFormat := b.format
