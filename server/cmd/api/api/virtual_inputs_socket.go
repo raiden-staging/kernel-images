@@ -132,7 +132,7 @@ func (s *ApiService) handleVideoSocketIngest(r *http.Request, conn *websocket.Co
 
 		// Read and broadcast directly - no pipe intermediary
 		written, chunks := broadcastFromReader(reader, s.virtualFeed, format, buf)
-		log.Debug("received video websocket chunk", "len", written, "chunks", chunks)
+		log.Info("received video websocket chunk", "len", written, "chunks", chunks)
 	}
 }
 
