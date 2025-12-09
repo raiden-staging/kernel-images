@@ -24,6 +24,18 @@ func (s *ApiService) NegotiateVirtualInputsWebrtc(ctx context.Context, req oapi.
 		}, nil
 	}
 
+	if s.virtualFeed != nil && s.virtualInputsWebRTC != nil {
+		format := ""
+		if status.Ingest.Video != nil {
+			format = status.Ingest.Video.Format
+			if format == "" && status.Ingest.Video.Protocol == "webrtc" {
+				format = "ivf"
+			}
+		}
+		s.virtualFeed.setFormat(format)
+		s.virtualInputsWebRTC.SetSinks(s.virtualFeed.writer(format), nil)
+	}
+
 	answer, err := s.virtualInputsWebRTC.HandleOffer(ctx, req.Body.Sdp)
 	if err != nil {
 		log.Error("failed to negotiate virtual input webrtc", "err", err)
