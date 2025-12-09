@@ -29,6 +29,28 @@ curl -s http://localhost:444/input/devices/virtual/configure \
     "audio": {"type": "stream", "url": "http://icecast.err.ee/r2rock.opus"}
   }' | jq
 ```
+
+### Audio destination
+By default, audio is routed to the virtual microphone input (`audio_input` PulseAudio sink). Applications inside the container that read from the microphone will receive this audio.
+
+To route audio to the speaker output instead (for monitoring/playback), use the `destination` parameter:
+```bash
+curl -s http://localhost:444/input/devices/virtual/configure \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video": {"type": "stream", "url": "https://example.com/video.mp4"},
+    "audio": {
+      "type": "stream",
+      "url": "http://icecast.err.ee/r2rock.opus",
+      "destination": "speaker"
+    }
+  }' | jq
+```
+
+| Destination   | PulseAudio Sink | Use Case |
+|--------------|-----------------|----------|
+| `microphone` (default) | `audio_input` | Virtual mic for apps reading mic input |
+| `speaker` | `audio_output` | Monitor/playback through container audio |
 Open the preview: `http://localhost:444/input/devices/virtual/feed` (use port `10001` only from inside the container).
 
 ## WebSocket ingest (chunked)
@@ -47,6 +69,16 @@ curl -s http://localhost:444/input/devices/virtual/configure \
     "audio": {"type": "socket", "format": "mp3"}
   }' | jq
 ```
+
+To route socket audio to the speaker instead of the virtual microphone:
+```bash
+curl -s http://localhost:444/input/devices/virtual/configure \
+  -H "Content-Type: application/json" \
+  -d '{
+    "video": {"type": "socket", "format": "mpegts"},
+    "audio": {"type": "socket", "format": "mp3", "destination": "speaker"}
+  }' | jq
+```
 Socket ingest is validated: video must be MPEG-TS chunks and audio must be MP3.
 Use the bundled chunk sender to stream TS video (and MP3 audio) in real chunks and keep the sockets alive:
 ```bash
@@ -55,7 +87,12 @@ node samples/virtual-inputs/ws_chunk_ingest.js
 ```
 - Defaults: TS video + MP3 audio. Override `VIDEO_FILE/AUDIO_FILE`, `VIRTUAL_INPUT_HOST`, or `CHUNK_DELAY_MS` as needed.
 
-Open the live preview while the sockets run: `http://localhost:444/input/devices/virtual/feed?fit=cover`  
+Open the live preview while the sockets run: `http://localhost:444/input/devices/virtual/feed?fit=cover`
+
+**Note on real-time behavior**: The feed page operates in true real-time mode. When you refresh the page or open a new browser tab:
+- If no video chunks are actively being sent, the page shows "Loading virtual feed..." status
+- Video appears only when the WebSocket sender is actively pushing chunks
+- There is no caching or replay of old video data - this ensures the feed accurately represents what's currently being streamed  
 Discover the preview websocket URL/format: `curl http://localhost:444/input/devices/virtual/feed/socket/info | jq`
 To sanity-check the mirrored feed directly, capture it to disk with `node samples/virtual-inputs/feed_capture.js` (override `VIRTUAL_INPUT_HOST` or `FEED_CAPTURE_FILE` as needed). The script now watches the format hint sent by the feed: when it reports `mpegts` the default `feed_capture.mpegts` filename is used, and formats like `ivf` (from WebRTC) trigger the matching extension so you can open the file without guessing the container.
 
@@ -65,6 +102,13 @@ Prepare the ingest endpoints for WebRTC (both tracks stay on the same transport)
 curl -s http://localhost:444/input/devices/virtual/configure \
   -H "Content-Type: application/json" \
   -d '{"video":{"type":"webrtc"},"audio":{"type":"webrtc"}}' | jq
+```
+
+To route WebRTC audio to the speaker for monitoring:
+```bash
+curl -s http://localhost:444/input/devices/virtual/configure \
+  -H "Content-Type: application/json" \
+  -d '{"video":{"type":"webrtc"},"audio":{"type":"webrtc","destination":"speaker"}}' | jq
 ```
 Use the bundled Python helper (keeps everything under `samples/virtual-inputs`, installs `uv`, and uses `MediaPlayer` from `aiortc.contrib.media`):
 ```bash

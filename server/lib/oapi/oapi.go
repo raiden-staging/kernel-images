@@ -677,6 +677,10 @@ type VirtualFeedSocketInfo struct {
 
 // VirtualInputAudio defines model for VirtualInputAudio.
 type VirtualInputAudio struct {
+	// Destination specifies where to route audio: "microphone" (default) routes to virtual mic input,
+	// "speaker" routes to audio output for monitoring/playback.
+	Destination *VirtualInputAudioDestination `json:"destination,omitempty"`
+
 	// Format Optional format hint for socket/WebRTC feeds. Socket audio accepts mp3 chunks; WebRTC ingest expects Ogg/Opus.
 	Format *string `json:"format,omitempty"`
 
@@ -701,6 +705,15 @@ type VirtualInputIngestEndpoint struct {
 
 // VirtualInputType Type of media source being injected.
 type VirtualInputType string
+
+// VirtualInputAudioDestination specifies where to route virtual input audio.
+type VirtualInputAudioDestination string
+
+// Defines values for VirtualInputAudioDestination.
+const (
+	VirtualInputAudioDestinationMicrophone VirtualInputAudioDestination = "microphone"
+	VirtualInputAudioDestinationSpeaker    VirtualInputAudioDestination = "speaker"
+)
 
 // VirtualInputVideo defines model for VirtualInputVideo.
 type VirtualInputVideo struct {
