@@ -562,8 +562,16 @@ Helper scripts:
 
 ---
 
-## Desktop Screenshot
+## Screenshots
+
+### Container Desktop
 
 ![Desktop Screenshot](desktop_screenshot.png)
 
-*Container desktop showing Chromium with the default new tab page. The virtual input feed page can be accessed at `/input/devices/virtual/feed`.*
+*Container desktop showing Chromium with the default new tab page.*
+
+### Virtual Input Feed Page (Loading State)
+
+![Feed Loading](feed_loading.png)
+
+*The feed preview page at `/input/devices/virtual/feed` shows "Loading virtual feed..." when no video chunks are being sent. This demonstrates the real-time behavior: the page only displays live content, with no caching or replay of old data.*
