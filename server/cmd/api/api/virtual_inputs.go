@@ -168,7 +168,7 @@ func fromVirtualInputsRequest(body oapi.VirtualInputsRequest) (virtualinputs.Con
 		// Handle audio destination parameter (default: microphone)
 		if body.Audio.Destination != nil {
 			switch *body.Audio.Destination {
-			case oapi.VirtualInputAudioDestinationSpeaker:
+			case oapi.Speaker:
 				cfg.Audio.Destination = virtualinputs.AudioDestinationSpeaker
 			default:
 				cfg.Audio.Destination = virtualinputs.AudioDestinationMicrophone
