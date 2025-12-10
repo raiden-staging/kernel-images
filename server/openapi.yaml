@@ -1995,6 +1995,11 @@ components:
         format:
           type: string
           description: Expected format/codec for the ingest stream.
+        destination:
+          allOf:
+            - $ref: "#/components/schemas/VirtualInputAudioDestination"
+          description: |
+            Where audio ingest will be routed. Only relevant for audio endpoints; ignored for video.
         url:
           type: string
           description: URL to push media to (ws:// or HTTP offer endpoint).

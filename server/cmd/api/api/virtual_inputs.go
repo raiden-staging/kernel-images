@@ -244,6 +244,10 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 				return &status.Audio.Format
 			}(),
 		}
+		if status.Audio.Destination != "" {
+			dest := oapi.VirtualInputAudioDestination(status.Audio.Destination)
+			resp.Audio.Destination = &dest
+		}
 	}
 	if status.Ingest != nil {
 		resp.Ingest = &oapi.VirtualInputsIngest{}
@@ -260,6 +264,10 @@ func toVirtualInputsStatus(status virtualinputs.Status) oapi.VirtualInputsStatus
 			}
 			if status.Ingest.Audio.Format != "" {
 				resp.Ingest.Audio.Format = &status.Ingest.Audio.Format
+			}
+			if status.Ingest.Audio.Destination != "" {
+				dest := oapi.VirtualInputAudioDestination(status.Ingest.Audio.Destination)
+				resp.Ingest.Audio.Destination = &dest
 			}
 			resp.Ingest.Audio.Url = &audioURL
 		}
