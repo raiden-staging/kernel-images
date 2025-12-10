@@ -1,7 +1,0 @@
-{
-  "audio_sink": "audio_input",
-  "microphone_source": "microphone",
-  "mode": "device",
-  "state": "idle",
-  "video_device": "/dev/video20"
-}
