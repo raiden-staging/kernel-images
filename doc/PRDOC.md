@@ -4,6 +4,24 @@ This document covers the virtual input devices and livestream broadcasting featu
 
 ---
 
+## Visual Demonstrations
+
+### Feed Page States
+
+**Streaming State** - Video chunks actively being received:
+
+![Feed Streaming](screenshot_feed_streaming_annotated.png)
+
+*Shows test pattern video being streamed via WebSocket. The feed displays video frames only when chunks are actively arriving.*
+
+**Idle State** - No video configured or chunks stopped:
+
+![Feed Idle](screenshot_feed_stopped_annotated.png)
+
+*After stopping or refreshing with no active stream, the feed shows "No virtual video feed configured" message. No cached data is displayed.*
+
+---
+
 ## Part 1: Utilities & Use Cases
 
 ### 1.1 Virtual Video Input - WebSocket Feed
@@ -643,3 +661,101 @@ ffmpeg -i source.mp4 -c:v mpeg1video -b:v 1500k -r 25 -f mpegts output.ts
 | RTMP Internal | ~1-3s | Some | Standard RTMP behavior |
 
 **Key Principle**: No caching of past data. When chunks stop, output shows idle state. When chunks resume, output resumes from current data.
+
+---
+
+## Real-time Factor Deep Dive
+
+### Why Real-time Matters
+
+The virtual inputs and livestream features are designed for **true real-time** behavior:
+
+1. **No Replay on Refresh**: Unlike buffered video players, refreshing the feed page does not replay cached content. Each refresh shows the current state.
+
+2. **Immediate State Reflection**:
+   - Chunks arriving → video/audio plays
+   - Chunks stop → idle state shown
+   - Chunks resume → playback resumes from current data
+
+3. **Connection Independence**: Opening multiple tabs shows the same real-time stream, not separate cached copies.
+
+### WebRTC Real-time Characteristics
+
+```
+┌─────────────┐     WebRTC      ┌─────────────┐
+│   Source    │ ──────────────► │    Feed     │
+│  (aiortc)   │   ~100-300ms    │   (page)    │
+└─────────────┘    latency      └─────────────┘
+```
+
+- **Protocol**: WebRTC with ICE/STUN/TURN
+- **Codec**: VP8/VP9 (video), Opus (audio)
+- **Latency**: 100-300ms typical
+- **Behavior**: Frame drops on congestion, no buffering
+
+### WebSocket Real-time Characteristics
+
+```
+┌─────────────┐    WebSocket    ┌─────────────┐
+│   Source    │ ──────────────► │   JSMpeg    │
+│  (chunks)   │   ~100-500ms    │  (decoder)  │
+└─────────────┘    latency      └─────────────┘
+```
+
+- **Protocol**: WebSocket binary frames
+- **Codec**: MPEG-1 video (JSMpeg), MP3 (audio)
+- **Latency**: 100-500ms typical
+- **Behavior**: Shows loading message when idle, instant resume
+
+### Verified Real-time Behavior
+
+The following behaviors have been tested and verified:
+
+| Scenario | Expected | Actual |
+|----------|----------|--------|
+| Page refresh while streaming | Shows current frame | ✓ |
+| Page refresh after stop | Shows idle message | ✓ |
+| Start streaming on idle page | Video appears immediately | ✓ |
+| Stop streaming while viewing | Shows idle/blank | ✓ |
+| Multiple tabs same stream | All show same real-time content | ✓ |
+
+### Audio Real-time Routing
+
+Audio chunks can be routed to two destinations:
+
+```
+                     ┌──────────────────┐
+                     │  Virtual Input   │
+                     │    (chunks)      │
+                     └────────┬─────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+    ┌─────────────────┐             ┌─────────────────┐
+    │   audio_input   │             │  audio_output   │
+    │  (virtual mic)  │             │   (speaker)     │
+    └────────┬────────┘             └────────┬────────┘
+             │                               │
+             ▼                               ▼
+    Apps read from mic              Playback/monitor
+```
+
+- **destination: "microphone"** (default): Routes to virtual mic input. Apps reading from microphone receive this audio.
+- **destination: "speaker"**: Routes to audio output. Useful for monitoring/playback.
+
+---
+
+## Media Files Reference
+
+The following sample media files are provided in this documentation:
+
+| File | Format | Description |
+|------|--------|-------------|
+| `demo_video_mpeg1.ts` | MPEG-1/MPEG-TS | 10s test video for WebSocket streaming |
+| `demo_audio.mp3` | MP3 | Sample audio for testing |
+
+Additional samples in `samples/virtual-inputs/media/`:
+- `sample_video_mpeg1.ts` - Color bar test pattern (MPEG-1)
+- `sample_video.mp4` - Longer MP4 clip
+- `sample_audio.mp3` / `sample_audio.wav` - Audio samples
