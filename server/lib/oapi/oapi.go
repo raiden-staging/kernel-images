@@ -693,6 +693,9 @@ type VirtualInputAudio struct {
 
 // VirtualInputIngestEndpoint defines model for VirtualInputIngestEndpoint.
 type VirtualInputIngestEndpoint struct {
+	// Destination Where audio ingest will be routed. Only relevant for audio endpoints; ignored for video.
+	Destination *VirtualInputAudioDestination `json:"destination,omitempty"`
+
 	// Format Expected format/codec for the ingest stream.
 	Format *string `json:"format,omitempty"`
 
