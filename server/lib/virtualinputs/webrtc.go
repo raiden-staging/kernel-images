@@ -226,6 +226,7 @@ func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConf
 	pr, pw := io.Pipe()
 
 	// Start ffmpeg to decode OGG/Opus and output to PulseAudio
+	// Use -device to specify the PulseAudio sink; the output "pulse" is a placeholder.
 	args := []string{
 		"-hide_banner", "-loglevel", "warning",
 		"-f", "ogg",
@@ -233,7 +234,8 @@ func (w *WebRTCIngestor) forwardAudio(ctx context.Context, cfg *webrtcIngestConf
 		"-ac", "2",
 		"-ar", "48000",
 		"-f", "pulse",
-		sink,
+		"-device", sink,
+		"pulse",
 	}
 
 	cmd := exec.CommandContext(ctx, "ffmpeg", args...)

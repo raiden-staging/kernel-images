@@ -152,7 +152,7 @@ func (s *ApiService) handleAudioSocketIngest(r *http.Request, conn *websocket.Co
 	}
 
 	// Start ffmpeg to decode incoming audio and pipe to PulseAudio
-	// ffmpeg -f mp3 -i pipe:0 -f pulse <sink>
+	// Use -device to specify the PulseAudio sink; the output "pulse" is a placeholder.
 	args := []string{
 		"-hide_banner", "-loglevel", "warning",
 		"-f", format,
@@ -160,7 +160,8 @@ func (s *ApiService) handleAudioSocketIngest(r *http.Request, conn *websocket.Co
 		"-ac", "2",
 		"-ar", "48000",
 		"-f", "pulse",
-		sink,
+		"-device", sink,
+		"pulse",
 	}
 	log.Info("starting audio socket ingest", "format", format, "destination", destination, "sink", sink)
 

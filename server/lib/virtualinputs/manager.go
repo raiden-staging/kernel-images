@@ -880,7 +880,8 @@ func (m *Manager) buildFFmpegArgs(cfg Config, paused bool) ([]string, error) {
 				"-ac", "2",
 				"-ar", "48000",
 				"-f", "pulse",
-				sink,
+				"-device", sink,
+				"pulse",
 			)
 		}
 		if m.audioFile != "" {
