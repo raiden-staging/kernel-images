@@ -4,7 +4,15 @@ Kernel virtual inputs/livestream + ElevenLabs agent + remote browser automation 
 
 ## Usage (full sequence)
 
-Setup `.env` vars, then:
+Setup `.env` vars
+
+```env
+ELEVENLABS_AGENT_ID=xxxxxxxxxxxxxxxxxxxx # enable override system prompt + first message
+MOONDREAM_API_KEY=xxxxxxxxxxxxxxxxxxxx
+# REMOTE_RTMP_URL=rtmps://xxxxxxxxxxxxxxxxxxxx # (optional) use this + enable ENABLE_REMOTE_LIVESTREAM to record the session (audio+video) to remote RTMP additionally
+```
+
+Run the sequence (includes all installs) :
 
 ```bash
 bun i
