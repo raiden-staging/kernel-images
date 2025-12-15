@@ -1,0 +1,10 @@
+{
+  "type": "module",
+  "dependencies": {
+    "@elevenlabs/elevenlabs-js": "^2.27.0",
+    "@lightfeed/browser-agent": "^0.1.6",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "ws": "^8.18.3"
+  }
+}
