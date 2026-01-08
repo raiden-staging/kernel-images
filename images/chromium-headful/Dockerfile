@@ -146,7 +146,7 @@ RUN --mount=type=cache,target=/tmp/cache/ffmpeg,sharing=locked,id=$CACHEIDPREFIX
     rm -rf /tmp/ffmpeg*
 EOT
 
-FROM ghcr.io/onkernel/neko/base:3.0.8-v1.3.0 AS neko
+FROM ghcr.io/kernel/neko/base:3.0.8-v1.3.0 AS neko
 # ^--- now has event.SYSTEM_PONG with legacy support to keepalive
 FROM node:22-bullseye-slim AS node-22
 FROM docker.io/ubuntu:22.04
@@ -276,8 +276,8 @@ RUN set -eux; \
     ln -sf /usr/local/lib/node_modules/corepack/dist/corepack.js /usr/local/bin/corepack; \
     fi
 
-# Install TypeScript, Playwright, Patchright globally
-RUN --mount=type=cache,target=/root/.npm,id=$CACHEIDPREFIX-npm npm install -g typescript playwright-core patchright tsx
+# Install TypeScript, Playwright, Patchright, esbuild globally
+RUN --mount=type=cache,target=/root/.npm,id=$CACHEIDPREFIX-npm npm install -g typescript playwright-core patchright esbuild
 
 # setup desktop env & app
 ENV DISPLAY_NUM=1
@@ -303,8 +303,18 @@ COPY images/chromium-headful/supervisor/services/ /etc/supervisor/conf.d/service
 COPY --from=server-builder /out/kernel-images-api /usr/local/bin/kernel-images-api
 COPY --from=server-builder /out/chromium-launcher /usr/local/bin/chromium-launcher
 
-# Copy the Playwright executor runtime
-COPY server/runtime/playwright-executor.ts /usr/local/lib/playwright-executor.ts
+# Copy and compile the Playwright daemon
+COPY server/runtime/playwright-daemon.ts /tmp/playwright-daemon.ts
+RUN esbuild /tmp/playwright-daemon.ts \
+    --bundle \
+    --platform=node \
+    --target=node22 \
+    --format=esm \
+    --outfile=/usr/local/lib/playwright-daemon.js \
+    --external:playwright-core \
+    --external:patchright \
+    --external:esbuild \
+    && rm /tmp/playwright-daemon.ts
 
 RUN useradd -m -s /bin/bash kernel
 
