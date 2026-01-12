@@ -124,6 +124,15 @@ func main() {
 		apiService.HandleProcessAttach(w, r, id)
 	})
 
+	// Serve extension files for Chrome policy-installed extensions
+	// This allows Chrome to download .crx and update.xml files via HTTP
+	extensionsDir := "/home/kernel/extensions"
+	r.Get("/extensions/*", func(w http.ResponseWriter, r *http.Request) {
+		// Serve files from /home/kernel/extensions/
+		fs := http.StripPrefix("/extensions/", http.FileServer(http.Dir(extensionsDir)))
+		fs.ServeHTTP(w, r)
+	})
+
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", config.Port),
 		Handler: r,

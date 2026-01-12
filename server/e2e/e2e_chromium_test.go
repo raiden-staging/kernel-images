@@ -834,21 +834,36 @@ func TestWebBotAuthInstallation(t *testing.T) {
 
 	// Build mock web-bot-auth extension zip in-memory
 	extDir := t.TempDir()
-	manifest := `{
-  "manifest_version": 3,
-  "version": "1.0.0",
-  "name": "Web Bot Auth Mock",
-  "description": "Mock web-bot-auth extension for testing",
-  "permissions": [
-    "webRequest",
-    "webRequestBlocking"
-  ],
-  "host_permissions": [
-    "*://*/*"
-  ]
-}`
-	err = os.WriteFile(filepath.Join(extDir, "manifest.json"), []byte(manifest), 0600)
+
+	// Create manifest with webRequest permissions to trigger enterprise policy requirement
+	manifest := map[string]interface{}{
+		"manifest_version": 3,
+		"version":          "1.0.0",
+		"name":             "Web Bot Auth Mock",
+		"description":      "Mock web-bot-auth extension for testing",
+		"permissions":      []string{"webRequest", "webRequestBlocking"},
+		"host_permissions": []string{"<all_urls>"},
+	}
+	manifestJSON, err := json.MarshalIndent(manifest, "", "  ")
+	require.NoError(t, err, "marshal manifest: %v", err)
+
+	err = os.WriteFile(filepath.Join(extDir, "manifest.json"), manifestJSON, 0600)
 	require.NoError(t, err, "write manifest: %v", err)
+
+	// Create update.xml required for enterprise policy
+	updateXMLContent := `<?xml version="1.0" encoding="UTF-8"?>
+<gupdate xmlns="http://www.google.com/update2/response" protocol="2.0">
+  <app appid="aaaabbbbccccddddeeeeffffgggghhhh">
+    <updatecheck codebase="http://localhost:10001/extensions/web-bot-auth/web-bot-auth.crx" version="1.0.0"/>
+  </app>
+</gupdate>`
+
+	err = os.WriteFile(filepath.Join(extDir, "update.xml"), []byte(updateXMLContent), 0600)
+	require.NoError(t, err, "write update.xml: %v", err)
+
+	// Create a minimal .crx file (just needs to exist for the test)
+	err = os.WriteFile(filepath.Join(extDir, "web-bot-auth.crx"), []byte("mock crx content"), 0600)
+	require.NoError(t, err, "write .crx: %v", err)
 
 	extZip, err := zipDirToBytes(extDir)
 	require.NoError(t, err, "zip ext: %v", err)
@@ -889,30 +904,44 @@ func TestWebBotAuthInstallation(t *testing.T) {
 		err = json.Unmarshal([]byte(policyContent), &policy)
 		require.NoError(t, err, "failed to parse policy.json: %v", err)
 
-		// Check ExtensionSettings exists
-		extensionSettings, ok := policy["ExtensionSettings"].(map[string]interface{})
-		require.True(t, ok, "ExtensionSettings not found in policy.json")
+		// Check ExtensionInstallForcelist exists
+		extensionInstallForcelist, ok := policy["ExtensionInstallForcelist"].([]interface{})
+		require.True(t, ok, "ExtensionInstallForcelist not found in policy.json")
+		require.GreaterOrEqual(t, len(extensionInstallForcelist), 1, "ExtensionInstallForcelist should have at least 1 entry")
 
-		// Check web-bot-auth entry exists
-		webBotAuth, ok := extensionSettings["web-bot-auth"].(map[string]interface{})
-		require.True(t, ok, "web-bot-auth entry not found in ExtensionSettings")
+		// Find the web-bot-auth entry in the forcelist
+		var webBotAuthEntry string
+		for _, entry := range extensionInstallForcelist {
+			if entryStr, ok := entry.(string); ok && strings.Contains(entryStr, "web-bot-auth") {
+				webBotAuthEntry = entryStr
+				break
+			}
+		}
+		require.NotEmpty(t, webBotAuthEntry, "web-bot-auth entry not found in ExtensionInstallForcelist")
 
-		// Verify installation_mode is force_installed
-		installationMode, ok := webBotAuth["installation_mode"].(string)
-		require.True(t, ok, "installation_mode not found in web-bot-auth entry")
-		require.Equal(t, "force_installed", installationMode, "expected installation_mode to be force_installed")
+		// Verify the entry format: "extension-id;update_url"
+		parts := strings.Split(webBotAuthEntry, ";")
+		require.Len(t, parts, 2, "expected web-bot-auth entry to have format 'extension-id;update_url'")
 
-		// Verify path
-		path, ok := webBotAuth["path"].(string)
-		require.True(t, ok, "path not found in web-bot-auth entry")
-		require.Equal(t, "/home/kernel/extensions/web-bot-auth", path, "expected path to be /home/kernel/extensions/web-bot-auth")
+		extensionID := parts[0]
+		updateURL := parts[1]
 
-		// Verify runtime_allowed_hosts
-		runtimeAllowedHosts, ok := webBotAuth["runtime_allowed_hosts"].([]interface{})
-		require.True(t, ok, "runtime_allowed_hosts not found in web-bot-auth entry")
-		require.Len(t, runtimeAllowedHosts, 1, "expected runtime_allowed_hosts to have 1 entry")
-		require.Equal(t, "*://*/*", runtimeAllowedHosts[0].(string), "expected runtime_allowed_hosts to contain *://*/*")
-
+		logger.Info("[test]", "extension_id", extensionID, "update_url", updateURL)
 		logger.Info("[test]", "result", "web-bot-auth policy verified successfully")
+	}
+
+	// Verify the extension directory exists
+	{
+		logger.Info("[test]", "action", "checking extension directory")
+		dirList, err := execCombinedOutput(ctx, "ls", []string{"-la", "/home/kernel/extensions/web-bot-auth/"})
+		require.NoError(t, err, "failed to list extension directory: %v", err)
+		logger.Info("[test]", "extension_directory_contents", dirList)
+
+		// Verify manifest.json exists (uploaded as part of the extension)
+		manifestContent, err := execCombinedOutput(ctx, "cat", []string{"/home/kernel/extensions/web-bot-auth/manifest.json"})
+		require.NoError(t, err, "failed to read manifest.json: %v", err)
+		require.Contains(t, manifestContent, "Web Bot Auth Mock", "manifest.json should contain extension name")
+
+		logger.Info("[test]", "result", "extension directory verified successfully")
 	}
 }
