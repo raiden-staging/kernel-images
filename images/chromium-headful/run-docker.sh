@@ -70,6 +70,21 @@ if [[ -n "${PLAYWRIGHT_ENGINE:-}" ]]; then
   RUN_ARGS+=( -e PLAYWRIGHT_ENGINE="$PLAYWRIGHT_ENGINE" )
 fi
 
+# Telemetry configuration
+# Usage: TELEMETRY_ENABLED=true TELEMETRY_ENDPOINT=https://api.example.com/telemetry ./run-docker.sh
+if [[ -n "${TELEMETRY_ENABLED:-}" ]]; then
+  RUN_ARGS+=( -e TELEMETRY_ENABLED="$TELEMETRY_ENABLED" )
+fi
+if [[ -n "${TELEMETRY_ENDPOINT:-}" ]]; then
+  RUN_ARGS+=( -e TELEMETRY_ENDPOINT="$TELEMETRY_ENDPOINT" )
+fi
+if [[ -n "${TELEMETRY_CAPTURE:-}" ]]; then
+  RUN_ARGS+=( -e TELEMETRY_CAPTURE="$TELEMETRY_CAPTURE" )
+fi
+if [[ -n "${TELEMETRY_DEBUG:-}" ]]; then
+  RUN_ARGS+=( -e TELEMETRY_DEBUG="$TELEMETRY_DEBUG" )
+fi
+
 # WebRTC port mapping
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   echo "Running container with WebRTC"

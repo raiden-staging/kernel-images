@@ -80,6 +80,21 @@ deploy_args=(
   -n "$NAME"
 )
 
+# Telemetry configuration
+# Usage: TELEMETRY_ENABLED=true TELEMETRY_ENDPOINT=https://api.example.com/telemetry ./run-unikernel.sh
+if [[ -n "${TELEMETRY_ENABLED:-}" ]]; then
+  deploy_args+=( -e TELEMETRY_ENABLED="$TELEMETRY_ENABLED" )
+fi
+if [[ -n "${TELEMETRY_ENDPOINT:-}" ]]; then
+  deploy_args+=( -e TELEMETRY_ENDPOINT="$TELEMETRY_ENDPOINT" )
+fi
+if [[ -n "${TELEMETRY_CAPTURE:-}" ]]; then
+  deploy_args+=( -e TELEMETRY_CAPTURE="$TELEMETRY_CAPTURE" )
+fi
+if [[ -n "${TELEMETRY_DEBUG:-}" ]]; then
+  deploy_args+=( -e TELEMETRY_DEBUG="$TELEMETRY_DEBUG" )
+fi
+
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
   echo "Deploying with WebRTC enabled"
   kraft cloud inst create --start \
