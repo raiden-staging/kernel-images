@@ -46,8 +46,8 @@
         Stream: stream_track_added, stream_play_started, stream_play_failed, stream_quality_change
     -->
     <script>
-      // Runtime telemetry configuration - modify these values as needed
-      // or set them dynamically from server-side rendering
+      // Runtime telemetry configuration defaults
+      // These can be overridden by telemetry-config.js (generated at container startup from env vars)
       window.__NEKO_TELEMETRY_CONFIG__ = {
         // enabled: true,                               // Enable/disable telemetry
         // endpoint: 'http://localhost:8888/telemetry', // Telemetry endpoint URL
@@ -55,6 +55,17 @@
         // capture: 'all'                               // Comma-separated event types or 'all'
       };
     </script>
+    <!--
+      Runtime config override - generated at container startup from environment variables:
+      TELEMETRY_ENABLED, TELEMETRY_ENDPOINT, TELEMETRY_DEBUG, TELEMETRY_CAPTURE
+
+      Usage with Docker:
+        docker run -e TELEMETRY_ENABLED=true -e TELEMETRY_ENDPOINT=https://api.example.com/telemetry ...
+
+      Usage with Kraft:
+        kraft run -e TELEMETRY_ENABLED=true -e TELEMETRY_ENDPOINT=https://api.example.com/telemetry ...
+    -->
+    <script src="telemetry-config.js" onerror=""></script>
   </head>
   <body>
     <noscript>

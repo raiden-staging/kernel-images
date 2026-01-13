@@ -98,6 +98,86 @@ else
 fi
 
 # -----------------------------------------------------------------------------
+# Generate telemetry configuration from environment variables -----------------
+# -----------------------------------------------------------------------------
+# This creates /var/www/telemetry-config.js from TELEMETRY_* environment variables
+# which the neko client will load at runtime to configure telemetry.
+#
+# Supported environment variables:
+#   TELEMETRY_ENABLED  - 'true' or 'false' (default: not set, uses app default)
+#   TELEMETRY_ENDPOINT - URL to send telemetry data (e.g., 'https://api.example.com/telemetry')
+#   TELEMETRY_DEBUG    - 'true' or 'false' for debug logging
+#   TELEMETRY_CAPTURE  - Comma-separated event types (e.g., 'error_*,perf_fps' or 'all')
+#
+# Usage with Docker:
+#   docker run -e TELEMETRY_ENABLED=true -e TELEMETRY_ENDPOINT=https://api.example.com/telemetry ...
+#
+# Usage with Kraft:
+#   kraft run -e TELEMETRY_ENABLED=true -e TELEMETRY_ENDPOINT=https://api.example.com/telemetry ...
+
+generate_telemetry_config() {
+  local config_file="/var/www/telemetry-config.js"
+  local has_config=false
+  local config_props=""
+
+  # Check each telemetry environment variable
+  if [[ -n "${TELEMETRY_ENABLED:-}" ]]; then
+    has_config=true
+    if [[ "${TELEMETRY_ENABLED}" == "true" ]]; then
+      config_props="${config_props}  enabled: true,\n"
+    else
+      config_props="${config_props}  enabled: false,\n"
+    fi
+  fi
+
+  if [[ -n "${TELEMETRY_ENDPOINT:-}" ]]; then
+    has_config=true
+    # Escape single quotes in the endpoint URL
+    local endpoint="${TELEMETRY_ENDPOINT//\'/\\\'}"
+    config_props="${config_props}  endpoint: '${endpoint}',\n"
+  fi
+
+  if [[ -n "${TELEMETRY_DEBUG:-}" ]]; then
+    has_config=true
+    if [[ "${TELEMETRY_DEBUG}" == "true" ]]; then
+      config_props="${config_props}  debug: true,\n"
+    else
+      config_props="${config_props}  debug: false,\n"
+    fi
+  fi
+
+  if [[ -n "${TELEMETRY_CAPTURE:-}" ]]; then
+    has_config=true
+    # Escape single quotes in the capture spec
+    local capture="${TELEMETRY_CAPTURE//\'/\\\'}"
+    config_props="${config_props}  capture: '${capture}',\n"
+  fi
+
+  # Generate the config file
+  if [[ "$has_config" == "true" ]]; then
+    echo "[wrapper] Generating telemetry configuration from environment variables"
+    cat > "$config_file" <<EOF
+// Auto-generated telemetry configuration from container environment variables
+// Generated at: $(date -Iseconds)
+window.__NEKO_TELEMETRY_CONFIG__ = Object.assign(window.__NEKO_TELEMETRY_CONFIG__ || {}, {
+$(echo -e "$config_props" | sed 's/,$//')});
+EOF
+    echo "[wrapper] Telemetry config written to $config_file"
+    if [[ "${TELEMETRY_DEBUG:-}" == "true" ]]; then
+      echo "[wrapper] Telemetry config contents:"
+      cat "$config_file"
+    fi
+  else
+    # Create an empty config file to prevent 404 errors
+    echo "// No telemetry environment variables set - using app defaults" > "$config_file"
+    echo "[wrapper] No telemetry env vars set, using defaults"
+  fi
+}
+
+# Generate telemetry config before services start
+generate_telemetry_config
+
+# -----------------------------------------------------------------------------
 # Dynamic log aggregation for /var/log/supervisord -----------------------------
 # -----------------------------------------------------------------------------
 # Tails any existing and future files under /var/log/supervisord,
