@@ -240,8 +240,8 @@ export interface TelemetryConfig {
 }
 
 export const DEFAULT_TELEMETRY_CONFIG: TelemetryConfig = {
-  enabled: true,
-  endpoint: 'http://localhost:8888/telemetry',
+  enabled: false, // Disabled by default - enabled automatically when endpoint is provided
+  endpoint: '', // No default endpoint - must be explicitly set via TELEMETRY_ENDPOINT
   batchSize: 10,
   flushInterval: 30000, // 30 seconds
   maxRetries: 3,
@@ -249,5 +249,5 @@ export const DEFAULT_TELEMETRY_CONFIG: TelemetryConfig = {
   sessionHeartbeatInterval: 60000, // 1 minute
   performanceSampleInterval: 10000, // 10 seconds
   debug: false,
-  capture: 'all',
+  capture: 'all', // Default: capture all events
 }

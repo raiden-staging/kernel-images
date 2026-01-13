@@ -15,10 +15,11 @@ import {
 import { NekoClient } from '~/neko'
 
 // Runtime configuration interface
+// Only 2 flags:
+//   - endpoint: If set, telemetry is enabled and sends to this URL
+//   - capture: Comma-separated event types (defaults to 'all')
 interface RuntimeTelemetryConfig {
-  enabled?: boolean
   endpoint?: string
-  debug?: boolean
   capture?: string // comma-separated event types or 'all'
 }
 
@@ -37,65 +38,39 @@ declare module 'vue/types/vue' {
 }
 
 /**
- * Parse boolean from string/undefined
- */
-function parseBoolean(value: string | undefined | null, defaultValue: boolean): boolean {
-  if (value === undefined || value === null || value === '') {
-    return defaultValue
-  }
-  return value.toLowerCase() === 'true' || value === '1'
-}
-
-/**
  * Get telemetry configuration from multiple sources:
- * 1. Build-time environment variables (VUE_APP_TELEMETRY_*)
+ * 1. Build-time environment variables (VUE_APP_TELEMETRY_ENDPOINT, VUE_APP_TELEMETRY_CAPTURE)
  * 2. Runtime window config (window.__NEKO_TELEMETRY_CONFIG__)
- * 3. Query parameters (?telemetry=true&telemetry_endpoint=...&telemetry_capture=...)
+ * 3. Query parameters (?telemetry_endpoint=...&telemetry_capture=...)
  *
  * Priority: Query params > Window config > Env vars > Defaults
  *
- * TELEMETRY_CAPTURE format (comma-separated):
- *   - 'all' (default): Capture all events
- *   - 'none': Capture no events
- *   - 'error_js,perf_fps,stream_*': Specific events or patterns
- *   - 'all,-perf_*': All except matching patterns
+ * Only 2 configuration options:
+ *   - TELEMETRY_ENDPOINT: If set, telemetry is enabled and sends to this URL
+ *   - TELEMETRY_CAPTURE: Comma-separated event types (defaults to 'all')
  */
 function getTelemetryConfig(): Partial<TelemetryConfig> {
   const config: Partial<TelemetryConfig> = {}
 
-  // Track capture from each source (last non-empty wins)
+  let endpoint: string | undefined
   let captureSpec: string | undefined
 
-  // 1. Build-time environment variables
-  const envEnabled = process.env.VUE_APP_TELEMETRY_ENABLED
+  // 1. Build-time environment variables (lowest priority)
   const envEndpoint = process.env.VUE_APP_TELEMETRY_ENDPOINT
-  const envDebug = process.env.VUE_APP_TELEMETRY_DEBUG
   const envCapture = process.env.VUE_APP_TELEMETRY_CAPTURE
 
-  if (envEnabled !== undefined) {
-    config.enabled = parseBoolean(envEnabled, DEFAULT_TELEMETRY_CONFIG.enabled)
-  }
   if (envEndpoint) {
-    config.endpoint = envEndpoint
-  }
-  if (envDebug !== undefined) {
-    config.debug = parseBoolean(envDebug, DEFAULT_TELEMETRY_CONFIG.debug)
+    endpoint = envEndpoint
   }
   if (envCapture) {
     captureSpec = envCapture
   }
 
-  // 2. Runtime window configuration
+  // 2. Runtime window configuration (medium priority)
   const windowConfig = window.__NEKO_TELEMETRY_CONFIG__
   if (windowConfig) {
-    if (windowConfig.enabled !== undefined) {
-      config.enabled = windowConfig.enabled
-    }
     if (windowConfig.endpoint) {
-      config.endpoint = windowConfig.endpoint
-    }
-    if (windowConfig.debug !== undefined) {
-      config.debug = windowConfig.debug
+      endpoint = windowConfig.endpoint
     }
     if (windowConfig.capture) {
       captureSpec = windowConfig.capture
@@ -104,26 +79,25 @@ function getTelemetryConfig(): Partial<TelemetryConfig> {
 
   // 3. Query parameters (highest priority)
   const urlParams = new URLSearchParams(window.location.search)
-
-  const paramEnabled = urlParams.get('telemetry') ?? urlParams.get('telemetry_enabled')
   const paramEndpoint = urlParams.get('telemetry_endpoint')
-  const paramDebug = urlParams.get('telemetry_debug')
   const paramCapture = urlParams.get('telemetry_capture')
 
-  if (paramEnabled !== null) {
-    config.enabled = parseBoolean(paramEnabled, DEFAULT_TELEMETRY_CONFIG.enabled)
-  }
   if (paramEndpoint) {
-    config.endpoint = paramEndpoint
-  }
-  if (paramDebug !== null) {
-    config.debug = parseBoolean(paramDebug, DEFAULT_TELEMETRY_CONFIG.debug)
+    endpoint = paramEndpoint
   }
   if (paramCapture) {
     captureSpec = paramCapture
   }
 
-  // Set capture spec (defaults to 'all' if not specified)
+  // Set config: enabled is determined by whether endpoint is set
+  if (endpoint) {
+    config.enabled = true
+    config.endpoint = endpoint
+  } else {
+    config.enabled = false
+  }
+
+  // Set capture spec (defaults to 'all')
   if (captureSpec) {
     config.capture = captureSpec
   }
@@ -136,20 +110,20 @@ const plugin: PluginObject<undefined> = {
     // Get merged configuration
     const config = getTelemetryConfig()
 
-    // Log configuration for debugging
-    if (config.debug || process.env.NODE_ENV === 'development') {
-      console.log('[Telemetry] Configuration:', {
-        enabled: config.enabled ?? DEFAULT_TELEMETRY_CONFIG.enabled,
-        endpoint: config.endpoint ?? DEFAULT_TELEMETRY_CONFIG.endpoint,
-        debug: config.debug ?? DEFAULT_TELEMETRY_CONFIG.debug,
-        source: {
-          env: {
-            VUE_APP_TELEMETRY_ENABLED: process.env.VUE_APP_TELEMETRY_ENABLED,
-            VUE_APP_TELEMETRY_ENDPOINT: process.env.VUE_APP_TELEMETRY_ENDPOINT,
-          },
-          window: window.__NEKO_TELEMETRY_CONFIG__,
-          queryParams: window.location.search,
-        },
+    // Always log telemetry status on startup
+    if (config.enabled) {
+      console.log('[Telemetry] ENABLED - sending to:', config.endpoint)
+      console.log('[Telemetry] Capture:', config.capture ?? 'all')
+    } else {
+      console.log('[Telemetry] DISABLED (no endpoint configured)')
+    }
+
+    // Debug: show config sources
+    if (process.env.NODE_ENV === 'development') {
+      console.log('[Telemetry] Config sources:', {
+        env: { VUE_APP_TELEMETRY_ENDPOINT: process.env.VUE_APP_TELEMETRY_ENDPOINT },
+        window: window.__NEKO_TELEMETRY_CONFIG__,
+        queryParams: window.location.search,
       })
     }
 

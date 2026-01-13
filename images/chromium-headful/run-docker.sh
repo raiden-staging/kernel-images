@@ -70,19 +70,15 @@ if [[ -n "${PLAYWRIGHT_ENGINE:-}" ]]; then
   RUN_ARGS+=( -e PLAYWRIGHT_ENGINE="$PLAYWRIGHT_ENGINE" )
 fi
 
-# Telemetry configuration
-# Usage: TELEMETRY_ENABLED=true TELEMETRY_ENDPOINT=https://api.example.com/telemetry ./run-docker.sh
-if [[ -n "${TELEMETRY_ENABLED:-}" ]]; then
-  RUN_ARGS+=( -e TELEMETRY_ENABLED="$TELEMETRY_ENABLED" )
-fi
+# Telemetry configuration (only 2 flags)
+# Usage: TELEMETRY_ENDPOINT=https://api.example.com/telemetry ./run-docker.sh
+# If TELEMETRY_ENDPOINT is set, telemetry is enabled; if not set, telemetry is disabled
 if [[ -n "${TELEMETRY_ENDPOINT:-}" ]]; then
+  echo "Telemetry ENABLED - endpoint: $TELEMETRY_ENDPOINT"
   RUN_ARGS+=( -e TELEMETRY_ENDPOINT="$TELEMETRY_ENDPOINT" )
-fi
-if [[ -n "${TELEMETRY_CAPTURE:-}" ]]; then
-  RUN_ARGS+=( -e TELEMETRY_CAPTURE="$TELEMETRY_CAPTURE" )
-fi
-if [[ -n "${TELEMETRY_DEBUG:-}" ]]; then
-  RUN_ARGS+=( -e TELEMETRY_DEBUG="$TELEMETRY_DEBUG" )
+  if [[ -n "${TELEMETRY_CAPTURE:-}" ]]; then
+    RUN_ARGS+=( -e TELEMETRY_CAPTURE="$TELEMETRY_CAPTURE" )
+  fi
 fi
 
 # WebRTC port mapping

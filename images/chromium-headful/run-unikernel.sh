@@ -80,19 +80,15 @@ deploy_args=(
   -n "$NAME"
 )
 
-# Telemetry configuration
-# Usage: TELEMETRY_ENABLED=true TELEMETRY_ENDPOINT=https://api.example.com/telemetry ./run-unikernel.sh
-if [[ -n "${TELEMETRY_ENABLED:-}" ]]; then
-  deploy_args+=( -e TELEMETRY_ENABLED="$TELEMETRY_ENABLED" )
-fi
+# Telemetry configuration (only 2 flags)
+# Usage: TELEMETRY_ENDPOINT=https://api.example.com/telemetry ./run-unikernel.sh
+# If TELEMETRY_ENDPOINT is set, telemetry is enabled; if not set, telemetry is disabled
 if [[ -n "${TELEMETRY_ENDPOINT:-}" ]]; then
+  echo "Telemetry ENABLED - endpoint: $TELEMETRY_ENDPOINT"
   deploy_args+=( -e TELEMETRY_ENDPOINT="$TELEMETRY_ENDPOINT" )
-fi
-if [[ -n "${TELEMETRY_CAPTURE:-}" ]]; then
-  deploy_args+=( -e TELEMETRY_CAPTURE="$TELEMETRY_CAPTURE" )
-fi
-if [[ -n "${TELEMETRY_DEBUG:-}" ]]; then
-  deploy_args+=( -e TELEMETRY_DEBUG="$TELEMETRY_DEBUG" )
+  if [[ -n "${TELEMETRY_CAPTURE:-}" ]]; then
+    deploy_args+=( -e TELEMETRY_CAPTURE="$TELEMETRY_CAPTURE" )
+  fi
 fi
 
 if [[ "${ENABLE_WEBRTC:-}" == "true" ]]; then
