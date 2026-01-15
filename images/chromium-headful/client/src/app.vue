@@ -233,6 +233,17 @@
       }
     }
 
+    get parentOrigin() {
+      try {
+        if (document.referrer) {
+          return new URL(document.referrer).origin
+        }
+      } catch (e) {
+        // fallback if referrer is not a valid URL
+      }
+      return '*'
+    }
+
     @Watch('hideControls', { immediate: true })
     onHideControls(enabled: boolean) {
       if (enabled) {
@@ -262,6 +273,13 @@
     onConnected(value: boolean) {
       if (value) {
         this.applyQueryResolution()
+        try {
+          if (window.parent !== window) {
+            window.parent.postMessage({ type: 'KERNEL_CONNECTED', connected: true }, this.parentOrigin)
+          }
+        } catch (e) {
+          console.error('Failed to post message to parent', e)
+        }
       }
     }
 
@@ -326,5 +344,26 @@
     get connected() {
       return this.$accessor.connected
     }
+
+    get playing() {
+      return this.$accessor.video.playing
+    }
+
+    @Watch('playing')
+    onPlaying(value: boolean) {
+      try {
+        if (window.parent === window) return
+
+        if (value) {
+          window.parent.postMessage({ type: 'KERNEL_PLAYING', playing: true }, this.parentOrigin)
+        } else {
+          window.parent.postMessage({ type: 'KERNEL_PAUSED', playing: false }, this.parentOrigin)
+        }
+      } catch (e) {
+        console.error('Failed to post message to parent', e)
+      }
+    }
+
+
   }
 </script>
