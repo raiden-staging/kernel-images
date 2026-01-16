@@ -75,13 +75,14 @@ export class NekoClient extends BaseClient implements EventEmitter<NekoEvents> {
   // Internal Events
   /////////////////////////////
   protected [EVENT.RECONNECTING]() {
-    this.$vue.$notify({
-      group: 'neko',
-      type: 'warning',
-      title: this.$vue.$t('connection.reconnecting') as string,
-      duration: 5000,
-      speed: 1000,
-    })
+    // KERNEL: Differentiate between temporary network issues and permanent disconnection
+    // If WebSocket is still open, this is likely a temporary ICE disconnection (network glitch)
+    // Allow WebRTC to attempt recovery automatically
+    // If WebSocket is closed, the browser process is likely gone - show disconnected overlay
+    if (!this.socketOpen) {
+      this.cleanup()
+    }
+    // else: WebSocket still open, let WebRTC recover naturally
   }
 
   protected [EVENT.CONNECTING]() {
