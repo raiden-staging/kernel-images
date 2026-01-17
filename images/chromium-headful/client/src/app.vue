@@ -186,6 +186,7 @@
   import About from '~/components/about.vue'
   import Header from '~/components/header.vue'
   import Unsupported from '~/components/unsupported.vue'
+  import { GhostSyncPayload, GhostWebSocketMessage } from '~/neko/ghost-types'
 
   @Component({
     name: 'neko',
@@ -208,6 +209,19 @@
 
     shakeKbd = false
     wasConnected = false
+    private ghostWebSocket: WebSocket | null = null
+    private ghostReconnectTimeout: number | null = null
+
+    get isGhostSyncEnabled() {
+      // Ghost sync is enabled by default - can be disabled via ?ghost_sync=false
+      const params = new URL(location.href).searchParams
+      const param = params.get('ghost_sync') || params.get('ghostSync') || params.get('ghost')
+      // Explicitly disabled if set to 'false' or '0', otherwise enabled by default
+      if (param === 'false' || param === '0') {
+        return false
+      }
+      return true
+    }
 
     get volume() {
       const numberParam = parseFloat(new URL(location.href).searchParams.get('volume') || '1.0')
@@ -278,6 +292,10 @@
       if (value) {
         this.wasConnected = true
         this.applyQueryResolution()
+        // Connect to ghost sync if enabled
+        if (this.isGhostSyncEnabled) {
+          this.connectGhostSync()
+        }
         try {
           if (window.parent !== window) {
             window.parent.postMessage({ type: 'KERNEL_CONNECTED', connected: true }, this.parentOrigin)
@@ -285,6 +303,9 @@
         } catch (e) {
           console.error('Failed to post message to parent', e)
         }
+      } else {
+        // Disconnect ghost sync when main connection is lost
+        this.disconnectGhostSync()
       }
     }
 
@@ -330,6 +351,79 @@
     }
 
     // KERNEL: end custom resolution, frame rate, and readOnly control via query params
+
+    // KERNEL: Ghost DOM Sync - connects to kernel-images API WebSocket for bounding box overlay
+    private connectGhostSync() {
+      if (!this.isGhostSyncEnabled) return
+      if (this.ghostWebSocket && this.ghostWebSocket.readyState === WebSocket.OPEN) return
+
+      // Determine the ghost sync WebSocket URL
+      // Ghost sync is served by the kernel-images API on port 444 (maps to internal 10001)
+      // Allow override via query param for development
+      const params = new URL(location.href).searchParams
+      const ghostPort = params.get('ghost_port') || '444'
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      // Use the same hostname as the current page, connect to /ghost-sync endpoint
+      const ghostUrl = `${protocol}//${location.hostname}:${ghostPort}/ghost-sync`
+
+      console.log(`[ghost-sync] Connecting to ${ghostUrl}`)
+
+      try {
+        this.ghostWebSocket = new WebSocket(ghostUrl)
+
+        this.ghostWebSocket.onopen = () => {
+          console.log('[ghost-sync] Connected')
+          this.$accessor.ghost.setEnabled(true)
+          this.$accessor.ghost.setConnected(true)
+        }
+
+        this.ghostWebSocket.onmessage = (event) => {
+          try {
+            const message: GhostWebSocketMessage = JSON.parse(event.data)
+            if (message.event === 'ghost/sync' && message.data) {
+              this.$accessor.ghost.applySync(message.data)
+            }
+          } catch (e) {
+            console.error('[ghost-sync] Failed to parse message:', e)
+          }
+        }
+
+        this.ghostWebSocket.onclose = () => {
+          console.log('[ghost-sync] Disconnected')
+          this.$accessor.ghost.setConnected(false)
+          // Attempt to reconnect after a delay if still enabled
+          if (this.isGhostSyncEnabled && this.connected) {
+            this.ghostReconnectTimeout = window.setTimeout(() => {
+              this.connectGhostSync()
+            }, 2000)
+          }
+        }
+
+        this.ghostWebSocket.onerror = (error) => {
+          console.error('[ghost-sync] WebSocket error:', error)
+        }
+      } catch (e) {
+        console.error('[ghost-sync] Failed to connect:', e)
+      }
+    }
+
+    private disconnectGhostSync() {
+      if (this.ghostReconnectTimeout) {
+        clearTimeout(this.ghostReconnectTimeout)
+        this.ghostReconnectTimeout = null
+      }
+      if (this.ghostWebSocket) {
+        this.ghostWebSocket.close()
+        this.ghostWebSocket = null
+      }
+      this.$accessor.ghost.setEnabled(false)
+      this.$accessor.ghost.setConnected(false)
+      this.$accessor.ghost.reset()
+    }
+
+    beforeDestroy() {
+      this.disconnectGhostSync()
+    }
 
     controlAttempt() {
       if (this.shakeKbd || this.$accessor.remote.hosted) return

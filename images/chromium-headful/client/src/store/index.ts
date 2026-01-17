@@ -13,6 +13,7 @@ import * as user from './user'
 import * as settings from './settings'
 import * as client from './client'
 import * as emoji from './emoji'
+import * as ghost from './ghost'
 
 export const state = () => ({
   displayname: get<string>('displayname', ''),
@@ -111,7 +112,7 @@ export const storePattern = {
   mutations,
   actions,
   getters,
-  modules: { video, chat, files, user, remote, settings, client, emoji },
+  modules: { video, chat, files, user, remote, settings, client, emoji, ghost },
 }
 
 Vue.use(Vuex)
