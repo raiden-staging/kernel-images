@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +23,30 @@ import (
 
 func silentLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// testLogWriter wraps testing.T for slog output and can be stopped to avoid
+// panics when the test goroutine logs after the test has completed.
+type testLogWriter struct {
+	t       *testing.T
+	stopped atomic.Bool
+}
+
+func (tw *testLogWriter) Write(p []byte) (n int, err error) {
+	if tw.stopped.Load() {
+		// Test is done, discard logs to avoid panic
+		return len(p), nil
+	}
+	tw.t.Log(strings.TrimSpace(string(p)))
+	return len(p), nil
+}
+
+func (tw *testLogWriter) Stop() {
+	tw.stopped.Store(true)
+}
+
+func newTestLogWriter(t *testing.T) *testLogWriter {
+	return &testLogWriter{t: t}
 }
 
 func findBrowserBinary() (string, error) {
@@ -148,10 +173,18 @@ func TestUpstreamManagerDetectsChromiumAndRestart(t *testing.T) {
 	}
 	defer logFile.Close()
 
-	logger := silentLogger()
+	logWriter := newTestLogWriter(t)
+	logger := slog.New(slog.NewTextHandler(logWriter, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	mgr := NewUpstreamManager(logPath, logger)
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	defer func() {
+		cancel()
+		// Stop the log writer to prevent panics from background goroutine
+		// logging after test completion
+		logWriter.Stop()
+		// Give the tail goroutine time to exit after context cancellation
+		time.Sleep(100 * time.Millisecond)
+	}()
 	mgr.Start(ctx)
 
 	startChromium := func(port int) (*exec.Cmd, error) {
@@ -170,12 +203,14 @@ func TestUpstreamManagerDetectsChromiumAndRestart(t *testing.T) {
 			fmt.Sprintf("--user-data-dir=%s", userDir),
 			"about:blank",
 		}
+		t.Logf("starting chromium: %s %v", browser, args)
 		cmd := exec.Command(browser, args...)
 		cmd.Stdout = logFile
 		cmd.Stderr = logFile
 		if err := cmd.Start(); err != nil {
 			return nil, err
 		}
+		t.Logf("chromium started with PID %d", cmd.Process.Pid)
 		return cmd, nil
 	}
 
@@ -198,6 +233,13 @@ func TestUpstreamManagerDetectsChromiumAndRestart(t *testing.T) {
 		return strings.Contains(u, fmt.Sprintf(":%d/", port1))
 	})
 	if !ok {
+		// Read and log the contents of the log file for debugging
+		logContents, readErr := os.ReadFile(logPath)
+		if readErr != nil {
+			t.Logf("failed to read log file: %v", readErr)
+		} else {
+			t.Logf("chromium log file contents (%d bytes):\n%s", len(logContents), string(logContents))
+		}
 		t.Fatalf("did not detect initial upstream for port %d; got: %q", port1, mgr.Current())
 	}
 
@@ -206,6 +248,7 @@ func TestUpstreamManagerDetectsChromiumAndRestart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get free port 2: %v", err)
 	}
+	t.Logf("killing first chromium instance to restart on port %d", port2)
 	_ = cmd1.Process.Kill()
 	_, _ = cmd1.Process.Wait()
 
@@ -224,6 +267,13 @@ func TestUpstreamManagerDetectsChromiumAndRestart(t *testing.T) {
 		return strings.Contains(u, fmt.Sprintf(":%d/", port2))
 	})
 	if !ok {
+		// Read and log the contents of the log file for debugging
+		logContents, readErr := os.ReadFile(logPath)
+		if readErr != nil {
+			t.Logf("failed to read log file: %v", readErr)
+		} else {
+			t.Logf("chromium log file contents after restart (%d bytes):\n%s", len(logContents), string(logContents))
+		}
 		t.Fatalf("did not update upstream to port %d; got: %q", port2, mgr.Current())
 	}
 }

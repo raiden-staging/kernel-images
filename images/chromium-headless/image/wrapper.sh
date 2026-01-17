@@ -76,6 +76,7 @@ if [ -z "${CHROMIUM_FLAGS:-}" ]; then
     --enable-use-zoom-for-dsf=false \
     --export-tagged-pdf \
     --force-color-profile=srgb \
+    --hide-crash-restore-bubble \
     --hide-scrollbars \
     --metrics-recording-only \
     --mute-audio \
@@ -86,8 +87,8 @@ if [ -z "${CHROMIUM_FLAGS:-}" ]; then
     --ozone-platform=headless \
     --password-store=basic \
     --unsafely-disable-devtools-self-xss-warnings \
-    --use-angle \
-    --use-gl=disabled \
+    --use-angle=swiftshader \
+    --use-gl=angle \
     --use-mock-keychain"
 fi
 export CHROMIUM_FLAGS
