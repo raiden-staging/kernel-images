@@ -42,8 +42,8 @@ type GhostViewport struct {
 
 // GhostSyncPayload is the data sent to clients
 type GhostSyncPayload struct {
-	Seq      int64         `json:"seq"`
-	Ts       int64         `json:"ts"`
+	Seq      int64          `json:"seq"`
+	Ts       int64          `json:"ts"`
 	Elements []GhostElement `json:"elements"`
 	Viewport GhostViewport  `json:"viewport"`
 	URL      string         `json:"url"`
@@ -69,6 +69,10 @@ type Manager struct {
 	cdpConn    *websocket.Conn
 	cdpCancel  context.CancelFunc
 	cdpRunning bool
+
+	// Current attached target
+	currentSessionID string
+	currentTargetID  string
 
 	// Last known state for new clients
 	lastPayloadMu sync.RWMutex
@@ -147,30 +151,57 @@ const observerScript = `
     }
   }
 
-  const observer = new MutationObserver(() => sendUpdate());
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true,
-    attributes: true,
-    attributeFilter: ['style', 'class', 'hidden', 'disabled']
-  });
+  // Debounce to avoid too many updates
+  let debounceTimer = null;
+  function debouncedSendUpdate() {
+    if (debounceTimer) clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(sendUpdate, 16); // ~60fps max
+  }
 
-  window.addEventListener('scroll', sendUpdate, { passive: true });
-  window.addEventListener('resize', sendUpdate, { passive: true });
+  const observer = new MutationObserver(debouncedSendUpdate);
+  if (document.body) {
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style', 'class', 'hidden', 'disabled']
+    });
+  }
 
-  sendUpdate();
+  window.addEventListener('scroll', debouncedSendUpdate, { passive: true });
+  window.addEventListener('resize', debouncedSendUpdate, { passive: true });
+
+  // Send initial update after a short delay to ensure page is ready
+  setTimeout(sendUpdate, 100);
+
+  // Also send periodic updates to catch any missed changes
+  setInterval(sendUpdate, 1000);
 
   const originalPushState = history.pushState;
   const originalReplaceState = history.replaceState;
   history.pushState = function(...args) {
     originalPushState.apply(this, args);
-    setTimeout(sendUpdate, 100);
+    setTimeout(sendUpdate, 200);
   };
   history.replaceState = function(...args) {
     originalReplaceState.apply(this, args);
-    setTimeout(sendUpdate, 100);
+    setTimeout(sendUpdate, 200);
   };
-  window.addEventListener('popstate', () => setTimeout(sendUpdate, 100));
+  window.addEventListener('popstate', () => setTimeout(sendUpdate, 200));
+
+  // Re-observe when body changes (SPAs)
+  const bodyObserver = new MutationObserver(() => {
+    if (document.body && !document.body.__ghostObserving) {
+      document.body.__ghostObserving = true;
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['style', 'class', 'hidden', 'disabled']
+      });
+    }
+  });
+  bodyObserver.observe(document.documentElement, { childList: true });
 })();
 `
 
@@ -255,26 +286,18 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 // cdpLoop maintains the CDP connection and reinjects the observer on page loads
 func (m *Manager) cdpLoop(ctx context.Context) {
-	// Subscribe to upstream URL changes to reconnect when Chrome restarts
-	upstreamCh, cancelSub := m.upstreamMgr.Subscribe()
-	defer cancelSub()
-
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		case upstreamURL, ok := <-upstreamCh:
-			if !ok {
-				return
-			}
-			m.connectAndObserve(ctx, upstreamURL)
 		default:
-			// Try with current URL
-			if url := m.upstreamMgr.Current(); url != "" {
-				m.connectAndObserve(ctx, url)
-			}
-			time.Sleep(2 * time.Second)
 		}
+
+		// Try with current URL
+		if url := m.upstreamMgr.Current(); url != "" {
+			m.connectAndObserve(ctx, url)
+		}
+		time.Sleep(2 * time.Second)
 	}
 }
 
@@ -293,6 +316,8 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 		m.cdpMu.Lock()
 		m.cdpRunning = false
 		m.cdpCancel = nil
+		m.currentSessionID = ""
+		m.currentTargetID = ""
 		m.cdpMu.Unlock()
 	}()
 
@@ -309,33 +334,21 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 	m.cdpConn = conn
 	m.cdpMu.Unlock()
 
-	// Add the binding for the callback
-	if err := m.cdpSend(cdpCtx, conn, "Runtime.addBinding", map[string]interface{}{
-		"name": bindingName,
+	// Enable Target domain to discover and attach to pages
+	if err := m.cdpSend(cdpCtx, conn, "", "Target.setDiscoverTargets", map[string]interface{}{
+		"discover": true,
 	}); err != nil {
-		m.logger.Error("[ghost-sync] failed to add binding", "err", err)
+		m.logger.Error("[ghost-sync] failed to enable target discovery", "err", err)
 		return
 	}
 
-	// Enable Runtime domain to receive binding calls
-	if err := m.cdpSend(cdpCtx, conn, "Runtime.enable", nil); err != nil {
-		m.logger.Error("[ghost-sync] failed to enable Runtime", "err", err)
+	m.logger.Info("[ghost-sync] CDP connected, discovering targets")
+
+	// Find and attach to the first page target
+	if err := m.findAndAttachToPage(cdpCtx, conn); err != nil {
+		m.logger.Error("[ghost-sync] failed to attach to page", "err", err)
 		return
 	}
-
-	// Enable Page domain for load events
-	if err := m.cdpSend(cdpCtx, conn, "Page.enable", nil); err != nil {
-		m.logger.Error("[ghost-sync] failed to enable Page", "err", err)
-		return
-	}
-
-	// Inject the observer script
-	if err := m.injectObserverScript(cdpCtx, conn); err != nil {
-		m.logger.Error("[ghost-sync] failed to inject observer", "err", err)
-		return
-	}
-
-	m.logger.Info("[ghost-sync] CDP connected and observer injected")
 
 	// Listen for CDP events
 	for {
@@ -358,30 +371,241 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 
 		method, _ := event["method"].(string)
 		params, _ := event["params"].(map[string]interface{})
+		sessionId, _ := event["sessionId"].(string)
 
 		switch method {
 		case "Runtime.bindingCalled":
-			// Handle ghost DOM callback
-			name, _ := params["name"].(string)
-			payload, _ := params["payload"].(string)
-			if name == bindingName {
-				m.handleGhostCallback(payload)
+			// Handle ghost DOM callback - only from our session
+			if sessionId == m.currentSessionID {
+				name, _ := params["name"].(string)
+				payload, _ := params["payload"].(string)
+				if name == bindingName && payload != "" {
+					m.handleGhostCallback(payload)
+				}
 			}
-		case "Page.loadEventFired", "Page.frameNavigated":
-			// Re-inject observer on navigation
-			go func() {
-				time.Sleep(100 * time.Millisecond)
-				m.injectObserverScript(cdpCtx, conn)
-			}()
+
+		case "Page.loadEventFired", "Page.domContentEventFired":
+			// Re-inject observer on page load
+			if sessionId == m.currentSessionID {
+				go func() {
+					time.Sleep(200 * time.Millisecond)
+					m.injectObserverScript(cdpCtx, conn, m.currentSessionID)
+				}()
+			}
+
+		case "Page.frameNavigated":
+			// Re-inject on navigation
+			if sessionId == m.currentSessionID {
+				go func() {
+					time.Sleep(300 * time.Millisecond)
+					m.injectObserverScript(cdpCtx, conn, m.currentSessionID)
+				}()
+			}
+
+		case "Target.targetInfoChanged":
+			// Check if a different tab became active
+			targetInfo, _ := params["targetInfo"].(map[string]interface{})
+			if targetInfo != nil {
+				targetType, _ := targetInfo["type"].(string)
+				targetID, _ := targetInfo["targetId"].(string)
+				attached, _ := targetInfo["attached"].(bool)
+
+				// If this is a page and it's not our current target, consider switching
+				if targetType == "page" && targetID != m.currentTargetID && !attached {
+					m.logger.Debug("[ghost-sync] detected new page target", "targetId", targetID)
+				}
+			}
+
+		case "Target.targetCreated":
+			// A new target was created
+			targetInfo, _ := params["targetInfo"].(map[string]interface{})
+			if targetInfo != nil {
+				targetType, _ := targetInfo["type"].(string)
+				if targetType == "page" {
+					m.logger.Debug("[ghost-sync] new page target created")
+				}
+			}
+
+		case "Target.targetDestroyed":
+			// Our target was destroyed, need to find a new one
+			targetID, _ := params["targetId"].(string)
+			if targetID == m.currentTargetID {
+				m.logger.Info("[ghost-sync] current target destroyed, finding new target")
+				go func() {
+					time.Sleep(500 * time.Millisecond)
+					m.findAndAttachToPage(cdpCtx, conn)
+				}()
+			}
+
+		case "Target.detachedFromTarget":
+			// We were detached from the target
+			detachedSessionId, _ := params["sessionId"].(string)
+			if detachedSessionId == m.currentSessionID {
+				m.logger.Info("[ghost-sync] detached from target, reattaching")
+				m.currentSessionID = ""
+				m.currentTargetID = ""
+				go func() {
+					time.Sleep(500 * time.Millisecond)
+					m.findAndAttachToPage(cdpCtx, conn)
+				}()
+			}
 		}
 	}
 }
 
-func (m *Manager) cdpSend(ctx context.Context, conn *websocket.Conn, method string, params interface{}) error {
+func (m *Manager) findAndAttachToPage(ctx context.Context, conn *websocket.Conn) error {
+	// Get list of targets
+	id := m.cdpMsgID.Add(1)
+	msg := map[string]interface{}{
+		"id":     id,
+		"method": "Target.getTargets",
+	}
+	data, _ := json.Marshal(msg)
+	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+		return err
+	}
+
+	// Read response - we need to find the result
+	for i := 0; i < 10; i++ {
+		_, respData, err := conn.Read(ctx)
+		if err != nil {
+			return err
+		}
+
+		var resp map[string]interface{}
+		if err := json.Unmarshal(respData, &resp); err != nil {
+			continue
+		}
+
+		// Check if this is our response
+		respID, _ := resp["id"].(float64)
+		if int64(respID) == id {
+			result, _ := resp["result"].(map[string]interface{})
+			targetInfos, _ := result["targetInfos"].([]interface{})
+
+			// Find the first page target
+			for _, ti := range targetInfos {
+				targetInfo, _ := ti.(map[string]interface{})
+				targetType, _ := targetInfo["type"].(string)
+				targetID, _ := targetInfo["targetId"].(string)
+
+				if targetType == "page" && targetID != "" {
+					m.logger.Info("[ghost-sync] found page target", "targetId", targetID)
+					return m.attachToTarget(ctx, conn, targetID)
+				}
+			}
+			m.logger.Warn("[ghost-sync] no page targets found")
+			return nil
+		}
+
+		// If it's an event, we might need to handle it
+		if method, ok := resp["method"].(string); ok {
+			m.logger.Debug("[ghost-sync] received event while waiting for targets", "method", method)
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) attachToTarget(ctx context.Context, conn *websocket.Conn, targetID string) error {
+	// Attach to the target with flatten=true to get a session
+	id := m.cdpMsgID.Add(1)
+	msg := map[string]interface{}{
+		"id":     id,
+		"method": "Target.attachToTarget",
+		"params": map[string]interface{}{
+			"targetId": targetID,
+			"flatten":  true,
+		},
+	}
+	data, _ := json.Marshal(msg)
+	if err := conn.Write(ctx, websocket.MessageText, data); err != nil {
+		return err
+	}
+
+	// Read response to get session ID
+	for i := 0; i < 10; i++ {
+		_, respData, err := conn.Read(ctx)
+		if err != nil {
+			return err
+		}
+
+		var resp map[string]interface{}
+		if err := json.Unmarshal(respData, &resp); err != nil {
+			continue
+		}
+
+		respID, _ := resp["id"].(float64)
+		if int64(respID) == id {
+			result, _ := resp["result"].(map[string]interface{})
+			sessionId, _ := result["sessionId"].(string)
+
+			if sessionId == "" {
+				m.logger.Error("[ghost-sync] no session ID in attach response")
+				return nil
+			}
+
+			m.cdpMu.Lock()
+			m.currentSessionID = sessionId
+			m.currentTargetID = targetID
+			m.cdpMu.Unlock()
+
+			m.logger.Info("[ghost-sync] attached to target", "sessionId", sessionId, "targetId", targetID)
+
+			// Now set up the session
+			return m.setupSession(ctx, conn, sessionId)
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) setupSession(ctx context.Context, conn *websocket.Conn, sessionId string) error {
+	// Add the binding for the callback
+	if err := m.cdpSend(ctx, conn, sessionId, "Runtime.addBinding", map[string]interface{}{
+		"name": bindingName,
+	}); err != nil {
+		m.logger.Error("[ghost-sync] failed to add binding", "err", err)
+		return err
+	}
+
+	// Enable Runtime domain to receive binding calls
+	if err := m.cdpSend(ctx, conn, sessionId, "Runtime.enable", nil); err != nil {
+		m.logger.Error("[ghost-sync] failed to enable Runtime", "err", err)
+		return err
+	}
+
+	// Enable Page domain for load events
+	if err := m.cdpSend(ctx, conn, sessionId, "Page.enable", nil); err != nil {
+		m.logger.Error("[ghost-sync] failed to enable Page", "err", err)
+		return err
+	}
+
+	// Add script to evaluate on every new document (persists across navigations)
+	if err := m.cdpSend(ctx, conn, sessionId, "Page.addScriptToEvaluateOnNewDocument", map[string]interface{}{
+		"source": observerScript,
+	}); err != nil {
+		m.logger.Warn("[ghost-sync] failed to add script to new documents", "err", err)
+	}
+
+	// Inject the observer script now
+	if err := m.injectObserverScript(ctx, conn, sessionId); err != nil {
+		m.logger.Error("[ghost-sync] failed to inject observer", "err", err)
+		return err
+	}
+
+	m.logger.Info("[ghost-sync] session setup complete")
+	return nil
+}
+
+func (m *Manager) cdpSend(ctx context.Context, conn *websocket.Conn, sessionId string, method string, params interface{}) error {
 	id := m.cdpMsgID.Add(1)
 	msg := map[string]interface{}{
 		"id":     id,
 		"method": method,
+	}
+	if sessionId != "" {
+		msg["sessionId"] = sessionId
 	}
 	if params != nil {
 		msg["params"] = params
@@ -393,8 +617,9 @@ func (m *Manager) cdpSend(ctx context.Context, conn *websocket.Conn, method stri
 	return conn.Write(ctx, websocket.MessageText, data)
 }
 
-func (m *Manager) injectObserverScript(ctx context.Context, conn *websocket.Conn) error {
-	return m.cdpSend(ctx, conn, "Runtime.evaluate", map[string]interface{}{
+func (m *Manager) injectObserverScript(ctx context.Context, conn *websocket.Conn, sessionId string) error {
+	m.logger.Debug("[ghost-sync] injecting observer script", "sessionId", sessionId)
+	return m.cdpSend(ctx, conn, sessionId, "Runtime.evaluate", map[string]interface{}{
 		"expression":            observerScript,
 		"includeCommandLineAPI": true,
 	})
@@ -512,9 +737,11 @@ func (m *Manager) GetLastPayload() *GhostSyncPayload {
 
 // Status returns the current status of the ghost sync manager
 type Status struct {
-	Connected   bool  `json:"connected"`
-	ClientCount int   `json:"clientCount"`
-	LastSeq     int64 `json:"lastSeq"`
+	Connected   bool   `json:"connected"`
+	ClientCount int    `json:"clientCount"`
+	LastSeq     int64  `json:"lastSeq"`
+	SessionID   string `json:"sessionId"`
+	TargetID    string `json:"targetId"`
 }
 
 func (m *Manager) Status() Status {
@@ -525,9 +752,16 @@ func (m *Manager) Status() Status {
 	}
 	m.lastPayloadMu.RUnlock()
 
+	m.cdpMu.Lock()
+	sessionID := m.currentSessionID
+	targetID := m.currentTargetID
+	m.cdpMu.Unlock()
+
 	return Status{
 		Connected:   m.IsConnected(),
 		ClientCount: m.ClientCount(),
 		LastSeq:     lastSeq,
+		SessionID:   sessionID,
+		TargetID:    targetID,
 	}
 }

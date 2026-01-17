@@ -206,6 +206,7 @@
           color: transparent;
           background: transparent;
           resize: none;
+          z-index: 100; // Above ghost-overlay (z-index: 50)
         }
 
         .player-aspect {
