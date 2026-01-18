@@ -376,7 +376,7 @@ func (h *handler) handleMessage(msgType byte, payload []byte, encoder *protocol.
 		if err := protocol.DecodePayload(payload, &msg); err != nil {
 			return err
 		}
-		return h.handleFileCreate(&msg)
+		return h.handleFileCreate(&msg, encoder, w)
 
 	case protocol.MsgFileClose:
 		var msg protocol.FileClose
@@ -419,20 +419,35 @@ func (h *handler) handleMessage(msgType byte, payload []byte, encoder *protocol.
 	}
 }
 
-func (h *handler) handleFileCreate(msg *protocol.FileCreate) error {
+func (h *handler) handleFileCreate(msg *protocol.FileCreate, encoder *protocol.Encoder, w flusher) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
 	path := filepath.Join(h.localDir, msg.Filename)
 
+	ack := protocol.FileCreateAck{
+		FileID:  msg.FileID,
+		Success: true,
+	}
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return err
+		ack.Success = false
+		ack.Error = err.Error()
+		if encErr := encoder.Encode(protocol.MsgFileCreateAck, &ack); encErr != nil {
+			return encErr
+		}
+		return w.Flush()
 	}
 
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, os.FileMode(msg.Mode))
 	if err != nil {
-		return err
+		ack.Success = false
+		ack.Error = err.Error()
+		if encErr := encoder.Encode(protocol.MsgFileCreateAck, &ack); encErr != nil {
+			return encErr
+		}
+		return w.Flush()
 	}
 
 	h.files[msg.FileID] = &fileEntry{
@@ -446,7 +461,12 @@ func (h *handler) handleFileCreate(msg *protocol.FileCreate) error {
 	}
 
 	logging.Debug("Created file: %s (id=%s)", msg.Filename, msg.FileID)
-	return nil
+
+	// Send success ACK
+	if err := encoder.Encode(protocol.MsgFileCreateAck, &ack); err != nil {
+		return err
+	}
+	return w.Flush()
 }
 
 func (h *handler) handleFileClose(msg *protocol.FileClose) error {

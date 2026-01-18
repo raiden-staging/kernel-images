@@ -137,10 +137,27 @@ func (d *pipeDir) Create(ctx context.Context, name string, flags uint32, mode ui
 		Filename: relPath,
 		Mode:     mode,
 	}
-	// Use synchronous send to ensure FileCreate is processed before any WriteChunk
-	// This prevents race condition where WriteChunk arrives before FileCreate
-	if err := d.client.SendSync(protocol.MsgFileCreate, &msg); err != nil {
+
+	// Use SendAndReceive to get ACK from listener - ensures file was created
+	respType, respData, err := d.client.SendAndReceive(protocol.MsgFileCreate, &msg)
+	if err != nil {
 		logging.Debug("Create: failed to send FileCreate: %v", err)
+		return nil, nil, 0, syscall.EIO
+	}
+
+	if respType != protocol.MsgFileCreateAck {
+		logging.Debug("Create: unexpected response type: 0x%02x", respType)
+		return nil, nil, 0, syscall.EIO
+	}
+
+	var ack protocol.FileCreateAck
+	if err := protocol.DecodePayload(respData, &ack); err != nil {
+		logging.Debug("Create: failed to decode ack: %v", err)
+		return nil, nil, 0, syscall.EIO
+	}
+
+	if !ack.Success {
+		logging.Debug("Create: listener error: %s", ack.Error)
 		return nil, nil, 0, syscall.EIO
 	}
 

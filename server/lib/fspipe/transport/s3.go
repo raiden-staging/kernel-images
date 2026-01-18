@@ -212,15 +212,29 @@ func (c *S3Client) sendInternal(msgType byte, payload interface{}) error {
 	}
 }
 
-// SendAndReceive is not supported for S3 (no ACK needed)
+// SendAndReceive sends and returns appropriate ACK for S3
 func (c *S3Client) SendAndReceive(msgType byte, payload interface{}) (byte, []byte, error) {
-	// For S3, we just send and return a fake ACK
-	if err := c.Send(msgType, payload); err != nil {
-		return 0, nil, err
-	}
+	// For S3, we send and return a fake ACK
+	err := c.Send(msgType, payload)
 
-	// Return a fake ACK for write chunks
-	if msgType == protocol.MsgWriteChunk {
+	// Return appropriate ACK based on message type
+	switch msgType {
+	case protocol.MsgFileCreate:
+		msg := payload.(*protocol.FileCreate)
+		ack := protocol.FileCreateAck{
+			FileID:  msg.FileID,
+			Success: err == nil,
+		}
+		if err != nil {
+			ack.Error = err.Error()
+		}
+		data, _ := json.Marshal(ack)
+		return protocol.MsgFileCreateAck, data, nil
+
+	case protocol.MsgWriteChunk:
+		if err != nil {
+			return 0, nil, err
+		}
 		msg := payload.(*protocol.WriteChunk)
 		ack := protocol.WriteAck{
 			FileID:  msg.FileID,
@@ -231,6 +245,9 @@ func (c *S3Client) SendAndReceive(msgType byte, payload interface{}) (byte, []by
 		return protocol.MsgWriteAck, data, nil
 	}
 
+	if err != nil {
+		return 0, nil, err
+	}
 	return 0, nil, nil
 }
 
