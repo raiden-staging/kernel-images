@@ -31,8 +31,9 @@ type WebSocketClient struct {
 	// Message queue for non-blocking sends
 	sendQueue *queue.Queue
 
-	// Response channel for SendAndReceive
+	// Response channel for SendAndReceive - protected by reqMu
 	responseCh chan wsResponse
+	reqMu      sync.Mutex // Serializes SendAndReceive calls to prevent response mixup
 
 	// Background goroutine management
 	ctx    context.Context
@@ -464,6 +465,21 @@ func (c *WebSocketClient) SendAndReceive(msgType byte, payload interface{}) (byt
 	}
 	c.shutdownMu.Unlock()
 
+	// Serialize all SendAndReceive calls to prevent response mixup
+	c.reqMu.Lock()
+	defer c.reqMu.Unlock()
+
+	// Drain any stale responses from previous timed-out requests
+	for {
+		select {
+		case <-c.responseCh:
+			logging.Debug("SendAndReceive: drained stale response")
+		default:
+			goto sendRequest
+		}
+	}
+
+sendRequest:
 	c.connMu.Lock()
 
 	if c.conn == nil {
@@ -493,7 +509,7 @@ func (c *WebSocketClient) SendAndReceive(msgType byte, payload interface{}) (byt
 
 	c.connMu.Unlock()
 
-	// Wait for response with shorter timeout
+	// Wait for response
 	select {
 	case resp := <-c.responseCh:
 		c.messagesAcked.Add(1)
