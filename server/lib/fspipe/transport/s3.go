@@ -66,6 +66,7 @@ type multipartUpload struct {
 	started   bool // Whether multipart upload has been initiated
 	hasData   bool // Whether any data has been written
 	completed bool // Whether upload has been completed (waiting for potential rename)
+	renaming  bool // Whether a rename is currently in progress (prevents race conditions)
 }
 
 // LoadS3ConfigFromEnv loads S3 config from .env file
@@ -432,19 +433,22 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 	logging.Info("S3: Completed upload for %s (%d parts)", uploadKey, len(upload.parts))
 
 	// Check if finalKey was updated by a rename that arrived during CompleteMultipartUpload
-	// If so, apply the rename now
+	// If so, apply the rename now using the loop (handles chained renames)
 	c.mu.Lock()
 	currentFinalKey := upload.finalKey
 	upload.completed = true
 	upload.key = uploadKey // Make sure key reflects what's actually in S3
-	c.mu.Unlock()
 
 	if currentFinalKey != uploadKey {
+		upload.renaming = true
+		c.mu.Unlock()
 		logging.Info("S3: Rename arrived during upload completion, applying: %s -> %s", uploadKey, currentFinalKey)
-		if err := c.doS3Rename(uploadKey, currentFinalKey, msg.FileID); err != nil {
+		if err := c.doS3RenameLoop(uploadKey, msg.FileID); err != nil {
 			logging.Error("S3: Failed to apply deferred rename: %v", err)
 			// Don't fail - file exists with original name
 		}
+	} else {
+		c.mu.Unlock()
 	}
 
 	c.filesUploaded.Add(1)
@@ -461,20 +465,30 @@ func (c *S3Client) handleRename(msg *protocol.Rename) error {
 	c.mu.Lock()
 	if msg.FileID != "" {
 		if upload, ok := c.uploads[msg.FileID]; ok {
-			oldFinalKey := upload.finalKey
+			// Always update finalKey to the desired destination
 			upload.finalKey = newKey
 
 			if upload.completed {
-				// Upload already completed in S3 - do S3 copy+delete now
+				// Upload already completed in S3
+				if upload.renaming {
+					// A rename is already in progress - just update finalKey (done above)
+					// The in-progress rename will handle chaining when it completes
+					c.mu.Unlock()
+					logging.Info("S3: Rename queued (another rename in progress): -> %s (id=%s)", newKey, msg.FileID)
+					return nil
+				}
+				// Start the rename - use upload.key (actual S3 location)
+				actualKey := upload.key
+				upload.renaming = true
 				c.mu.Unlock()
-				logging.Info("S3: Rename after completion: %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
-				return c.doS3Rename(oldFinalKey, newKey, msg.FileID)
+				logging.Info("S3: Rename after completion: %s -> %s (id=%s)", actualKey, newKey, msg.FileID)
+				return c.doS3RenameLoop(actualKey, msg.FileID)
 			} else if upload.started {
 				c.mu.Unlock()
-				logging.Info("S3: Rename during upload (will copy+delete at close): %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+				logging.Info("S3: Rename during upload (will apply at close): %s -> %s (id=%s)", upload.key, newKey, msg.FileID)
 			} else {
 				c.mu.Unlock()
-				logging.Info("S3: Rename before upload start: %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+				logging.Info("S3: Rename before upload start: finalKey updated to %s (id=%s)", newKey, msg.FileID)
 			}
 			return nil
 		}
@@ -484,22 +498,27 @@ func (c *S3Client) handleRename(msg *protocol.Rename) error {
 	// Fallback: search by old filename if FileID lookup failed
 	logging.Info("S3: Rename fallback search by oldKey=%s", oldKey)
 	for fileID, upload := range c.uploads {
-		logging.Info("S3: Rename checking upload id=%s finalKey=%s completed=%v", fileID, upload.finalKey, upload.completed)
-		if upload.finalKey == oldKey {
-			oldFinalKey := upload.finalKey
+		logging.Info("S3: Rename checking upload id=%s key=%s finalKey=%s completed=%v", fileID, upload.key, upload.finalKey, upload.completed)
+		if upload.key == oldKey || upload.finalKey == oldKey {
 			upload.finalKey = newKey
 
 			if upload.completed {
-				// Upload already completed in S3 - do S3 copy+delete now
+				if upload.renaming {
+					c.mu.Unlock()
+					logging.Info("S3: Rename queued by filename (another rename in progress): -> %s (id=%s)", newKey, fileID)
+					return nil
+				}
+				actualKey := upload.key
+				upload.renaming = true
 				c.mu.Unlock()
-				logging.Info("S3: Rename by filename after completion: %s -> %s (id=%s)", oldFinalKey, newKey, fileID)
-				return c.doS3Rename(oldFinalKey, newKey, fileID)
+				logging.Info("S3: Rename by filename after completion: %s -> %s (id=%s)", actualKey, newKey, fileID)
+				return c.doS3RenameLoop(actualKey, fileID)
 			} else if upload.started {
 				c.mu.Unlock()
-				logging.Info("S3: Rename by filename during upload (will copy+delete): %s -> %s (id=%s)", oldFinalKey, newKey, fileID)
+				logging.Info("S3: Rename by filename during upload: %s -> %s (id=%s)", upload.key, newKey, fileID)
 			} else {
 				c.mu.Unlock()
-				logging.Info("S3: Rename by filename before upload start: %s -> %s (id=%s)", oldFinalKey, newKey, fileID)
+				logging.Info("S3: Rename by filename before upload start: -> %s (id=%s)", newKey, fileID)
 			}
 			return nil
 		}
@@ -544,7 +563,67 @@ func (c *S3Client) handleRename(msg *protocol.Rename) error {
 	return nil
 }
 
-// doS3Rename performs S3 copy+delete to rename an object
+// doS3RenameLoop performs S3 renames in a loop until key == finalKey
+// This handles multiple renames that arrive while a rename is in progress
+func (c *S3Client) doS3RenameLoop(currentKey string, fileID string) error {
+	for {
+		// Get the target key under lock
+		c.mu.Lock()
+		upload, ok := c.uploads[fileID]
+		if !ok {
+			c.mu.Unlock()
+			return nil
+		}
+		targetKey := upload.finalKey
+		if currentKey == targetKey {
+			// No more renames needed
+			upload.renaming = false
+			c.mu.Unlock()
+			return nil
+		}
+		c.mu.Unlock()
+
+		// Do the S3 copy+delete
+		logging.Info("S3: Renaming %s -> %s", currentKey, targetKey)
+		_, err := c.s3Client.CopyObject(c.ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(c.config.Bucket),
+			CopySource: aws.String(c.config.Bucket + "/" + currentKey),
+			Key:        aws.String(targetKey),
+		})
+		if err != nil {
+			c.errors.Add(1)
+			logging.Error("S3: Failed to copy %s -> %s: %v", currentKey, targetKey, err)
+			// Clear renaming flag on error
+			c.mu.Lock()
+			if upload, ok := c.uploads[fileID]; ok {
+				upload.renaming = false
+			}
+			c.mu.Unlock()
+			return fmt.Errorf("copy object: %w", err)
+		}
+
+		_, err = c.s3Client.DeleteObject(c.ctx, &s3.DeleteObjectInput{
+			Bucket: aws.String(c.config.Bucket),
+			Key:    aws.String(currentKey),
+		})
+		if err != nil {
+			logging.Warn("S3: Failed to delete old key %s after rename: %v", currentKey, err)
+		}
+
+		// Update the key and check if we need another rename
+		c.mu.Lock()
+		if upload, ok := c.uploads[fileID]; ok {
+			upload.key = targetKey
+		}
+		c.mu.Unlock()
+
+		logging.Info("S3: Renamed %s -> %s", currentKey, targetKey)
+		currentKey = targetKey
+		// Loop will check if finalKey changed during this rename
+	}
+}
+
+// doS3Rename performs a single S3 copy+delete (used by handleFileClose)
 func (c *S3Client) doS3Rename(oldKey, newKey, fileID string) error {
 	_, err := c.s3Client.CopyObject(c.ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(c.config.Bucket),
@@ -563,7 +642,6 @@ func (c *S3Client) doS3Rename(oldKey, newKey, fileID string) error {
 	})
 	if err != nil {
 		logging.Warn("S3: Failed to delete old key %s after rename: %v", oldKey, err)
-		// Don't return error - copy succeeded
 	}
 
 	// Update the upload entry's key to reflect the new name
