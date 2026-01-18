@@ -7,10 +7,10 @@ import (
 	"sync"
 
 	"github.com/hanwen/go-fuse/v2/fuse"
-	"github.com/onkernel/fspipe/pkg/daemon"
-	"github.com/onkernel/fspipe/pkg/health"
-	"github.com/onkernel/fspipe/pkg/listener"
-	"github.com/onkernel/fspipe/pkg/transport"
+	"github.com/onkernel/kernel-images/server/lib/fspipe/daemon"
+	"github.com/onkernel/kernel-images/server/lib/fspipe/health"
+	"github.com/onkernel/kernel-images/server/lib/fspipe/listener"
+	"github.com/onkernel/kernel-images/server/lib/fspipe/transport"
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 )
