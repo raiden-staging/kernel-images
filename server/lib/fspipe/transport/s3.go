@@ -349,12 +349,12 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 		logging.Debug("S3: FileClose for unknown ID %s", msg.FileID)
 		return nil
 	}
-	delete(c.uploads, msg.FileID)
 
-	// If no data was ever written, this is a placeholder file - skip upload
+	// If no data was ever written, this is likely a placeholder file from Chrome's
+	// open-close-open pattern. DON'T delete from map - writes may come later!
 	if !upload.hasData {
 		c.mu.Unlock()
-		logging.Debug("S3: Skipping upload for empty placeholder file %s", upload.key)
+		logging.Debug("S3: FileClose with no data for %s - keeping registration for late writes", upload.key)
 		return nil
 	}
 
@@ -364,6 +364,9 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 		logging.Debug("S3: FileClose but multipart never started for %s", upload.key)
 		return nil
 	}
+
+	// Now we have data and a started upload - remove from map and complete it
+	delete(c.uploads, msg.FileID)
 
 	// Upload remaining data as final part
 	if upload.buffer.Len() > 0 {
