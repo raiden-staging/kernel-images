@@ -113,85 +113,108 @@ const (
 )
 
 // Observer script to inject into the browser page
-// Optimized: only tracks input-related elements
 const observerScript = `
 (function() {
-  if (window.__ghostDomInitialized__) return;
+  // Allow re-initialization if binding was re-added
+  if (window.__ghostDomInitialized__ && window.__ghostDomCallback__) return;
   window.__ghostDomInitialized__ = true;
 
-  // Input-related selectors
-  const SELECTORS = 'input, textarea, select, [contenteditable], [role="textbox"], [role="searchbox"]';
+  const SELECTORS = 'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"], [role="searchbox"], [role="combobox"]';
   let idCounter = 0;
+  let sendCount = 0;
+  let lastSentJSON = '';
 
   function extract() {
     const elements = [];
-    const found = document.querySelectorAll(SELECTORS);
-    found.forEach((el) => {
-      // Skip hidden inputs
-      if (el.type === 'hidden') return;
-      const rect = el.getBoundingClientRect();
-      // Skip tiny or zero-size elements
-      if (rect.width < 2 || rect.height < 2) return;
-      const style = getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden') return;
-      if (!el.dataset.gid) el.dataset.gid = 'g' + (idCounter++);
-      elements.push({
-        id: el.dataset.gid,
-        tag: el.tagName.toLowerCase(),
-        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
+    try {
+      const nodes = document.querySelectorAll(SELECTORS);
+      nodes.forEach((el) => {
+        if (el.type === 'hidden') return;
+        const rect = el.getBoundingClientRect();
+        if (rect.width < 2 || rect.height < 2) return;
+        const style = getComputedStyle(el);
+        if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return;
+        if (!el.dataset.gid) el.dataset.gid = 'g' + (idCounter++);
+        elements.push({
+          id: el.dataset.gid,
+          tag: el.tagName.toLowerCase(),
+          rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
+        });
       });
-    });
+    } catch(e) {
+      console.error('[ghost] extract error:', e);
+    }
 
     const fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
     const ct = fs ? 0 : Math.max(0, window.outerHeight - window.innerHeight - 2);
     const cl = fs ? 0 : Math.round((window.outerWidth - window.innerWidth) / 2);
 
-    console.log('[ghost] found', elements.length, 'input elements');
-
     return {
       e: elements,
       v: { w: window.innerWidth, h: window.innerHeight },
-      b: { x: window.screenX, y: window.screenY, w: window.outerWidth, h: window.outerHeight, ct: ct, cl: cl, fs: fs }
+      b: { x: window.screenX, y: window.screenY, w: window.outerWidth, h: window.outerHeight, ct: ct, cl: cl, fs: fs },
+      u: location.href
     };
   }
 
   function send() {
+    sendCount++;
+    if (typeof window.__ghostDomCallback__ !== 'function') {
+      return; // Silently wait - binding may not be ready yet
+    }
     try {
       const data = extract();
-      window.__ghostDomCallback__(JSON.stringify(data));
+      const json = JSON.stringify(data);
+      // Only send if data changed (reduces noise)
+      if (json !== lastSentJSON) {
+        lastSentJSON = json;
+        window.__ghostDomCallback__(json);
+      }
     } catch(e) {
-      console.log('[ghost] callback error', e);
+      console.error('[ghost] send error:', e);
     }
   }
 
-  // Throttle updates
+  // Throttle
   let timer = null;
   function throttledSend() {
     if (timer) return;
     send();
-    timer = setTimeout(() => { timer = null; }, 200);
+    timer = setTimeout(() => { timer = null; }, 150);
   }
 
-  new MutationObserver(throttledSend).observe(document.documentElement, {
-    childList: true, subtree: true, attributes: true,
-    attributeFilter: ['style', 'class', 'hidden']
-  });
+  // Observe DOM changes - wait for document.body if needed
+  function setupObserver() {
+    const target = document.body || document.documentElement;
+    if (!target) {
+      setTimeout(setupObserver, 50);
+      return;
+    }
+    try {
+      new MutationObserver(throttledSend).observe(target, {
+        childList: true, subtree: true, attributes: true,
+        attributeFilter: ['style', 'class', 'hidden', 'disabled', 'type']
+      });
+    } catch(e) {
+      console.error('[ghost] MutationObserver error:', e);
+    }
+  }
+  setupObserver();
 
   window.addEventListener('scroll', throttledSend, { passive: true });
   window.addEventListener('resize', throttledSend, { passive: true });
+  window.addEventListener('focusin', throttledSend, { passive: true });
 
-  // Initial send after DOM ready
-  if (document.readyState === 'complete') {
-    send();
-  } else {
-    window.addEventListener('load', send);
-  }
-  // Also try after short delay
-  setTimeout(send, 500);
-  // Periodic fallback
-  setInterval(send, 2000);
+  // Send periodically - this is the main reliable mechanism
+  setInterval(send, 500);
 
-  console.log('[ghost] observer initialized, selectors:', SELECTORS);
+  // Initial attempts with increasing delays
+  send();
+  setTimeout(send, 50);
+  setTimeout(send, 150);
+  setTimeout(send, 300);
+  setTimeout(send, 600);
+  setTimeout(send, 1200);
 })();
 `
 
@@ -615,7 +638,7 @@ func (m *Manager) injectObserverScript(ctx context.Context, conn *websocket.Conn
 }
 
 func (m *Manager) handleGhostCallback(payload string) {
-	// Compact payload format: e=elements, v=viewport, b=bounds
+	// Compact payload format: e=elements, v=viewport, b=bounds, u=url
 	var data struct {
 		E []struct {
 			ID   string `json:"id"`
@@ -640,11 +663,14 @@ func (m *Manager) handleGhostCallback(payload string) {
 			CL int  `json:"cl"` // chromeLeft
 			FS bool `json:"fs"` // fullscreen
 		} `json:"b"`
+		U string `json:"u"` // URL
 	}
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
-		m.logger.Error("[ghost-sync] failed to parse callback payload", "err", err)
+		m.logger.Error("[ghost-sync] failed to parse callback payload", "err", err, "payload", payload[:min(len(payload), 200)])
 		return
 	}
+
+	m.logger.Info("[ghost-sync] received callback", "domElements", len(data.E), "chromeTop", data.B.CT, "url", data.U)
 
 	// Convert to full format for client
 	windowBounds := GhostWindowBounds{
@@ -695,7 +721,7 @@ func (m *Manager) handleGhostCallback(payload string) {
 		Elements:     elements,
 		Viewport:     GhostViewport{W: data.V.W, H: data.V.H},
 		WindowBounds: windowBounds,
-		URL:          "",
+		URL:          data.U,
 	}
 
 	// Throttle broadcasts
@@ -753,12 +779,11 @@ func (m *Manager) broadcast(payload *GhostSyncPayload) {
 		}
 	}
 
-	if len(clients) > 0 {
-		m.logger.Debug("[ghost-sync] broadcast to clients",
-			"clients", len(clients),
-			"elements", len(payload.Elements),
-			"seq", payload.Seq)
-	}
+	m.logger.Info("[ghost-sync] broadcast",
+		"clients", len(clients),
+		"elements", len(payload.Elements),
+		"seq", payload.Seq,
+		"url", payload.URL)
 }
 
 // ClientCount returns the number of connected clients
