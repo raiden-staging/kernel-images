@@ -108,7 +108,7 @@ type Manager struct {
 }
 
 const (
-	throttleInterval = 50 * time.Millisecond // Max 20Hz updates
+	throttleInterval = 25 * time.Millisecond // Max 40Hz updates for smoother sync
 	bindingName      = "__ghostDomCallback__"
 )
 
@@ -191,7 +191,13 @@ const observerScript = `
     };
   }
 
+  let lastSendTime = 0;
+  const MIN_INTERVAL = 20; // Minimum 20ms between updates (~50Hz max)
+
   function sendUpdate() {
+    const now = Date.now();
+    if (now - lastSendTime < MIN_INTERVAL) return;
+    lastSendTime = now;
     try {
       window.__ghostDomCallback__(JSON.stringify(extractElements()));
     } catch (e) {
@@ -199,11 +205,22 @@ const observerScript = `
     }
   }
 
-  // Debounce to avoid too many updates
+  // Throttled update for high-frequency events (scroll, mutations)
+  let throttleTimer = null;
+  function throttledSendUpdate() {
+    if (throttleTimer) return;
+    sendUpdate();
+    throttleTimer = setTimeout(() => {
+      throttleTimer = null;
+      sendUpdate(); // Send final state after throttle
+    }, MIN_INTERVAL);
+  }
+
+  // Debounced update for DOM mutations (batch rapid changes)
   let debounceTimer = null;
   function debouncedSendUpdate() {
     if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(sendUpdate, 16); // ~60fps max
+    debounceTimer = setTimeout(sendUpdate, 8);
   }
 
   const observer = new MutationObserver(debouncedSendUpdate);
@@ -216,26 +233,31 @@ const observerScript = `
     });
   }
 
-  window.addEventListener('scroll', debouncedSendUpdate, { passive: true });
-  window.addEventListener('resize', debouncedSendUpdate, { passive: true });
+  // Scroll uses throttled updates for smooth tracking
+  window.addEventListener('scroll', throttledSendUpdate, { passive: true });
+  window.addEventListener('resize', throttledSendUpdate, { passive: true });
 
-  // Send initial update after a short delay to ensure page is ready
-  setTimeout(sendUpdate, 100);
+  // Send initial update immediately
+  sendUpdate();
+  // And again shortly after to catch late-loading elements
+  setTimeout(sendUpdate, 50);
 
-  // Also send periodic updates to catch any missed changes
-  setInterval(sendUpdate, 1000);
+  // Periodic updates to catch any missed changes (less frequent since we have good event coverage)
+  setInterval(sendUpdate, 500);
 
   const originalPushState = history.pushState;
   const originalReplaceState = history.replaceState;
   history.pushState = function(...args) {
     originalPushState.apply(this, args);
-    setTimeout(sendUpdate, 200);
+    sendUpdate();
+    setTimeout(sendUpdate, 50);
   };
   history.replaceState = function(...args) {
     originalReplaceState.apply(this, args);
-    setTimeout(sendUpdate, 200);
+    sendUpdate();
+    setTimeout(sendUpdate, 50);
   };
-  window.addEventListener('popstate', () => setTimeout(sendUpdate, 200));
+  window.addEventListener('popstate', () => { sendUpdate(); setTimeout(sendUpdate, 50); });
 
   // Re-observe when body changes (SPAs)
   const bodyObserver = new MutationObserver(() => {
@@ -333,6 +355,7 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 // cdpLoop maintains the CDP connection and reinjects the observer on page loads
+// Only runs when there are connected clients to avoid wasting resources
 func (m *Manager) cdpLoop(ctx context.Context) {
 	for {
 		select {
@@ -341,11 +364,17 @@ func (m *Manager) cdpLoop(ctx context.Context) {
 		default:
 		}
 
+		// Only connect to CDP if we have clients - no clients = no work needed
+		if m.ClientCount() == 0 {
+			time.Sleep(500 * time.Millisecond)
+			continue
+		}
+
 		// Try with current URL
 		if url := m.upstreamMgr.Current(); url != "" {
 			m.connectAndObserve(ctx, url)
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(1 * time.Second)
 	}
 }
 
@@ -433,19 +462,19 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 			}
 
 		case "Page.loadEventFired", "Page.domContentEventFired":
-			// Re-inject observer on page load
+			// Re-inject observer on page load - minimal delay
 			if sessionId == m.currentSessionID {
 				go func() {
-					time.Sleep(200 * time.Millisecond)
+					time.Sleep(10 * time.Millisecond)
 					m.injectObserverScript(cdpCtx, conn, m.currentSessionID)
 				}()
 			}
 
 		case "Page.frameNavigated":
-			// Re-inject on navigation
+			// Re-inject on navigation - slightly longer for frame setup
 			if sessionId == m.currentSessionID {
 				go func() {
-					time.Sleep(300 * time.Millisecond)
+					time.Sleep(25 * time.Millisecond)
 					m.injectObserverScript(cdpCtx, conn, m.currentSessionID)
 				}()
 			}
@@ -722,7 +751,7 @@ func (m *Manager) handleGhostCallback(payload string) {
 		addressBarY := -windowBounds.ChromeTop + 40 // 40px for tab bar
 		addressBarHeight := 35
 		addressBarX := 80 - windowBounds.ChromeLeft
-		addressBarWidth := windowBounds.Width - 150
+		addressBarWidth := windowBounds.Width - 180 // Slightly narrower to avoid touching adjacent buttons
 
 		if addressBarWidth > 100 { // Only add if reasonable size
 			addressBar := GhostElement{

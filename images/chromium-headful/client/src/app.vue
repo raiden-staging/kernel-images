@@ -213,14 +213,11 @@
     private ghostReconnectTimeout: number | null = null
 
     get isGhostSyncEnabled() {
-      // Ghost sync is enabled by default - can be disabled via ?ghost_sync=false
+      // Ghost sync is disabled by default - enable via ?ghost_sync=true
       const params = new URL(location.href).searchParams
       const param = params.get('ghost_sync') || params.get('ghostSync') || params.get('ghost')
-      // Explicitly disabled if set to 'false' or '0', otherwise enabled by default
-      if (param === 'false' || param === '0') {
-        return false
-      }
-      return true
+      // Only enabled if explicitly set to 'true' or '1'
+      return param === 'true' || param === '1'
     }
 
     get volume() {
