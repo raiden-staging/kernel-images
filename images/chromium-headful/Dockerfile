@@ -175,6 +175,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-ap
     imagemagick \
     sudo \
     mutter \
+    # FUSE for fspipe virtual filesystem (fuse provides /bin/fusermount required by go-fuse)
+    fuse \
     # Python/pyenv reqs
     build-essential \
     libssl-dev  \
