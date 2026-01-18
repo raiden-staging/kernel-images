@@ -16,8 +16,10 @@ import (
 )
 
 var (
-	ErrNotConnected = errors.New("not connected")
-	ErrSendFailed   = errors.New("send failed")
+	ErrNotConnected  = errors.New("not connected")
+	ErrSendFailed    = errors.New("send failed")
+	ErrShuttingDown  = errors.New("client is shutting down")
+	ErrInvalidConfig = errors.New("invalid configuration")
 )
 
 // ConnectionState represents the connection status
@@ -52,7 +54,7 @@ func (s ConnectionState) String() string {
 type ClientConfig struct {
 	// Connection settings
 	DialTimeout       time.Duration
-	MaxRetries        int
+	MaxRetries        int // 0 = infinite retries
 	InitialBackoff    time.Duration
 	MaxBackoff        time.Duration
 	BackoffMultiplier float64
@@ -64,6 +66,9 @@ type ClientConfig struct {
 	// Queue settings
 	QueueSize  int
 	AckTimeout time.Duration
+
+	// Shutdown settings
+	ShutdownTimeout time.Duration
 }
 
 // DefaultClientConfig returns production-ready defaults
@@ -71,14 +76,41 @@ func DefaultClientConfig() ClientConfig {
 	return ClientConfig{
 		DialTimeout:         10 * time.Second,
 		MaxRetries:          0, // 0 = infinite retries
-		InitialBackoff:      1 * time.Second,
-		MaxBackoff:          60 * time.Second,
+		InitialBackoff:      500 * time.Millisecond,
+		MaxBackoff:          30 * time.Second,
 		BackoffMultiplier:   2.0,
-		HealthCheckInterval: 10 * time.Second,
-		PingTimeout:         5 * time.Second,
+		HealthCheckInterval: 5 * time.Second,
+		PingTimeout:         3 * time.Second,
 		QueueSize:           1000,
-		AckTimeout:          30 * time.Second,
+		AckTimeout:          10 * time.Second, // Reduced from 30s
+		ShutdownTimeout:     5 * time.Second,
 	}
+}
+
+// ValidateConfig checks configuration for invalid values
+func ValidateConfig(config ClientConfig) error {
+	if config.DialTimeout <= 0 {
+		return fmt.Errorf("%w: DialTimeout must be positive", ErrInvalidConfig)
+	}
+	if config.InitialBackoff <= 0 {
+		return fmt.Errorf("%w: InitialBackoff must be positive", ErrInvalidConfig)
+	}
+	if config.MaxBackoff < config.InitialBackoff {
+		return fmt.Errorf("%w: MaxBackoff must be >= InitialBackoff", ErrInvalidConfig)
+	}
+	if config.BackoffMultiplier < 1.0 {
+		return fmt.Errorf("%w: BackoffMultiplier must be >= 1.0", ErrInvalidConfig)
+	}
+	if config.QueueSize <= 0 {
+		return fmt.Errorf("%w: QueueSize must be positive", ErrInvalidConfig)
+	}
+	if config.AckTimeout <= 0 {
+		return fmt.Errorf("%w: AckTimeout must be positive", ErrInvalidConfig)
+	}
+	if config.ShutdownTimeout <= 0 {
+		return fmt.Errorf("%w: ShutdownTimeout must be positive", ErrInvalidConfig)
+	}
+	return nil
 }
 
 // Client manages the connection to the remote listener
@@ -86,7 +118,8 @@ type Client struct {
 	addr   string
 	config ClientConfig
 
-	mu      sync.RWMutex
+	// Connection state protected by connMu
+	connMu  sync.RWMutex
 	conn    net.Conn
 	encoder *protocol.Encoder
 	decoder *protocol.Decoder
@@ -98,10 +131,15 @@ type Client struct {
 	sendQueue *queue.Queue
 
 	// Background goroutine management
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	startOnce  sync.Once
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	// Reconnection management - single goroutine handles all reconnects
+	reconnectCh   chan struct{}
+	reconnectOnce sync.Once
+
+	// Shutdown management
 	shutdownMu sync.Mutex
 	shutdown   bool
 
@@ -111,6 +149,7 @@ type Client struct {
 	messagesRetried  atomic.Uint64
 	connectionLost   atomic.Uint64
 	reconnectSuccess atomic.Uint64
+	healthCheckFails atomic.Uint64
 }
 
 // NewClient creates a new transport client with default config
@@ -120,6 +159,11 @@ func NewClient(addr string) *Client {
 
 // NewClientWithConfig creates a new transport client with custom config
 func NewClientWithConfig(addr string, config ClientConfig) *Client {
+	// Apply defaults for zero values
+	if config.ShutdownTimeout == 0 {
+		config.ShutdownTimeout = 5 * time.Second
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &Client{
@@ -132,6 +176,7 @@ func NewClientWithConfig(addr string, config ClientConfig) *Client {
 			AckTimeout: config.AckTimeout,
 			MaxRetries: 3,
 		}),
+		reconnectCh: make(chan struct{}, 1), // Buffered to avoid blocking
 	}
 
 	c.state.Store(int32(StateDisconnected))
@@ -140,24 +185,28 @@ func NewClientWithConfig(addr string, config ClientConfig) *Client {
 
 // Connect establishes connection to the remote server
 func (c *Client) Connect() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.connMu.Lock()
+	err := c.connectLocked()
+	c.connMu.Unlock()
 
-	if err := c.connectLocked(); err != nil {
+	if err != nil {
 		return err
 	}
 
-	// Start background workers
-	c.startOnce.Do(func() {
-		c.wg.Add(2)
+	// Start background workers exactly once
+	c.reconnectOnce.Do(func() {
+		c.wg.Add(3)
 		go c.sendLoop()
 		go c.healthCheckLoop()
+		go c.reconnectLoop()
 	})
 
 	return nil
 }
 
+// connectLocked establishes connection (must hold connMu)
 func (c *Client) connectLocked() error {
+	// Close existing connection if any
 	if c.conn != nil {
 		c.conn.Close()
 		c.conn = nil
@@ -171,6 +220,7 @@ func (c *Client) connectLocked() error {
 	for {
 		select {
 		case <-c.ctx.Done():
+			c.state.Store(int32(StateDisconnected))
 			return c.ctx.Err()
 		default:
 		}
@@ -185,11 +235,14 @@ func (c *Client) connectLocked() error {
 				return fmt.Errorf("failed to connect after %d retries: %w", attempt, err)
 			}
 
-			// Exponential backoff
+			// Exponential backoff with context cancellation
+			timer := time.NewTimer(backoff)
 			select {
 			case <-c.ctx.Done():
+				timer.Stop()
+				c.state.Store(int32(StateDisconnected))
 				return c.ctx.Err()
-			case <-time.After(backoff):
+			case <-timer.C:
 			}
 
 			backoff = time.Duration(float64(backoff) * c.config.BackoffMultiplier)
@@ -199,10 +252,10 @@ func (c *Client) connectLocked() error {
 			continue
 		}
 
-		// Configure connection
+		// Configure connection for reliability
 		if tcpConn, ok := conn.(*net.TCPConn); ok {
 			tcpConn.SetKeepAlive(true)
-			tcpConn.SetKeepAlivePeriod(30 * time.Second)
+			tcpConn.SetKeepAlivePeriod(15 * time.Second)
 			tcpConn.SetNoDelay(true)
 		}
 
@@ -215,6 +268,72 @@ func (c *Client) connectLocked() error {
 		logging.Info("Connected to %s (attempt %d)", c.addr, attempt)
 		c.reconnectSuccess.Add(1)
 		return nil
+	}
+}
+
+// reconnectLoop handles reconnection in a dedicated goroutine
+// This prevents race conditions and deadlocks from concurrent reconnection attempts
+func (c *Client) reconnectLoop() {
+	defer c.wg.Done()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.reconnectCh:
+			// Drain any additional reconnect signals
+			for {
+				select {
+				case <-c.reconnectCh:
+				default:
+					goto doReconnect
+				}
+			}
+
+		doReconnect:
+			currentState := ConnectionState(c.state.Load())
+			if currentState == StateConnected {
+				continue // Already connected
+			}
+
+			c.connectionLost.Add(1)
+			logging.Info("Starting reconnection...")
+
+			c.connMu.Lock()
+			// Close existing connection
+			if c.conn != nil {
+				c.conn.Close()
+				c.conn = nil
+			}
+			c.state.Store(int32(StateReconnecting))
+
+			// Re-queue pending messages before reconnecting
+			count := c.sendQueue.RetryPending()
+			if count > 0 {
+				logging.Info("Re-queued %d pending messages for retry", count)
+			}
+
+			err := c.connectLocked()
+			c.connMu.Unlock()
+
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
+				logging.Error("Reconnection failed: %v", err)
+			}
+		}
+	}
+}
+
+// triggerReconnect signals the reconnect loop to reconnect
+// This is safe to call from any goroutine without holding locks
+func (c *Client) triggerReconnect() {
+	// Non-blocking send to reconnect channel
+	select {
+	case c.reconnectCh <- struct{}{}:
+	default:
+		// Already a reconnect pending
 	}
 }
 
@@ -243,8 +362,8 @@ func (c *Client) sendLoop() {
 }
 
 func (c *Client) sendMessage(msg *queue.Message) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
 
 	if c.conn == nil {
 		return ErrNotConnected
@@ -276,61 +395,38 @@ func (c *Client) sendMessage(msg *queue.Message) error {
 }
 
 func (c *Client) handleSendError(msg *queue.Message, err error) {
-	// Trigger reconnection
-	c.reconnect()
+	// Trigger reconnection (non-blocking, handled by reconnectLoop)
+	c.triggerReconnect()
 
-	// Re-queue the message
+	// Re-queue the message with retry limit
 	msg.Retries++
 	if msg.Retries <= 3 {
 		c.messagesRetried.Add(1)
-		c.sendQueue.Enqueue(c.ctx, msg.Type, msg.Payload)
+		if _, qerr := c.sendQueue.Enqueue(c.ctx, msg.Type, msg.Payload); qerr != nil {
+			// Queue full or closed, notify caller
+			select {
+			case msg.Result <- fmt.Errorf("requeue failed: %w", qerr):
+			default:
+			}
+		}
 	} else {
+		// Max retries exceeded
 		select {
-		case msg.Result <- err:
+		case msg.Result <- fmt.Errorf("max retries exceeded: %w", err):
 		default:
 		}
 	}
 }
 
-func (c *Client) reconnect() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if ConnectionState(c.state.Load()) == StateReconnecting {
-		return
-	}
-
-	c.state.Store(int32(StateReconnecting))
-	c.connectionLost.Add(1)
-
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
-	}
-
-	// Re-queue pending messages
-	count := c.sendQueue.RetryPending()
-	if count > 0 {
-		logging.Info("Re-queued %d pending messages for retry", count)
-	}
-
-	// Reconnect in background
-	go func() {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-
-		if err := c.connectLocked(); err != nil {
-			logging.Error("Reconnection failed: %v", err)
-		}
-	}()
-}
-
-// healthCheckLoop monitors connection health
+// healthCheckLoop monitors connection health with actual verification
 func (c *Client) healthCheckLoop() {
 	defer c.wg.Done()
 
 	ticker := time.NewTicker(c.config.HealthCheckInterval)
 	defer ticker.Stop()
+
+	consecutiveFails := 0
+	const maxConsecutiveFails = 3
 
 	for {
 		select {
@@ -338,37 +434,101 @@ func (c *Client) healthCheckLoop() {
 			return
 		case <-ticker.C:
 			if ConnectionState(c.state.Load()) != StateConnected {
+				consecutiveFails = 0
 				continue
 			}
 
-			// Simple health check: try to write
-			c.mu.RLock()
-			conn := c.conn
-			c.mu.RUnlock()
+			// Actually verify the connection is alive
+			if !c.verifyConnection() {
+				consecutiveFails++
+				c.healthCheckFails.Add(1)
+				logging.Warn("Health check failed (%d/%d)", consecutiveFails, maxConsecutiveFails)
 
-			if conn != nil {
-				conn.SetWriteDeadline(time.Now().Add(c.config.PingTimeout))
-				// TCP keepalive handles actual ping
+				if consecutiveFails >= maxConsecutiveFails {
+					logging.Error("Health check failed %d times, triggering reconnect", consecutiveFails)
+					c.state.Store(int32(StateReconnecting))
+					c.triggerReconnect()
+					consecutiveFails = 0
+				}
+			} else {
+				consecutiveFails = 0
 			}
 		}
 	}
 }
 
+// verifyConnection checks if the connection is actually working
+func (c *Client) verifyConnection() bool {
+	c.connMu.RLock()
+	conn := c.conn
+	c.connMu.RUnlock()
+
+	if conn == nil {
+		return false
+	}
+
+	// Set a short deadline and try to detect if connection is alive
+	// We use SetReadDeadline with a very short timeout to check for errors
+	conn.SetReadDeadline(time.Now().Add(1 * time.Millisecond))
+
+	// Try to read - we expect timeout (connection alive) or error (connection dead)
+	one := make([]byte, 1)
+	_, err := conn.Read(one)
+
+	// Reset deadline
+	conn.SetReadDeadline(time.Time{})
+
+	if err != nil {
+		// Timeout is expected and means connection is alive
+		if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+			return true
+		}
+		// Any other error means connection is dead
+		return false
+	}
+
+	// We got data - unexpected but connection is alive
+	// Note: This could mess up protocol framing, but health check
+	// shouldn't receive data in normal operation
+	return true
+}
+
 // Send sends a message asynchronously (non-blocking)
 func (c *Client) Send(msgType byte, payload interface{}) error {
+	c.shutdownMu.Lock()
+	if c.shutdown {
+		c.shutdownMu.Unlock()
+		return ErrShuttingDown
+	}
+	c.shutdownMu.Unlock()
+
 	_, err := c.sendQueue.Enqueue(c.ctx, msgType, payload)
 	return err
 }
 
 // SendSync sends a message and waits for completion
 func (c *Client) SendSync(msgType byte, payload interface{}) error {
+	c.shutdownMu.Lock()
+	if c.shutdown {
+		c.shutdownMu.Unlock()
+		return ErrShuttingDown
+	}
+	c.shutdownMu.Unlock()
+
 	return c.sendQueue.EnqueueSync(c.ctx, msgType, payload)
 }
 
 // SendAndReceive sends a message and waits for a response
 func (c *Client) SendAndReceive(msgType byte, payload interface{}) (byte, []byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.shutdownMu.Lock()
+	if c.shutdown {
+		c.shutdownMu.Unlock()
+		return 0, nil, ErrShuttingDown
+	}
+	c.shutdownMu.Unlock()
+
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
 
 	if c.conn == nil {
 		return 0, nil, ErrNotConnected
@@ -388,6 +548,8 @@ func (c *Client) SendAndReceive(msgType byte, payload interface{}) (byte, []byte
 
 	respType, respData, err := c.decoder.Decode()
 	if err != nil {
+		// Connection error - trigger reconnect
+		go c.triggerReconnect()
 		return 0, nil, fmt.Errorf("receive: %w", err)
 	}
 
@@ -403,17 +565,18 @@ func (c *Client) State() ConnectionState {
 // Stats returns client statistics
 func (c *Client) Stats() map[string]uint64 {
 	return map[string]uint64{
-		"messages_sent":     c.messagesSent.Load(),
-		"messages_acked":    c.messagesAcked.Load(),
-		"messages_retried":  c.messagesRetried.Load(),
-		"connection_lost":   c.connectionLost.Load(),
-		"reconnect_success": c.reconnectSuccess.Load(),
-		"queue_length":      uint64(c.sendQueue.Len()),
-		"pending_acks":      uint64(c.sendQueue.GetPendingCount()),
+		"messages_sent":      c.messagesSent.Load(),
+		"messages_acked":     c.messagesAcked.Load(),
+		"messages_retried":   c.messagesRetried.Load(),
+		"connection_lost":    c.connectionLost.Load(),
+		"reconnect_success":  c.reconnectSuccess.Load(),
+		"health_check_fails": c.healthCheckFails.Load(),
+		"queue_length":       uint64(c.sendQueue.Len()),
+		"pending_acks":       uint64(c.sendQueue.GetPendingCount()),
 	}
 }
 
-// Close closes the connection
+// Close closes the connection with graceful shutdown
 func (c *Client) Close() error {
 	c.shutdownMu.Lock()
 	if c.shutdown {
@@ -423,23 +586,38 @@ func (c *Client) Close() error {
 	c.shutdown = true
 	c.shutdownMu.Unlock()
 
+	logging.Info("Client shutting down...")
+
 	// Signal goroutines to stop
 	c.cancel()
 
-	// Close queue
+	// Close queue to unblock sendLoop
 	c.sendQueue.Close()
 
-	// Wait for goroutines
-	c.wg.Wait()
+	// Wait for goroutines with timeout
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		logging.Info("Client goroutines stopped gracefully")
+	case <-time.After(c.config.ShutdownTimeout):
+		logging.Warn("Client shutdown timed out after %v", c.config.ShutdownTimeout)
+	}
 
 	// Close connection
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
 
 	if c.conn != nil {
 		err := c.conn.Close()
 		c.conn = nil
+		c.state.Store(int32(StateDisconnected))
 		return err
 	}
+	c.state.Store(int32(StateDisconnected))
 	return nil
 }

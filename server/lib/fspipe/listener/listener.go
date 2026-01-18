@@ -12,6 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/onkernel/kernel-images/server/lib/fspipe/logging"
@@ -32,12 +34,23 @@ type Server struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 	wg     sync.WaitGroup
+
+	// Shutdown management
+	shutdownTimeout time.Duration
+
+	// Metrics
+	activeConnections atomic.Int64
+	totalConnections  atomic.Uint64
+	totalFiles        atomic.Uint64
+	totalBytes        atomic.Uint64
+	totalErrors       atomic.Uint64
 }
 
 // Config holds server configuration
 type Config struct {
 	WebSocketEnabled bool
 	WebSocketPath    string
+	ShutdownTimeout  time.Duration
 }
 
 // NewServer creates a new listener server (TCP mode)
@@ -49,13 +62,19 @@ func NewServer(addr string, localDir string) *Server {
 func NewServerWithConfig(addr string, localDir string, config Config) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	shutdownTimeout := config.ShutdownTimeout
+	if shutdownTimeout == 0 {
+		shutdownTimeout = 10 * time.Second
+	}
+
 	s := &Server{
-		addr:      addr,
-		localDir:  localDir,
-		wsEnabled: config.WebSocketEnabled,
-		wsPath:    config.WebSocketPath,
-		ctx:       ctx,
-		cancel:    cancel,
+		addr:            addr,
+		localDir:        localDir,
+		wsEnabled:       config.WebSocketEnabled,
+		wsPath:          config.WebSocketPath,
+		ctx:             ctx,
+		cancel:          cancel,
+		shutdownTimeout: shutdownTimeout,
 		upgrader: websocket.Upgrader{
 			ReadBufferSize:  64 * 1024,
 			WriteBufferSize: 64 * 1024,
@@ -126,6 +145,10 @@ func (s *Server) startWebSocket() error {
 func (s *Server) acceptLoop() {
 	defer s.wg.Done()
 
+	// Exponential backoff for accept errors
+	backoff := 10 * time.Millisecond
+	maxBackoff := 5 * time.Second
+
 	for {
 		conn, err := s.listener.Accept()
 		if err != nil {
@@ -134,10 +157,30 @@ func (s *Server) acceptLoop() {
 				return
 			default:
 				logging.Error("Accept error: %v", err)
+				s.totalErrors.Add(1)
+
+				// Backoff to prevent CPU spin on persistent errors
+				timer := time.NewTimer(backoff)
+				select {
+				case <-s.ctx.Done():
+					timer.Stop()
+					return
+				case <-timer.C:
+				}
+
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
 				continue
 			}
 		}
 
+		// Reset backoff on successful accept
+		backoff = 10 * time.Millisecond
+
+		s.totalConnections.Add(1)
+		s.activeConnections.Add(1)
 		logging.Info("New TCP connection from %s", conn.RemoteAddr())
 
 		s.wg.Add(1)
@@ -147,9 +190,10 @@ func (s *Server) acceptLoop() {
 
 func (s *Server) handleTCPConnection(conn net.Conn) {
 	defer s.wg.Done()
+	defer s.activeConnections.Add(-1)
 	defer conn.Close()
 
-	handler := newHandler(s.localDir)
+	handler := newHandler(s.localDir, &s.totalFiles, &s.totalBytes, &s.totalErrors)
 	reader := bufio.NewReader(conn)
 	writer := bufio.NewWriter(conn)
 
@@ -162,9 +206,12 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		logging.Error("WebSocket upgrade error: %v", err)
+		s.totalErrors.Add(1)
 		return
 	}
 
+	s.totalConnections.Add(1)
+	s.activeConnections.Add(1)
 	logging.Info("New WebSocket connection from %s", r.RemoteAddr)
 
 	s.wg.Add(1)
@@ -173,9 +220,10 @@ func (s *Server) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleWSConnection(conn *websocket.Conn, remoteAddr string) {
 	defer s.wg.Done()
+	defer s.activeConnections.Add(-1)
 	defer conn.Close()
 
-	handler := newHandler(s.localDir)
+	handler := newHandler(s.localDir, &s.totalFiles, &s.totalBytes, &s.totalErrors)
 	wsAdapter := newWebSocketAdapter(conn)
 
 	handler.handle(s.ctx, wsAdapter, wsAdapter)
@@ -185,17 +233,34 @@ func (s *Server) handleWSConnection(conn *websocket.Conn, remoteAddr string) {
 
 // Stop gracefully shuts down the server
 func (s *Server) Stop() error {
+	logging.Info("Server shutting down...")
 	s.cancel()
 
+	// Shutdown HTTP server with timeout
 	if s.httpServer != nil {
-		s.httpServer.Shutdown(context.Background())
+		ctx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
+		defer cancel()
+		s.httpServer.Shutdown(ctx)
 	}
 
 	if s.listener != nil {
 		s.listener.Close()
 	}
 
-	s.wg.Wait()
+	// Wait for connections with timeout
+	done := make(chan struct{})
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		logging.Info("Server stopped gracefully")
+	case <-time.After(s.shutdownTimeout):
+		logging.Warn("Server shutdown timed out after %v", s.shutdownTimeout)
+	}
+
 	return nil
 }
 
@@ -217,6 +282,17 @@ func (s *Server) WSPath() string {
 	return s.wsPath
 }
 
+// Stats returns server statistics
+func (s *Server) Stats() map[string]interface{} {
+	return map[string]interface{}{
+		"active_connections": s.activeConnections.Load(),
+		"total_connections":  s.totalConnections.Load(),
+		"total_files":        s.totalFiles.Load(),
+		"total_bytes":        s.totalBytes.Load(),
+		"total_errors":       s.totalErrors.Load(),
+	}
+}
+
 // flusher is an interface for types that can flush buffered data
 type flusher interface {
 	io.Writer
@@ -228,24 +304,50 @@ type handler struct {
 	localDir string
 
 	mu    sync.RWMutex
-	files map[string]*os.File
+	files map[string]*fileEntry
+
+	// Shared metrics
+	totalFiles  *atomic.Uint64
+	totalBytes  *atomic.Uint64
+	totalErrors *atomic.Uint64
 }
 
-func newHandler(localDir string) *handler {
+// fileEntry wraps a file with metadata for tracking
+type fileEntry struct {
+	file      *os.File
+	path      string
+	createdAt time.Time
+	bytesW    int64
+}
+
+func newHandler(localDir string, totalFiles, totalBytes, totalErrors *atomic.Uint64) *handler {
 	return &handler{
-		localDir: localDir,
-		files:    make(map[string]*os.File),
+		localDir:    localDir,
+		files:       make(map[string]*fileEntry),
+		totalFiles:  totalFiles,
+		totalBytes:  totalBytes,
+		totalErrors: totalErrors,
 	}
 }
 
 func (h *handler) handle(ctx context.Context, r io.Reader, w flusher) {
+	// Panic recovery to prevent one bad message from crashing the server
+	defer func() {
+		if r := recover(); r != nil {
+			logging.Error("Handler panic recovered: %v", r)
+			if h.totalErrors != nil {
+				h.totalErrors.Add(1)
+			}
+		}
+		h.closeAllFiles()
+	}()
+
 	decoder := protocol.NewDecoder(r)
 	encoder := protocol.NewEncoder(w)
 
 	for {
 		select {
 		case <-ctx.Done():
-			h.closeAllFiles()
 			return
 		default:
 		}
@@ -255,12 +357,14 @@ func (h *handler) handle(ctx context.Context, r io.Reader, w flusher) {
 			if err != io.EOF {
 				logging.Debug("Decode error: %v", err)
 			}
-			h.closeAllFiles()
 			return
 		}
 
 		if err := h.handleMessage(msgType, payload, encoder, w); err != nil {
 			logging.Debug("Handle message error: %v", err)
+			if h.totalErrors != nil {
+				h.totalErrors.Add(1)
+			}
 		}
 	}
 }
@@ -331,7 +435,16 @@ func (h *handler) handleFileCreate(msg *protocol.FileCreate) error {
 		return err
 	}
 
-	h.files[msg.FileID] = f
+	h.files[msg.FileID] = &fileEntry{
+		file:      f,
+		path:      path,
+		createdAt: time.Now(),
+	}
+
+	if h.totalFiles != nil {
+		h.totalFiles.Add(1)
+	}
+
 	logging.Debug("Created file: %s (id=%s)", msg.Filename, msg.FileID)
 	return nil
 }
@@ -340,28 +453,30 @@ func (h *handler) handleFileClose(msg *protocol.FileClose) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	f, ok := h.files[msg.FileID]
+	entry, ok := h.files[msg.FileID]
 	if !ok {
 		logging.Debug("FileClose: unknown file ID %s", msg.FileID)
 		return nil
 	}
 
-	if err := f.Sync(); err != nil {
+	// Sync before close to ensure data is written
+	if err := entry.file.Sync(); err != nil {
 		logging.Debug("Sync error for %s: %v", msg.FileID, err)
 	}
 
-	if err := f.Close(); err != nil {
+	if err := entry.file.Close(); err != nil {
 		logging.Debug("Close error for %s: %v", msg.FileID, err)
 	}
 
 	delete(h.files, msg.FileID)
-	logging.Debug("Closed file: id=%s", msg.FileID)
+	logging.Debug("Closed file: id=%s, bytes=%d, duration=%v",
+		msg.FileID, entry.bytesW, time.Since(entry.createdAt))
 	return nil
 }
 
 func (h *handler) handleWriteChunk(msg *protocol.WriteChunk, encoder *protocol.Encoder, w flusher) error {
 	h.mu.RLock()
-	f, ok := h.files[msg.FileID]
+	entry, ok := h.files[msg.FileID]
 	h.mu.RUnlock()
 
 	ack := protocol.WriteAck{
@@ -377,9 +492,18 @@ func (h *handler) handleWriteChunk(msg *protocol.WriteChunk, encoder *protocol.E
 		return w.Flush()
 	}
 
-	n, err := f.WriteAt(msg.Data, msg.Offset)
+	n, err := entry.file.WriteAt(msg.Data, msg.Offset)
 	if err != nil {
 		ack.Error = err.Error()
+	} else {
+		// Track bytes written
+		h.mu.Lock()
+		entry.bytesW += int64(n)
+		h.mu.Unlock()
+
+		if h.totalBytes != nil {
+			h.totalBytes.Add(uint64(n))
+		}
 	}
 	ack.Written = n
 
@@ -391,7 +515,7 @@ func (h *handler) handleWriteChunk(msg *protocol.WriteChunk, encoder *protocol.E
 
 func (h *handler) handleTruncate(msg *protocol.Truncate) error {
 	h.mu.RLock()
-	f, ok := h.files[msg.FileID]
+	entry, ok := h.files[msg.FileID]
 	h.mu.RUnlock()
 
 	if !ok {
@@ -399,7 +523,7 @@ func (h *handler) handleTruncate(msg *protocol.Truncate) error {
 		return nil
 	}
 
-	if err := f.Truncate(msg.Size); err != nil {
+	if err := entry.file.Truncate(msg.Size); err != nil {
 		logging.Debug("Truncate error for %s: %v", msg.FileID, err)
 		return err
 	}
@@ -442,9 +566,13 @@ func (h *handler) closeAllFiles() {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	for id, f := range h.files {
-		f.Sync()
-		f.Close()
+	for id, entry := range h.files {
+		if err := entry.file.Sync(); err != nil {
+			logging.Debug("Sync error during cleanup for %s: %v", id, err)
+		}
+		if err := entry.file.Close(); err != nil {
+			logging.Debug("Close error during cleanup for %s: %v", id, err)
+		}
 		delete(h.files, id)
 	}
 }

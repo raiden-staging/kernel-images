@@ -23,8 +23,8 @@ type WebSocketClient struct {
 	url    string
 	config ClientConfig
 
-	mu   sync.RWMutex
-	conn *websocket.Conn
+	connMu sync.RWMutex
+	conn   *websocket.Conn
 
 	state atomic.Int32 // ConnectionState
 
@@ -35,10 +35,15 @@ type WebSocketClient struct {
 	responseCh chan wsResponse
 
 	// Background goroutine management
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	startOnce  sync.Once
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
+	// Reconnection management - single goroutine handles all reconnects
+	reconnectCh   chan struct{}
+	reconnectOnce sync.Once
+
+	// Shutdown management
 	shutdownMu sync.Mutex
 	shutdown   bool
 
@@ -48,6 +53,7 @@ type WebSocketClient struct {
 	messagesRetried  atomic.Uint64
 	connectionLost   atomic.Uint64
 	reconnectSuccess atomic.Uint64
+	healthCheckFails atomic.Uint64
 }
 
 type wsResponse struct {
@@ -58,6 +64,11 @@ type wsResponse struct {
 
 // NewWebSocketClient creates a new WebSocket transport client
 func NewWebSocketClient(url string, config ClientConfig) *WebSocketClient {
+	// Apply defaults for zero values
+	if config.ShutdownTimeout == 0 {
+		config.ShutdownTimeout = 5 * time.Second
+	}
+
 	ctx, cancel := context.WithCancel(context.Background())
 
 	c := &WebSocketClient{
@@ -70,7 +81,8 @@ func NewWebSocketClient(url string, config ClientConfig) *WebSocketClient {
 			AckTimeout: config.AckTimeout,
 			MaxRetries: 3,
 		}),
-		responseCh: make(chan wsResponse, 10),
+		responseCh:  make(chan wsResponse, 10),
+		reconnectCh: make(chan struct{}, 1),
 	}
 
 	c.state.Store(int32(StateDisconnected))
@@ -79,19 +91,21 @@ func NewWebSocketClient(url string, config ClientConfig) *WebSocketClient {
 
 // Connect establishes WebSocket connection
 func (c *WebSocketClient) Connect() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.connMu.Lock()
+	err := c.connectLocked()
+	c.connMu.Unlock()
 
-	if err := c.connectLocked(); err != nil {
+	if err != nil {
 		return err
 	}
 
-	// Start background workers
-	c.startOnce.Do(func() {
-		c.wg.Add(3)
+	// Start background workers exactly once
+	c.reconnectOnce.Do(func() {
+		c.wg.Add(4)
 		go c.sendLoop()
 		go c.readLoop()
 		go c.pingLoop()
+		go c.reconnectLoop()
 	})
 
 	return nil
@@ -115,6 +129,7 @@ func (c *WebSocketClient) connectLocked() error {
 	for {
 		select {
 		case <-c.ctx.Done():
+			c.state.Store(int32(StateDisconnected))
 			return c.ctx.Err()
 		default:
 		}
@@ -134,10 +149,14 @@ func (c *WebSocketClient) connectLocked() error {
 				return fmt.Errorf("failed to connect after %d retries: %w", attempt, err)
 			}
 
+			// Exponential backoff with context cancellation
+			timer := time.NewTimer(backoff)
 			select {
 			case <-c.ctx.Done():
+				timer.Stop()
+				c.state.Store(int32(StateDisconnected))
 				return c.ctx.Err()
-			case <-time.After(backoff):
+			case <-timer.C:
 			}
 
 			backoff = time.Duration(float64(backoff) * c.config.BackoffMultiplier)
@@ -152,6 +171,66 @@ func (c *WebSocketClient) connectLocked() error {
 		logging.Info("WebSocket connected to %s (attempt %d)", c.url, attempt)
 		c.reconnectSuccess.Add(1)
 		return nil
+	}
+}
+
+// reconnectLoop handles reconnection in a dedicated goroutine
+func (c *WebSocketClient) reconnectLoop() {
+	defer c.wg.Done()
+
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-c.reconnectCh:
+			// Drain any additional reconnect signals
+			for {
+				select {
+				case <-c.reconnectCh:
+				default:
+					goto doReconnect
+				}
+			}
+
+		doReconnect:
+			currentState := ConnectionState(c.state.Load())
+			if currentState == StateConnected {
+				continue
+			}
+
+			c.connectionLost.Add(1)
+			logging.Info("WebSocket starting reconnection...")
+
+			c.connMu.Lock()
+			if c.conn != nil {
+				c.conn.Close()
+				c.conn = nil
+			}
+			c.state.Store(int32(StateReconnecting))
+
+			count := c.sendQueue.RetryPending()
+			if count > 0 {
+				logging.Info("Re-queued %d pending messages for retry", count)
+			}
+
+			err := c.connectLocked()
+			c.connMu.Unlock()
+
+			if err != nil {
+				if errors.Is(err, context.Canceled) {
+					return
+				}
+				logging.Error("WebSocket reconnection failed: %v", err)
+			}
+		}
+	}
+}
+
+// triggerReconnect signals the reconnect loop to reconnect
+func (c *WebSocketClient) triggerReconnect() {
+	select {
+	case c.reconnectCh <- struct{}{}:
+	default:
 	}
 }
 
@@ -180,8 +259,8 @@ func (c *WebSocketClient) sendLoop() {
 }
 
 func (c *WebSocketClient) sendMessage(msg *queue.Message) error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
 
 	if c.conn == nil {
 		return ErrNotConnected
@@ -228,9 +307,9 @@ func (c *WebSocketClient) readLoop() {
 		default:
 		}
 
-		c.mu.RLock()
+		c.connMu.RLock()
 		conn := c.conn
-		c.mu.RUnlock()
+		c.connMu.RUnlock()
 
 		if conn == nil {
 			time.Sleep(100 * time.Millisecond)
@@ -244,7 +323,8 @@ func (c *WebSocketClient) readLoop() {
 				logging.Info("WebSocket closed normally")
 			} else if !errors.Is(err, context.Canceled) {
 				logging.Warn("WebSocket read error: %v", err)
-				c.reconnect()
+				c.state.Store(int32(StateReconnecting))
+				c.triggerReconnect()
 			}
 			continue
 		}
@@ -272,8 +352,6 @@ func (c *WebSocketClient) readLoop() {
 		if msgType == protocol.MsgWriteAck {
 			var ack protocol.WriteAck
 			if err := json.Unmarshal(payload, &ack); err == nil {
-				// Find and complete the pending message
-				// For now, just count it
 				c.messagesAcked.Add(1)
 			}
 		}
@@ -290,22 +368,41 @@ func (c *WebSocketClient) readLoop() {
 func (c *WebSocketClient) pingLoop() {
 	defer c.wg.Done()
 
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(c.config.HealthCheckInterval)
 	defer ticker.Stop()
+
+	consecutiveFails := 0
+	const maxConsecutiveFails = 3
 
 	for {
 		select {
 		case <-c.ctx.Done():
 			return
 		case <-ticker.C:
-			c.mu.RLock()
+			if ConnectionState(c.state.Load()) != StateConnected {
+				consecutiveFails = 0
+				continue
+			}
+
+			c.connMu.RLock()
 			conn := c.conn
-			c.mu.RUnlock()
+			c.connMu.RUnlock()
 
 			if conn != nil {
-				conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
+				conn.SetWriteDeadline(time.Now().Add(c.config.PingTimeout))
 				if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
-					logging.Debug("Ping failed: %v", err)
+					consecutiveFails++
+					c.healthCheckFails.Add(1)
+					logging.Debug("Ping failed (%d/%d): %v", consecutiveFails, maxConsecutiveFails, err)
+
+					if consecutiveFails >= maxConsecutiveFails {
+						logging.Error("Ping failed %d times, triggering reconnect", consecutiveFails)
+						c.state.Store(int32(StateReconnecting))
+						c.triggerReconnect()
+						consecutiveFails = 0
+					}
+				} else {
+					consecutiveFails = 0
 				}
 			}
 		}
@@ -313,70 +410,71 @@ func (c *WebSocketClient) pingLoop() {
 }
 
 func (c *WebSocketClient) handleSendError(msg *queue.Message, err error) {
-	c.reconnect()
+	// Trigger reconnection (non-blocking)
+	c.triggerReconnect()
 
 	msg.Retries++
 	if msg.Retries <= 3 {
 		c.messagesRetried.Add(1)
-		c.sendQueue.Enqueue(c.ctx, msg.Type, msg.Payload)
+		if _, qerr := c.sendQueue.Enqueue(c.ctx, msg.Type, msg.Payload); qerr != nil {
+			select {
+			case msg.Result <- fmt.Errorf("requeue failed: %w", qerr):
+			default:
+			}
+		}
 	} else {
 		select {
-		case msg.Result <- err:
+		case msg.Result <- fmt.Errorf("max retries exceeded: %w", err):
 		default:
 		}
 	}
 }
 
-func (c *WebSocketClient) reconnect() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if ConnectionState(c.state.Load()) == StateReconnecting {
-		return
-	}
-
-	c.state.Store(int32(StateReconnecting))
-	c.connectionLost.Add(1)
-
-	if c.conn != nil {
-		c.conn.Close()
-		c.conn = nil
-	}
-
-	count := c.sendQueue.RetryPending()
-	if count > 0 {
-		logging.Info("Re-queued %d pending messages for retry", count)
-	}
-
-	go func() {
-		c.mu.Lock()
-		defer c.mu.Unlock()
-
-		if err := c.connectLocked(); err != nil {
-			logging.Error("Reconnection failed: %v", err)
-		}
-	}()
-}
-
 // Send sends a message asynchronously
 func (c *WebSocketClient) Send(msgType byte, payload interface{}) error {
+	c.shutdownMu.Lock()
+	if c.shutdown {
+		c.shutdownMu.Unlock()
+		return ErrShuttingDown
+	}
+	c.shutdownMu.Unlock()
+
 	_, err := c.sendQueue.Enqueue(c.ctx, msgType, payload)
 	return err
 }
 
+// SendSync sends a message and waits for send completion
+func (c *WebSocketClient) SendSync(msgType byte, payload interface{}) error {
+	c.shutdownMu.Lock()
+	if c.shutdown {
+		c.shutdownMu.Unlock()
+		return ErrShuttingDown
+	}
+	c.shutdownMu.Unlock()
+
+	return c.sendQueue.EnqueueSync(c.ctx, msgType, payload)
+}
+
 // SendAndReceive sends a message and waits for response
 func (c *WebSocketClient) SendAndReceive(msgType byte, payload interface{}) (byte, []byte, error) {
-	c.mu.Lock()
+	c.shutdownMu.Lock()
+	if c.shutdown {
+		c.shutdownMu.Unlock()
+		return 0, nil, ErrShuttingDown
+	}
+	c.shutdownMu.Unlock()
+
+	c.connMu.Lock()
 
 	if c.conn == nil {
-		c.mu.Unlock()
+		c.connMu.Unlock()
 		return 0, nil, ErrNotConnected
 	}
 
 	// Build and send frame
 	data, err := json.Marshal(payload)
 	if err != nil {
-		c.mu.Unlock()
+		c.connMu.Unlock()
 		return 0, nil, fmt.Errorf("marshal: %w", err)
 	}
 
@@ -388,13 +486,14 @@ func (c *WebSocketClient) SendAndReceive(msgType byte, payload interface{}) (byt
 
 	c.conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 	if err := c.conn.WriteMessage(websocket.BinaryMessage, buf.Bytes()); err != nil {
-		c.mu.Unlock()
+		c.connMu.Unlock()
+		go c.triggerReconnect()
 		return 0, nil, fmt.Errorf("write: %w", err)
 	}
 
-	c.mu.Unlock()
+	c.connMu.Unlock()
 
-	// Wait for response
+	// Wait for response with shorter timeout
 	select {
 	case resp := <-c.responseCh:
 		c.messagesAcked.Add(1)
@@ -414,17 +513,18 @@ func (c *WebSocketClient) State() ConnectionState {
 // Stats returns client statistics
 func (c *WebSocketClient) Stats() map[string]uint64 {
 	return map[string]uint64{
-		"messages_sent":     c.messagesSent.Load(),
-		"messages_acked":    c.messagesAcked.Load(),
-		"messages_retried":  c.messagesRetried.Load(),
-		"connection_lost":   c.connectionLost.Load(),
-		"reconnect_success": c.reconnectSuccess.Load(),
-		"queue_length":      uint64(c.sendQueue.Len()),
-		"pending_acks":      uint64(c.sendQueue.GetPendingCount()),
+		"messages_sent":      c.messagesSent.Load(),
+		"messages_acked":     c.messagesAcked.Load(),
+		"messages_retried":   c.messagesRetried.Load(),
+		"connection_lost":    c.connectionLost.Load(),
+		"reconnect_success":  c.reconnectSuccess.Load(),
+		"health_check_fails": c.healthCheckFails.Load(),
+		"queue_length":       uint64(c.sendQueue.Len()),
+		"pending_acks":       uint64(c.sendQueue.GetPendingCount()),
 	}
 }
 
-// Close closes the WebSocket connection
+// Close closes the WebSocket connection with graceful shutdown
 func (c *WebSocketClient) Close() error {
 	c.shutdownMu.Lock()
 	if c.shutdown {
@@ -434,18 +534,35 @@ func (c *WebSocketClient) Close() error {
 	c.shutdown = true
 	c.shutdownMu.Unlock()
 
+	logging.Info("WebSocket client shutting down...")
+
 	c.cancel()
 	c.sendQueue.Close()
-	c.wg.Wait()
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	// Wait for goroutines with timeout
+	done := make(chan struct{})
+	go func() {
+		c.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		logging.Info("WebSocket client goroutines stopped gracefully")
+	case <-time.After(c.config.ShutdownTimeout):
+		logging.Warn("WebSocket client shutdown timed out after %v", c.config.ShutdownTimeout)
+	}
+
+	c.connMu.Lock()
+	defer c.connMu.Unlock()
 
 	if c.conn != nil {
 		c.conn.WriteMessage(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""))
 		err := c.conn.Close()
 		c.conn = nil
+		c.state.Store(int32(StateDisconnected))
 		return err
 	}
+	c.state.Store(int32(StateDisconnected))
 	return nil
 }

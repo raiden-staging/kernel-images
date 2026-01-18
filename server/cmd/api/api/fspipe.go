@@ -13,6 +13,7 @@ import (
 	"github.com/onkernel/kernel-images/server/lib/fspipe/transport"
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
+	"github.com/onkernel/kernel-images/server/lib/policy"
 )
 
 const (
@@ -256,12 +257,15 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 
 	log.Info("fspipe daemon started", "mode", transportMode, "mount", mountPath)
 
-	// Set Chrome download directory and restart Chrome
-	downloadDirFlag := fmt.Sprintf("--download-default-directory=%s", mountPath)
-	if _, err := s.mergeAndWriteChromiumFlags(ctx, []string{downloadDirFlag}); err != nil {
-		log.Warn("failed to set Chrome download directory flag", "error", err)
+	// Set Chrome download directory via enterprise policy (more reliable than command-line flag)
+	policyManager := &policy.Policy{}
+	if err := policyManager.SetDownloadDirectory(mountPath, true); err != nil {
+		log.Warn("failed to set Chrome download directory policy", "error", err)
+	} else {
+		log.Info("set Chrome download directory policy", "path", mountPath)
 	}
 
+	// Restart Chrome to apply policy changes
 	if err := s.restartChromiumAndWait(ctx, "fspipe setup"); err != nil {
 		log.Warn("failed to restart Chrome for fspipe setup", "error", err)
 	}
@@ -324,6 +328,12 @@ func (s *ApiService) StopFspipe(ctx context.Context, req oapi.StopFspipeRequestO
 		if err := fspipe.listenerServer.Stop(); err != nil {
 			log.Warn("failed to stop fspipe listener", "error", err)
 		}
+	}
+
+	// Clear download directory policy
+	policyManager := &policy.Policy{}
+	if err := policyManager.ClearDownloadDirectory(); err != nil {
+		log.Warn("failed to clear Chrome download directory policy", "error", err)
 	}
 
 	// Reset state

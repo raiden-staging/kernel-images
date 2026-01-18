@@ -13,6 +13,11 @@ type Transport interface {
 	// Send sends a message asynchronously (non-blocking)
 	Send(msgType byte, payload interface{}) error
 
+	// SendSync sends a message and waits for send completion (blocking)
+	// This ensures the message is actually sent before returning, unlike Send which queues.
+	// Use this for messages that must be delivered before subsequent operations.
+	SendSync(msgType byte, payload interface{}) error
+
 	// SendAndReceive sends a message and waits for a response
 	SendAndReceive(msgType byte, payload interface{}) (byte, []byte, error)
 

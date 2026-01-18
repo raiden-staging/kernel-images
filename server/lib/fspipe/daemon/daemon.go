@@ -91,15 +91,17 @@ func newPipeDir(client transport.Transport, parent *pipeDir, name string) *pipeD
 }
 
 func (d *pipeDir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
-	out.Attr = defaultAttr(fuse.S_IFDIR | 0755)
+	// Use 0777 to allow Chrome (running as different user) full access
+	out.Attr = defaultAttr(fuse.S_IFDIR | 0777)
 	return 0
 }
 
 func (d *pipeDir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (*fs.Inode, syscall.Errno) {
+	// Hold lock for entire operation to prevent TOCTOU race
 	d.mu.RLock()
-	child, ok := d.children[name]
-	d.mu.RUnlock()
+	defer d.mu.RUnlock()
 
+	child, ok := d.children[name]
 	if !ok {
 		return nil, syscall.ENOENT
 	}
@@ -108,10 +110,15 @@ func (d *pipeDir) Lookup(ctx context.Context, name string, out *fuse.EntryOut) (
 	if inode != nil {
 		switch n := child.(type) {
 		case *pipeFile:
-			out.Attr = defaultAttr(fuse.S_IFREG | n.mode)
-			out.Attr.Size = uint64(n.size)
+			// Ensure world-writable permission for cross-user access
+			n.mu.RLock()
+			mode := n.mode
+			size := n.size
+			n.mu.RUnlock()
+			out.Attr = defaultAttr(fuse.S_IFREG | mode | 0666)
+			out.Attr.Size = uint64(size)
 		case *pipeDir:
-			out.Attr = defaultAttr(fuse.S_IFDIR | 0755)
+			out.Attr = defaultAttr(fuse.S_IFDIR | 0777)
 		}
 		return inode, 0
 	}
@@ -130,7 +137,9 @@ func (d *pipeDir) Create(ctx context.Context, name string, flags uint32, mode ui
 		Filename: relPath,
 		Mode:     mode,
 	}
-	if err := d.client.Send(protocol.MsgFileCreate, &msg); err != nil {
+	// Use synchronous send to ensure FileCreate is processed before any WriteChunk
+	// This prevents race condition where WriteChunk arrives before FileCreate
+	if err := d.client.SendSync(protocol.MsgFileCreate, &msg); err != nil {
 		logging.Debug("Create: failed to send FileCreate: %v", err)
 		return nil, nil, 0, syscall.EIO
 	}
@@ -142,7 +151,8 @@ func (d *pipeDir) Create(ctx context.Context, name string, flags uint32, mode ui
 	stable := fs.StableAttr{Mode: fuse.S_IFREG}
 	inode := d.NewInode(ctx, file, stable)
 
-	out.Attr = defaultAttr(fuse.S_IFREG | mode)
+	// Ensure world-writable permission for cross-user access
+	out.Attr = defaultAttr(fuse.S_IFREG | mode | 0666)
 
 	handle := newPipeHandle(file)
 	return inode, handle, fuse.FOPEN_DIRECT_IO, 0
@@ -160,7 +170,8 @@ func (d *pipeDir) Mkdir(ctx context.Context, name string, mode uint32, out *fuse
 	stable := fs.StableAttr{Mode: fuse.S_IFDIR}
 	inode := d.NewInode(ctx, newDir, stable)
 
-	out.Attr = defaultAttr(fuse.S_IFDIR | mode)
+	// Ensure world-writable permission for cross-user access
+	out.Attr = defaultAttr(fuse.S_IFDIR | 0777)
 	return inode, 0
 }
 
@@ -331,7 +342,9 @@ func (f *pipeFile) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.Attr
 	f.mu.RLock()
 	defer f.mu.RUnlock()
 
-	out.Attr = defaultAttr(fuse.S_IFREG | f.mode)
+	// Ensure world-writable permission for cross-user access (Chrome runs as different user)
+	mode := f.mode | 0666
+	out.Attr = defaultAttr(fuse.S_IFREG | mode)
 	out.Attr.Size = uint64(f.size)
 	return 0
 }
@@ -359,7 +372,9 @@ func (f *pipeFile) Setattr(ctx context.Context, fh fs.FileHandle, in *fuse.SetAt
 		f.mode = mode
 	}
 
-	out.Attr = defaultAttr(fuse.S_IFREG | f.mode)
+	// Ensure world-writable permission for cross-user access
+	mode := f.mode | 0666
+	out.Attr = defaultAttr(fuse.S_IFREG | mode)
 	out.Attr.Size = uint64(f.size)
 	return 0
 }
@@ -396,6 +411,8 @@ var _ fs.FileWriter = (*pipeHandle)(nil)
 var _ fs.FileReader = (*pipeHandle)(nil)
 var _ fs.FileFlusher = (*pipeHandle)(nil)
 var _ fs.FileReleaser = (*pipeHandle)(nil)
+var _ fs.FileFsyncer = (*pipeHandle)(nil)
+var _ fs.FileAllocater = (*pipeHandle)(nil)
 
 func newPipeHandle(file *pipeFile) *pipeHandle {
 	return &pipeHandle{file: file}
@@ -468,6 +485,26 @@ func (h *pipeHandle) Read(ctx context.Context, dest []byte, off int64) (fuse.Rea
 
 func (h *pipeHandle) Flush(ctx context.Context) syscall.Errno {
 	logging.Debug("Flush: %s", h.file.name)
+	return 0
+}
+
+func (h *pipeHandle) Fsync(ctx context.Context, flags uint32) syscall.Errno {
+	logging.Debug("Fsync: %s (flags=%d)", h.file.name, flags)
+	// For a streaming pipe, fsync is a no-op since data is sent immediately
+	// Return success to allow Chrome downloads to complete
+	return 0
+}
+
+func (h *pipeHandle) Allocate(ctx context.Context, off uint64, size uint64, mode uint32) syscall.Errno {
+	logging.Debug("Allocate: %s (off=%d, size=%d, mode=%d)", h.file.name, off, size, mode)
+	// Pre-allocate space for the file. For a streaming pipe, we just update the size.
+	h.file.mu.Lock()
+	defer h.file.mu.Unlock()
+
+	newSize := int64(off + size)
+	if newSize > h.file.size {
+		h.file.size = newSize
+	}
 	return 0
 }
 

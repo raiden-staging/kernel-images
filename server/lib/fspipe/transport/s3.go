@@ -171,6 +171,16 @@ func (c *S3Client) Connect() error {
 
 // Send handles file operations
 func (c *S3Client) Send(msgType byte, payload interface{}) error {
+	return c.sendInternal(msgType, payload)
+}
+
+// SendSync sends a message synchronously (same as Send for S3 since it's already synchronous)
+func (c *S3Client) SendSync(msgType byte, payload interface{}) error {
+	return c.sendInternal(msgType, payload)
+}
+
+// sendInternal handles the actual file operations
+func (c *S3Client) sendInternal(msgType byte, payload interface{}) error {
 	switch msgType {
 	case protocol.MsgFileCreate:
 		msg := payload.(*protocol.FileCreate)
