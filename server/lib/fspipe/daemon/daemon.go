@@ -25,7 +25,7 @@ func Mount(mountpoint string, client transport.Transport) (*fuse.Server, error) 
 
 	opts := &fs.Options{
 		MountOptions: fuse.MountOptions{
-			AllowOther: false,
+			AllowOther: true, // Allow Chrome (running as different user) to access the mount
 			Debug:      false,
 			FsName:     "fspipe",
 			Name:       "fspipe",

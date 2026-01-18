@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	defaultFspipeMountPath    = "/home/kernel/Downloads"
+	defaultFspipeMountPath    = "/home/kernel/fspipe-downloads"
 	defaultFspipeHealthPort   = 8090
 	defaultFspipeListenerPort = 9000
 	defaultFspipeOutputDir    = "/tmp/fspipe-output"
@@ -74,8 +74,8 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 	// Determine if S3 mode
 	hasS3 := req.Body != nil && req.Body.S3Config != nil
 
-	// Create mountpoint if it doesn't exist
-	if err := os.MkdirAll(mountPath, 0755); err != nil {
+	// Create mountpoint if it doesn't exist (with permissions accessible to all users)
+	if err := os.MkdirAll(mountPath, 0777); err != nil {
 		log.Error("failed to create fspipe mountpoint", "path", mountPath, "error", err)
 		return oapi.StartFspipe500JSONResponse{
 			InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
@@ -83,6 +83,8 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 			},
 		}, nil
 	}
+	// Ensure the directory has proper permissions for Chrome to access
+	os.Chmod(mountPath, 0777)
 
 	var client transport.Transport
 	var transportMode string

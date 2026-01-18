@@ -1823,9 +1823,9 @@ components:
       properties:
         mount_path:
           type: string
-          description: Path where the virtual filesystem will be mounted. Defaults to /home/kernel/Downloads.
+          description: Path where the virtual filesystem will be mounted. Defaults to /home/kernel/fspipe-downloads.
           pattern: "^/.*"
-          default: "/home/kernel/Downloads"
+          default: "/home/kernel/fspipe-downloads"
         ws_endpoint:
           type: string
           description: |
