@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -24,6 +25,16 @@ const (
 	// S3 minimum part size (5MB) - except for the last part
 	minPartSize = 5 * 1024 * 1024
 )
+
+// isTempFilename checks if the filename is a Chrome temp file
+// Chrome creates files like .org.chromium.Chromium.XXXXXX during downloads
+func isTempFilename(key string) bool {
+	// Extract just the filename from the key (after last /)
+	parts := strings.Split(key, "/")
+	filename := parts[len(parts)-1]
+	return strings.HasPrefix(filename, ".org.chromium.") ||
+		strings.HasPrefix(filename, ".com.google.")
+}
 
 // S3Config holds S3/R2 configuration
 type S3Config struct {
@@ -57,16 +68,17 @@ type S3Client struct {
 }
 
 type multipartUpload struct {
-	key       string
-	finalKey  string // Desired final key after renames (updated by handleRename)
-	uploadID  string
-	parts     []types.CompletedPart
-	buffer    bytes.Buffer
-	partNum   int32
-	started   bool // Whether multipart upload has been initiated
-	hasData   bool // Whether any data has been written
-	completed bool // Whether upload has been completed (waiting for potential rename)
-	renaming  bool // Whether a rename is currently in progress (prevents race conditions)
+	key          string
+	finalKey     string // Desired final key after renames (updated by handleRename)
+	uploadID     string
+	parts        []types.CompletedPart
+	buffer       bytes.Buffer
+	partNum      int32
+	started      bool // Whether multipart upload has been initiated
+	hasData      bool // Whether any data has been written
+	completed    bool // Whether upload has been completed (waiting for potential rename)
+	renaming     bool // Whether a rename is currently in progress (prevents race conditions)
+	closePending bool // FileClose received but waiting for rename before completing
 }
 
 // LoadS3ConfigFromEnv loads S3 config from .env file
@@ -367,7 +379,7 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 		return nil
 	}
 
-	logging.Info("S3: FileClose id=%s key=%s finalKey=%s started=%v hasData=%v completed=%v", msg.FileID, upload.key, upload.finalKey, upload.started, upload.hasData, upload.completed)
+	logging.Info("S3: FileClose id=%s key=%s finalKey=%s started=%v hasData=%v completed=%v closePending=%v", msg.FileID, upload.key, upload.finalKey, upload.started, upload.hasData, upload.completed, upload.closePending)
 
 	// If already completed, this is a duplicate close - ignore
 	if upload.completed {
@@ -391,7 +403,24 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 		return nil
 	}
 
-	// Capture key before unlocking
+	// Chrome sends FileClose BEFORE all data is written when file still has temp name!
+	// Don't complete the upload until we've seen a rename (temp -> .crdownload)
+	// Check if file still has temp name AND no rename has happened yet
+	if isTempFilename(upload.finalKey) {
+		upload.closePending = true
+		c.mu.Unlock()
+		logging.Info("S3: FileClose with temp filename - deferring completion until rename (closePending=true)")
+		return nil
+	}
+
+	// File has been renamed (or was never a temp file) - proceed with completion
+	c.mu.Unlock()
+	return c.completeUpload(msg.FileID, upload)
+}
+
+// completeUpload finalizes the multipart upload to S3
+func (c *S3Client) completeUpload(fileID string, upload *multipartUpload) error {
+	c.mu.Lock()
 	uploadKey := upload.key
 
 	// Upload remaining data as final part
@@ -407,7 +436,6 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 			return err
 		}
 	}
-
 	c.mu.Unlock()
 
 	// Complete the multipart upload
@@ -433,19 +461,17 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 	logging.Info("S3: Completed upload for %s (%d parts)", uploadKey, len(upload.parts))
 
 	// Check if finalKey was updated by a rename that arrived during CompleteMultipartUpload
-	// If so, apply the rename now using the loop (handles chained renames)
 	c.mu.Lock()
 	currentFinalKey := upload.finalKey
 	upload.completed = true
-	upload.key = uploadKey // Make sure key reflects what's actually in S3
+	upload.key = uploadKey
 
 	if currentFinalKey != uploadKey {
 		upload.renaming = true
 		c.mu.Unlock()
 		logging.Info("S3: Rename arrived during upload completion, applying: %s -> %s", uploadKey, currentFinalKey)
-		if err := c.doS3RenameLoop(uploadKey, msg.FileID); err != nil {
+		if err := c.doS3RenameLoop(uploadKey, fileID); err != nil {
 			logging.Error("S3: Failed to apply deferred rename: %v", err)
-			// Don't fail - file exists with original name
 		}
 	} else {
 		c.mu.Unlock()
@@ -468,11 +494,20 @@ func (c *S3Client) handleRename(msg *protocol.Rename) error {
 			// Always update finalKey to the desired destination
 			upload.finalKey = newKey
 
+			// Check if a FileClose was pending on this rename
+			// This happens when Chrome sends FileClose while file still has temp name
+			if upload.closePending && upload.started && !upload.completed {
+				upload.closePending = false
+				c.mu.Unlock()
+				logging.Info("S3: Rename triggered deferred completion: %s -> %s (id=%s)", upload.key, newKey, msg.FileID)
+				// Complete the upload now that we have a real filename
+				return c.completeUpload(msg.FileID, upload)
+			}
+
 			if upload.completed {
 				// Upload already completed in S3
 				if upload.renaming {
 					// A rename is already in progress - just update finalKey (done above)
-					// The in-progress rename will handle chaining when it completes
 					c.mu.Unlock()
 					logging.Info("S3: Rename queued (another rename in progress): -> %s (id=%s)", newKey, msg.FileID)
 					return nil
