@@ -702,8 +702,8 @@ func (m *Manager) handleGhostCallback(payload string) {
 	// Add synthetic addressbar element if not fullscreen and chrome is visible
 	if !windowBounds.Fullscreen && windowBounds.ChromeTop > 50 {
 		addressBarY := -windowBounds.ChromeTop + 40
-		addressBarX := 80 - windowBounds.ChromeLeft
-		addressBarWidth := windowBounds.Width - 180
+		addressBarX := 140 - windowBounds.ChromeLeft  // Start further right to avoid refresh button
+		addressBarWidth := windowBounds.Width - 350   // Narrower to avoid right-side buttons
 
 		if addressBarWidth > 100 {
 			elements = append(elements, GhostElement{
