@@ -350,26 +350,26 @@
     // KERNEL: end custom resolution, frame rate, and readOnly control via query params
 
     // KERNEL: Ghost DOM Sync - connects to kernel-images API WebSocket for bounding box overlay
+    private ghostRetryCount = 0
+    private readonly ghostMaxRetries = 10
+
     private connectGhostSync() {
       if (!this.isGhostSyncEnabled) return
       if (this.ghostWebSocket && this.ghostWebSocket.readyState === WebSocket.OPEN) return
 
-      // Determine the ghost sync WebSocket URL
-      // Ghost sync is served by the kernel-images API on port 444 (maps to internal 10001)
-      // Allow override via query param for development
       const params = new URL(location.href).searchParams
       const ghostPort = params.get('ghost_port') || '444'
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      // Use the same hostname as the current page, connect to /ghost-sync endpoint
       const ghostUrl = `${protocol}//${location.hostname}:${ghostPort}/ghost-sync`
 
-      console.log(`[ghost-sync] Connecting to ${ghostUrl}`)
+      console.log(`[ghost-sync] Connecting to ${ghostUrl} (attempt ${this.ghostRetryCount + 1})`)
 
       try {
         this.ghostWebSocket = new WebSocket(ghostUrl)
 
         this.ghostWebSocket.onopen = () => {
           console.log('[ghost-sync] Connected')
+          this.ghostRetryCount = 0 // Reset retry count on success
           this.$accessor.ghost.setEnabled(true)
           this.$accessor.ghost.setConnected(true)
         }
@@ -388,20 +388,32 @@
         this.ghostWebSocket.onclose = () => {
           console.log('[ghost-sync] Disconnected')
           this.$accessor.ghost.setConnected(false)
-          // Attempt to reconnect after a delay if still enabled
-          if (this.isGhostSyncEnabled && this.connected) {
-            this.ghostReconnectTimeout = window.setTimeout(() => {
-              this.connectGhostSync()
-            }, 2000)
-          }
+          this.scheduleGhostReconnect()
         }
 
         this.ghostWebSocket.onerror = (error) => {
           console.error('[ghost-sync] WebSocket error:', error)
+          // Error will trigger onclose, which handles reconnect
         }
       } catch (e) {
         console.error('[ghost-sync] Failed to connect:', e)
+        this.scheduleGhostReconnect()
       }
+    }
+
+    private scheduleGhostReconnect() {
+      if (!this.isGhostSyncEnabled || !this.connected) return
+      if (this.ghostRetryCount >= this.ghostMaxRetries) {
+        console.log('[ghost-sync] Max retries reached, giving up')
+        return
+      }
+      // Exponential backoff: 500ms, 1s, 2s, 4s... capped at 5s
+      const delay = Math.min(500 * Math.pow(2, this.ghostRetryCount), 5000)
+      this.ghostRetryCount++
+      console.log(`[ghost-sync] Reconnecting in ${delay}ms`)
+      this.ghostReconnectTimeout = window.setTimeout(() => {
+        this.connectGhostSync()
+      }, delay)
     }
 
     private disconnectGhostSync() {
@@ -413,6 +425,7 @@
         this.ghostWebSocket.close()
         this.ghostWebSocket = null
       }
+      this.ghostRetryCount = 0
       this.$accessor.ghost.setEnabled(false)
       this.$accessor.ghost.setConnected(false)
       this.$accessor.ghost.reset()

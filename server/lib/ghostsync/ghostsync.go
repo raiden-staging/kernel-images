@@ -119,14 +119,19 @@ const observerScript = `
   if (window.__ghostDomInitialized__) return;
   window.__ghostDomInitialized__ = true;
 
-  const SELECTORS = 'input:not([type="hidden"]),textarea,select,[contenteditable="true"],[role="textbox"]';
+  // Input-related selectors
+  const SELECTORS = 'input, textarea, select, [contenteditable], [role="textbox"], [role="searchbox"]';
   let idCounter = 0;
 
   function extract() {
     const elements = [];
-    document.querySelectorAll(SELECTORS).forEach((el) => {
+    const found = document.querySelectorAll(SELECTORS);
+    found.forEach((el) => {
+      // Skip hidden inputs
+      if (el.type === 'hidden') return;
       const rect = el.getBoundingClientRect();
-      if (rect.width < 5 || rect.height < 5) return;
+      // Skip tiny or zero-size elements
+      if (rect.width < 2 || rect.height < 2) return;
       const style = getComputedStyle(el);
       if (style.display === 'none' || style.visibility === 'hidden') return;
       if (!el.dataset.gid) el.dataset.gid = 'g' + (idCounter++);
@@ -141,6 +146,8 @@ const observerScript = `
     const ct = fs ? 0 : Math.max(0, window.outerHeight - window.innerHeight - 2);
     const cl = fs ? 0 : Math.round((window.outerWidth - window.innerWidth) / 2);
 
+    console.log('[ghost] found', elements.length, 'input elements');
+
     return {
       e: elements,
       v: { w: window.innerWidth, h: window.innerHeight },
@@ -150,7 +157,8 @@ const observerScript = `
 
   function send() {
     try {
-      window.__ghostDomCallback__(JSON.stringify(extract()));
+      const data = extract();
+      window.__ghostDomCallback__(JSON.stringify(data));
     } catch(e) {
       console.log('[ghost] callback error', e);
     }
@@ -172,12 +180,18 @@ const observerScript = `
   window.addEventListener('scroll', throttledSend, { passive: true });
   window.addEventListener('resize', throttledSend, { passive: true });
 
-  // Initial send
-  setTimeout(send, 100);
+  // Initial send after DOM ready
+  if (document.readyState === 'complete') {
+    send();
+  } else {
+    window.addEventListener('load', send);
+  }
+  // Also try after short delay
+  setTimeout(send, 500);
   // Periodic fallback
-  setInterval(send, 1000);
+  setInterval(send, 2000);
 
-  console.log('[ghost] observer initialized');
+  console.log('[ghost] observer initialized, selectors:', SELECTORS);
 })();
 `
 
