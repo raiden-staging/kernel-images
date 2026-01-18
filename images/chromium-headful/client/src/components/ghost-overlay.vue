@@ -99,18 +99,60 @@ export default class extends Vue {
     }
   }
 
-  onInputTap(e: Event) {
-    // Focus the neko textarea to trigger mobile keyboard
-    const overlay = document.querySelector('.player-container .overlay') as HTMLTextAreaElement
-    if (overlay) {
-      overlay.focus()
+  onInputTap(e: MouseEvent | TouchEvent) {
+    e.preventDefault()
+    e.stopPropagation()
+
+    // Get click coordinates
+    let clientX: number, clientY: number
+    if ('touches' in e && e.touches.length > 0) {
+      clientX = e.touches[0].clientX
+      clientY = e.touches[0].clientY
+    } else if ('clientX' in e) {
+      clientX = e.clientX
+      clientY = e.clientY
+    } else {
+      return
     }
 
-    // Temporarily disable ghost overlay so events pass through to neko
+    // Find the neko overlay textarea - this is what handles input events
+    const overlay = document.querySelector('.player-container .overlay') as HTMLTextAreaElement
+
+    // Focus the textarea to trigger mobile keyboard
+    if (overlay) {
+      overlay.focus()
+
+      // Create event options
+      const eventInit: MouseEventInit = {
+        bubbles: true,
+        cancelable: true,
+        clientX,
+        clientY,
+        screenX: clientX,
+        screenY: clientY,
+        view: window,
+        button: 0,
+        buttons: 1,
+      }
+
+      // Temporarily enable pointer events on overlay if needed
+      const oldPointerEvents = overlay.style.pointerEvents
+      overlay.style.pointerEvents = 'auto'
+
+      // Dispatch mouse events to simulate a click
+      overlay.dispatchEvent(new MouseEvent('mousedown', eventInit))
+      setTimeout(() => {
+        overlay.dispatchEvent(new MouseEvent('mouseup', { ...eventInit, buttons: 0 }))
+        // Restore pointer events
+        overlay.style.pointerEvents = oldPointerEvents
+      }, 20)
+    }
+
+    // Temporarily disable ghost overlay for follow-up interactions
     this.tempDisabled = true
     setTimeout(() => {
       this.tempDisabled = false
-    }, 100)
+    }, 500)
   }
 }
 </script>
