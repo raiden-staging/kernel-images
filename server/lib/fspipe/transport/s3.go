@@ -494,14 +494,11 @@ func (c *S3Client) handleRename(msg *protocol.Rename) error {
 			// Always update finalKey to the desired destination
 			upload.finalKey = newKey
 
-			// Check if a FileClose was pending on this rename
-			// This happens when Chrome sends FileClose while file still has temp name
-			if upload.closePending && upload.started && !upload.completed {
+			// If closePending was set, clear it - the next FileClose after rename will trigger completion
+			// DON'T complete here because Chrome may write more data after rename!
+			if upload.closePending {
 				upload.closePending = false
-				c.mu.Unlock()
-				logging.Info("S3: Rename triggered deferred completion: %s -> %s (id=%s)", upload.key, newKey, msg.FileID)
-				// Complete the upload now that we have a real filename
-				return c.completeUpload(msg.FileID, upload)
+				logging.Info("S3: Rename cleared closePending, will complete on next FileClose: %s -> %s (id=%s)", upload.key, newKey, msg.FileID)
 			}
 
 			if upload.completed {
