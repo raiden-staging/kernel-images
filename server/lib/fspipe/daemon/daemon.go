@@ -80,6 +80,7 @@ var _ fs.NodeUnlinker = (*pipeDir)(nil)
 var _ fs.NodeRmdirer = (*pipeDir)(nil)
 var _ fs.NodeRenamer = (*pipeDir)(nil)
 var _ fs.NodeReaddirer = (*pipeDir)(nil)
+var _ fs.NodeStatfser = (*pipeDir)(nil)
 
 func newPipeDir(client transport.Transport, parent *pipeDir, name string) *pipeDir {
 	return &pipeDir{
@@ -93,6 +94,26 @@ func newPipeDir(client transport.Transport, parent *pipeDir, name string) *pipeD
 func (d *pipeDir) Getattr(ctx context.Context, fh fs.FileHandle, out *fuse.AttrOut) syscall.Errno {
 	// Use 0777 to allow Chrome (running as different user) full access
 	out.Attr = defaultAttr(fuse.S_IFDIR | 0777)
+	return 0
+}
+
+// Statfs returns filesystem statistics. Chrome checks this before downloading.
+func (d *pipeDir) Statfs(ctx context.Context, out *fuse.StatfsOut) syscall.Errno {
+	// Return generous fake stats - this is a pipe filesystem, space is "unlimited"
+	// These values are designed to make Chrome happy when checking disk space
+	const blockSize = 4096
+	const totalBlocks = 1024 * 1024 * 1024 // ~4TB worth of blocks
+	const freeBlocks = 1024 * 1024 * 512   // ~2TB free
+
+	out.Blocks = totalBlocks
+	out.Bfree = freeBlocks
+	out.Bavail = freeBlocks
+	out.Files = 1000000
+	out.Ffree = 999999
+	out.Bsize = blockSize
+	out.NameLen = 255
+	out.Frsize = blockSize
+
 	return 0
 }
 
