@@ -429,12 +429,23 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 		return fmt.Errorf("complete multipart upload: %w", err)
 	}
 
-	// Mark as completed but DON'T delete from map yet - rename may arrive after close!
+	logging.Info("S3: Completed upload for %s (%d parts)", uploadKey, len(upload.parts))
+
+	// Check if finalKey was updated by a rename that arrived during CompleteMultipartUpload
+	// If so, apply the rename now
 	c.mu.Lock()
+	currentFinalKey := upload.finalKey
 	upload.completed = true
+	upload.key = uploadKey // Make sure key reflects what's actually in S3
 	c.mu.Unlock()
 
-	logging.Info("S3: Completed upload for %s (%d parts) - keeping in map for potential rename", uploadKey, len(upload.parts))
+	if currentFinalKey != uploadKey {
+		logging.Info("S3: Rename arrived during upload completion, applying: %s -> %s", uploadKey, currentFinalKey)
+		if err := c.doS3Rename(uploadKey, currentFinalKey, msg.FileID); err != nil {
+			logging.Error("S3: Failed to apply deferred rename: %v", err)
+			// Don't fail - file exists with original name
+		}
+	}
 
 	c.filesUploaded.Add(1)
 	return nil
