@@ -3,6 +3,7 @@
 package transport
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +16,78 @@ import (
 	"github.com/onkernel/kernel-images/server/lib/fspipe/protocol"
 )
 
+const (
+	// Timeouts
+	writeTimeout    = 10 * time.Second
+	ackTimeout      = 15 * time.Second
+	pingInterval    = 30 * time.Second
+	pongTimeout     = 10 * time.Second
+	shutdownTimeout = 5 * time.Second
+
+	// Buffer sizes
+	responseChSize  = 100
+	writeBufferSize = 256 * 1024
+	readBufferSize  = 64 * 1024
+)
+
+// clientConn wraps a WebSocket connection with health tracking
+type clientConn struct {
+	conn       *websocket.Conn
+	responseCh chan wsResponse
+	addr       string
+	healthy    atomic.Bool
+	lastPong   atomic.Int64
+	writeMu    sync.Mutex // Per-connection write lock
+}
+
+func newClientConn(conn *websocket.Conn) *clientConn {
+	c := &clientConn{
+		conn:       conn,
+		responseCh: make(chan wsResponse, responseChSize),
+		addr:       conn.RemoteAddr().String(),
+	}
+	c.healthy.Store(true)
+	c.lastPong.Store(time.Now().UnixNano())
+	return c
+}
+
+func (c *clientConn) isHealthy() bool {
+	if !c.healthy.Load() {
+		return false
+	}
+	// Check if we've received a pong recently
+	lastPong := time.Unix(0, c.lastPong.Load())
+	return time.Since(lastPong) < pingInterval+pongTimeout
+}
+
+func (c *clientConn) writeWithDeadline(data []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	err := c.conn.WriteMessage(websocket.BinaryMessage, data)
+	c.conn.SetWriteDeadline(time.Time{}) // Clear deadline
+
+	if err != nil {
+		c.healthy.Store(false)
+	}
+	return err
+}
+
+func (c *clientConn) ping() error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
+
+	c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
+	err := c.conn.WriteMessage(websocket.PingMessage, []byte{})
+	c.conn.SetWriteDeadline(time.Time{})
+
+	if err != nil {
+		c.healthy.Store(false)
+	}
+	return err
+}
+
 // Broadcaster is a WebSocket server that broadcasts file ops to connected clients.
 // External clients connect to receive file chunks and operations.
 type Broadcaster struct {
@@ -23,11 +96,15 @@ type Broadcaster struct {
 	server *http.Server
 
 	mu      sync.RWMutex
-	clients map[*websocket.Conn]chan wsResponse
+	clients map[*websocket.Conn]*clientConn
 	state   ConnectionState
 
-	// For SendAndReceive - we need at least one client to ACK
-	reqMu sync.Mutex
+	// Per-file request tracking for concurrent file operations
+	fileMu    sync.RWMutex
+	fileReqs  map[string]*fileRequest // fileID -> pending request
+
+	// Require at least one client for writes (fail-safe mode)
+	requireClient atomic.Bool
 
 	// Stats
 	messagesSent   atomic.Uint64
@@ -36,24 +113,49 @@ type Broadcaster struct {
 	bytesRecv      atomic.Uint64
 	clientsTotal   atomic.Uint64
 	clientsCurrent atomic.Int64
+	errors         atomic.Uint64
+
+	ctx    context.Context
+	cancel context.CancelFunc
 
 	upgrader websocket.Upgrader
+}
+
+// fileRequest tracks a pending request for a specific file
+type fileRequest struct {
+	mu       sync.Mutex
+	waiting  bool
+	respCh   chan wsResponse
+	deadline time.Time
 }
 
 // NewBroadcaster creates a new broadcaster that listens on the given address.
 // Clients connect to ws://addr/path to receive file operations.
 func NewBroadcaster(addr, path string) *Broadcaster {
-	return &Broadcaster{
-		addr:    addr,
-		path:    path,
-		clients: make(map[*websocket.Conn]chan wsResponse),
-		state:   StateDisconnected,
+	ctx, cancel := context.WithCancel(context.Background())
+	b := &Broadcaster{
+		addr:     addr,
+		path:     path,
+		clients:  make(map[*websocket.Conn]*clientConn),
+		fileReqs: make(map[string]*fileRequest),
+		state:    StateDisconnected,
+		ctx:      ctx,
+		cancel:   cancel,
 		upgrader: websocket.Upgrader{
-			ReadBufferSize:  64 * 1024,
-			WriteBufferSize: 64 * 1024,
+			ReadBufferSize:  readBufferSize,
+			WriteBufferSize: writeBufferSize,
 			CheckOrigin:     func(r *http.Request) bool { return true },
 		},
 	}
+	// Default: require at least one client (fail-safe)
+	b.requireClient.Store(true)
+	return b
+}
+
+// SetRequireClient sets whether writes should fail when no clients are connected.
+// If true (default), writes fail with error when no clients. If false, fake ACKs are returned.
+func (b *Broadcaster) SetRequireClient(require bool) {
+	b.requireClient.Store(require)
 }
 
 // Connect starts the WebSocket server.
@@ -66,22 +168,79 @@ func (b *Broadcaster) Connect() error {
 		Handler: mux,
 	}
 
+	errCh := make(chan error, 1)
+
 	// Start server in background
 	go func() {
 		logging.Info("Broadcaster listening on %s%s", b.addr, b.path)
 		if err := b.server.ListenAndServe(); err != http.ErrServerClosed {
 			logging.Error("Broadcaster server error: %v", err)
+			errCh <- err
 		}
 	}()
 
-	// Give server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait a bit and check for immediate errors
+	select {
+	case err := <-errCh:
+		return fmt.Errorf("broadcaster failed to start: %w", err)
+	case <-time.After(100 * time.Millisecond):
+		// Server started successfully
+	}
 
 	b.mu.Lock()
 	b.state = StateConnected
 	b.mu.Unlock()
 
+	// Start health monitor
+	go b.healthMonitor()
+
 	return nil
+}
+
+// healthMonitor periodically pings clients and removes dead ones
+func (b *Broadcaster) healthMonitor() {
+	ticker := time.NewTicker(pingInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-b.ctx.Done():
+			return
+		case <-ticker.C:
+			b.pingClients()
+			b.removeDeadClients()
+		}
+	}
+}
+
+func (b *Broadcaster) pingClients() {
+	b.mu.RLock()
+	clients := make([]*clientConn, 0, len(b.clients))
+	for _, c := range b.clients {
+		clients = append(clients, c)
+	}
+	b.mu.RUnlock()
+
+	for _, c := range clients {
+		if err := c.ping(); err != nil {
+			logging.Debug("Ping failed for %s: %v", c.addr, err)
+		}
+	}
+}
+
+func (b *Broadcaster) removeDeadClients() {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for conn, c := range b.clients {
+		if !c.isHealthy() {
+			logging.Info("Removing dead client: %s", c.addr)
+			conn.Close()
+			close(c.responseCh)
+			delete(b.clients, conn)
+			b.clientsCurrent.Add(-1)
+		}
+	}
 }
 
 func (b *Broadcaster) handleWebSocket(w http.ResponseWriter, r *http.Request) {
@@ -91,58 +250,108 @@ func (b *Broadcaster) handleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	responseCh := make(chan wsResponse, 10)
+	client := newClientConn(conn)
+
+	// Set up pong handler
+	conn.SetPongHandler(func(string) error {
+		client.lastPong.Store(time.Now().UnixNano())
+		return nil
+	})
 
 	b.mu.Lock()
-	b.clients[conn] = responseCh
+	b.clients[conn] = client
 	b.mu.Unlock()
 
 	b.clientsTotal.Add(1)
 	b.clientsCurrent.Add(1)
 
-	clientAddr := conn.RemoteAddr().String()
-	logging.Info("Client connected: %s (total: %d)", clientAddr, b.clientsCurrent.Load())
+	logging.Info("Client connected: %s (total: %d)", client.addr, b.clientsCurrent.Load())
 
 	// Read responses from this client
-	go func() {
-		defer func() {
-			b.mu.Lock()
-			delete(b.clients, conn)
-			close(responseCh)
-			b.mu.Unlock()
+	go b.readLoop(client)
+}
 
-			b.clientsCurrent.Add(-1)
-			conn.Close()
-			logging.Info("Client disconnected: %s (total: %d)", clientAddr, b.clientsCurrent.Load())
-		}()
+func (b *Broadcaster) readLoop(client *clientConn) {
+	defer func() {
+		b.mu.Lock()
+		delete(b.clients, client.conn)
+		close(client.responseCh)
+		b.mu.Unlock()
 
-		for {
-			_, rawData, err := conn.ReadMessage()
-			if err != nil {
-				if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
-					logging.Debug("Client read error: %v", err)
-				}
-				return
-			}
-
-			b.messagesRecv.Add(1)
-			b.bytesRecv.Add(uint64(len(rawData)))
-
-			if len(rawData) < 5 {
-				continue
-			}
-
-			msgType := rawData[4]
-			msgData := rawData[5:]
-
-			// Send to response channel
-			select {
-			case responseCh <- wsResponse{msgType: msgType, data: msgData}:
-			default:
-				logging.Debug("Response channel full, dropping message")
-			}
-		}
+		b.clientsCurrent.Add(-1)
+		client.conn.Close()
+		client.healthy.Store(false)
+		logging.Info("Client disconnected: %s (total: %d)", client.addr, b.clientsCurrent.Load())
 	}()
+
+	for {
+		_, rawData, err := client.conn.ReadMessage()
+		if err != nil {
+			if !websocket.IsCloseError(err, websocket.CloseNormalClosure, websocket.CloseGoingAway) {
+				logging.Debug("Client read error from %s: %v", client.addr, err)
+			}
+			return
+		}
+
+		b.messagesRecv.Add(1)
+		b.bytesRecv.Add(uint64(len(rawData)))
+
+		if len(rawData) < 5 {
+			logging.Debug("Malformed message from %s: too short", client.addr)
+			continue
+		}
+
+		msgType := rawData[4]
+		msgData := rawData[5:]
+
+		// Route ACK to the appropriate file request
+		b.routeResponse(msgType, msgData)
+	}
+}
+
+// routeResponse routes an ACK response to the waiting file request
+func (b *Broadcaster) routeResponse(msgType byte, data []byte) {
+	// Extract file_id from response
+	var resp struct {
+		FileID string `json:"file_id"`
+	}
+	if err := json.Unmarshal(data, &resp); err != nil {
+		logging.Debug("Failed to parse response file_id: %v", err)
+		return
+	}
+
+	b.fileMu.RLock()
+	req, ok := b.fileReqs[resp.FileID]
+	b.fileMu.RUnlock()
+
+	if !ok || req == nil {
+		logging.Debug("No pending request for file %s", resp.FileID)
+		return
+	}
+
+	req.mu.Lock()
+	if req.waiting {
+		select {
+		case req.respCh <- wsResponse{msgType: msgType, data: data}:
+		default:
+			logging.Debug("Response channel full for file %s", resp.FileID)
+		}
+	}
+	req.mu.Unlock()
+}
+
+// getHealthyClients returns a list of healthy connected clients
+func (b *Broadcaster) getHealthyClients() []*clientConn {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	clients := make([]*clientConn, 0, len(b.clients))
+	for _, c := range b.clients {
+		if c.isHealthy() {
+			clients = append(clients, c)
+		}
+	}
+	return clients
 }
 
 // Send broadcasts a message to all connected clients (fire-and-forget).
@@ -152,22 +361,29 @@ func (b *Broadcaster) Send(msgType byte, payload interface{}) error {
 		return err
 	}
 
-	b.mu.RLock()
-	clients := make([]*websocket.Conn, 0, len(b.clients))
-	for conn := range b.clients {
-		clients = append(clients, conn)
-	}
-	b.mu.RUnlock()
+	clients := b.getHealthyClients()
 
 	if len(clients) == 0 {
+		if b.requireClient.Load() {
+			b.errors.Add(1)
+			return fmt.Errorf("no healthy clients connected")
+		}
 		logging.Debug("No clients connected, message dropped")
 		return nil
 	}
 
-	for _, conn := range clients {
-		if err := conn.WriteMessage(websocket.BinaryMessage, encodedData); err != nil {
-			logging.Debug("Broadcast write error: %v", err)
+	var sendErrors int
+	for _, c := range clients {
+		if err := c.writeWithDeadline(encodedData); err != nil {
+			logging.Debug("Broadcast write error to %s: %v", c.addr, err)
+			sendErrors++
 		}
+	}
+
+	// Fail if all sends failed
+	if sendErrors == len(clients) {
+		b.errors.Add(1)
+		return fmt.Errorf("failed to send to all %d clients", len(clients))
 	}
 
 	b.messagesSent.Add(1)
@@ -183,72 +399,101 @@ func (b *Broadcaster) SendSync(msgType byte, payload interface{}) error {
 
 // SendAndReceive broadcasts a message and waits for ACK from any client.
 func (b *Broadcaster) SendAndReceive(msgType byte, payload interface{}) (byte, []byte, error) {
-	b.reqMu.Lock()
-	defer b.reqMu.Unlock()
+	// Extract file ID for routing
+	var fileID string
+	switch msg := payload.(type) {
+	case *protocol.FileCreate:
+		fileID = msg.FileID
+	case *protocol.WriteChunk:
+		fileID = msg.FileID
+	default:
+		// For other message types, use a random ID
+		fileID = fmt.Sprintf("_req_%d", time.Now().UnixNano())
+	}
 
+	// Create or get file request tracker
+	b.fileMu.Lock()
+	req, ok := b.fileReqs[fileID]
+	if !ok {
+		req = &fileRequest{
+			respCh: make(chan wsResponse, 1),
+		}
+		b.fileReqs[fileID] = req
+	}
+	b.fileMu.Unlock()
+
+	// Mark as waiting
+	req.mu.Lock()
+	req.waiting = true
+	req.deadline = time.Now().Add(ackTimeout)
+	// Drain any stale responses
+	select {
+	case <-req.respCh:
+	default:
+	}
+	req.mu.Unlock()
+
+	// Cleanup when done
+	defer func() {
+		req.mu.Lock()
+		req.waiting = false
+		req.mu.Unlock()
+	}()
+
+	// Encode and send
 	encodedData, err := b.encodeMessage(msgType, payload)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	b.mu.RLock()
-	clients := make([]*websocket.Conn, 0, len(b.clients))
-	responseChans := make([]chan wsResponse, 0, len(b.clients))
-	for conn, ch := range b.clients {
-		clients = append(clients, conn)
-		responseChans = append(responseChans, ch)
-	}
-	b.mu.RUnlock()
+	clients := b.getHealthyClients()
 
 	if len(clients) == 0 {
-		// No clients - return fake success ACK so FUSE doesn't block
+		if b.requireClient.Load() {
+			b.errors.Add(1)
+			return 0, nil, fmt.Errorf("no healthy clients connected")
+		}
+		// Fallback to fake ACK if not requiring clients
 		return b.fakeAck(msgType, payload)
 	}
 
-	// Drain stale responses
-	for _, ch := range responseChans {
-	drainLoop:
-		for {
-			select {
-			case <-ch:
-			default:
-				break drainLoop
-			}
+	// Send to all healthy clients
+	var sendErrors int
+	for _, c := range clients {
+		if err := c.writeWithDeadline(encodedData); err != nil {
+			logging.Debug("Broadcast write error to %s: %v", c.addr, err)
+			sendErrors++
 		}
 	}
 
-	// Broadcast to all clients
-	for _, conn := range clients {
-		if err := conn.WriteMessage(websocket.BinaryMessage, encodedData); err != nil {
-			logging.Debug("Broadcast write error: %v", err)
-		}
+	if sendErrors == len(clients) {
+		b.errors.Add(1)
+		return 0, nil, fmt.Errorf("failed to send to all %d clients", len(clients))
 	}
 
 	b.messagesSent.Add(1)
 	b.bytesSent.Add(uint64(len(encodedData)))
 
-	// Wait for ACK from any client (first one wins)
-	timeout := time.After(30 * time.Second)
-
-	for {
-		select {
-		case resp := <-responseChans[0]: // Just use first client for now
-			return resp.msgType, resp.data, nil
-		case <-timeout:
-			// Timeout - return fake ACK so FUSE doesn't block
-			logging.Debug("SendAndReceive timeout, returning fake ACK")
-			return b.fakeAck(msgType, payload)
-		}
+	// Wait for ACK
+	select {
+	case resp := <-req.respCh:
+		return resp.msgType, resp.data, nil
+	case <-time.After(ackTimeout):
+		b.errors.Add(1)
+		return 0, nil, fmt.Errorf("ACK timeout after %v for file %s", ackTimeout, fileID)
+	case <-b.ctx.Done():
+		return 0, nil, fmt.Errorf("broadcaster shutting down")
 	}
 }
 
-// fakeAck returns a fake ACK when no clients are connected
+// fakeAck returns a fake ACK when no clients are connected (only if requireClient is false)
 func (b *Broadcaster) fakeAck(msgType byte, payload interface{}) (byte, []byte, error) {
 	switch msgType {
 	case protocol.MsgFileCreate:
 		msg := payload.(*protocol.FileCreate)
 		ack := protocol.FileCreateAck{FileID: msg.FileID, Success: true}
 		data, _ := json.Marshal(ack)
+		logging.Debug("Fake ACK for FileCreate %s (no clients)", msg.FileID)
 		return protocol.MsgFileCreateAck, data, nil
 	case protocol.MsgWriteChunk:
 		msg := payload.(*protocol.WriteChunk)
@@ -286,6 +531,11 @@ func (b *Broadcaster) State() ConnectionState {
 	return b.state
 }
 
+// ClientCount returns the number of healthy connected clients.
+func (b *Broadcaster) ClientCount() int {
+	return len(b.getHealthyClients())
+}
+
 // Stats returns broadcaster statistics.
 func (b *Broadcaster) Stats() map[string]uint64 {
 	return map[string]uint64{
@@ -295,23 +545,38 @@ func (b *Broadcaster) Stats() map[string]uint64 {
 		"bytes_recv":      b.bytesRecv.Load(),
 		"clients_total":   b.clientsTotal.Load(),
 		"clients_current": uint64(b.clientsCurrent.Load()),
+		"errors":          b.errors.Load(),
 	}
 }
 
-// Close shuts down the broadcaster.
+// Close shuts down the broadcaster gracefully.
 func (b *Broadcaster) Close() error {
+	b.cancel() // Signal shutdown
+
 	b.mu.Lock()
 	b.state = StateDisconnected
 
-	// Close all client connections
-	for conn := range b.clients {
+	// Close all client connections gracefully
+	for conn, c := range b.clients {
+		// Send close message
+		c.writeMu.Lock()
+		conn.WriteControl(
+			websocket.CloseMessage,
+			websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down"),
+			time.Now().Add(time.Second),
+		)
+		c.writeMu.Unlock()
 		conn.Close()
+		close(c.responseCh)
 	}
-	b.clients = make(map[*websocket.Conn]chan wsResponse)
+	b.clients = make(map[*websocket.Conn]*clientConn)
 	b.mu.Unlock()
 
+	// Shutdown HTTP server
 	if b.server != nil {
-		return b.server.Close()
+		ctx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+		defer cancel()
+		return b.server.Shutdown(ctx)
 	}
 	return nil
 }

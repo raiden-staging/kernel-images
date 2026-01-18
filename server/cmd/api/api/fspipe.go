@@ -139,7 +139,13 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 
 		// Create broadcaster - a WebSocket server that broadcasts to connected clients
 		broadcasterAddr := fmt.Sprintf(":%d", listenerPort)
-		client = transport.NewBroadcaster(broadcasterAddr, "/fspipe")
+		broadcaster := transport.NewBroadcaster(broadcasterAddr, "/fspipe")
+
+		// For now, allow operation without clients (fake ACKs) for backward compatibility
+		// Set to true for strict mode where downloads fail if no client is connected
+		broadcaster.SetRequireClient(false)
+
+		client = broadcaster
 	}
 
 	// Connect transport
