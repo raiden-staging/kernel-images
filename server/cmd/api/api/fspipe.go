@@ -9,14 +9,17 @@ import (
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"github.com/onkernel/fspipe/pkg/daemon"
 	"github.com/onkernel/fspipe/pkg/health"
+	"github.com/onkernel/fspipe/pkg/listener"
 	"github.com/onkernel/fspipe/pkg/transport"
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 )
 
 const (
-	defaultFspipeMountPath  = "/home/kernel/Downloads"
-	defaultFspipeHealthPort = 8090
+	defaultFspipeMountPath    = "/home/kernel/Downloads"
+	defaultFspipeHealthPort   = 8090
+	defaultFspipeListenerPort = 9000
+	defaultFspipeOutputDir    = "/tmp/fspipe-output"
 )
 
 // fspipeState holds the state of the running fspipe daemon
@@ -29,10 +32,13 @@ type fspipeState struct {
 	wsEndpoint    string
 	s3Bucket      string
 	healthPort    int
+	listenerPort  int
+	outputDir     string
 
-	transport    transport.Transport
-	fuseServer   *fuse.Server
-	healthServer *health.Server
+	transport      transport.Transport
+	fuseServer     *fuse.Server
+	healthServer   *health.Server
+	listenerServer *listener.Server
 }
 
 var fspipe = &fspipeState{}
@@ -53,7 +59,7 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 		}, nil
 	}
 
-	// Determine mount path
+	// Determine mount path (Chrome's download directory)
 	mountPath := defaultFspipeMountPath
 	if req.Body != nil && req.Body.MountPath != nil && *req.Body.MountPath != "" {
 		mountPath = *req.Body.MountPath
@@ -65,25 +71,8 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 		healthPort = *req.Body.HealthPort
 	}
 
-	// Validate transport configuration
-	hasWS := req.Body != nil && req.Body.WsEndpoint != nil && *req.Body.WsEndpoint != ""
+	// Determine if S3 mode
 	hasS3 := req.Body != nil && req.Body.S3Config != nil
-
-	if !hasWS && !hasS3 {
-		return oapi.StartFspipe400JSONResponse{
-			BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{
-				Message: "either ws_endpoint or s3_config is required",
-			},
-		}, nil
-	}
-
-	if hasWS && hasS3 {
-		return oapi.StartFspipe400JSONResponse{
-			BadRequestErrorJSONResponse: oapi.BadRequestErrorJSONResponse{
-				Message: "ws_endpoint and s3_config are mutually exclusive",
-			},
-		}, nil
-	}
 
 	// Create mountpoint if it doesn't exist
 	if err := os.MkdirAll(mountPath, 0755); err != nil {
@@ -95,31 +84,19 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 		}, nil
 	}
 
-	// Create transport
 	var client transport.Transport
 	var transportMode string
 	var wsEndpoint string
 	var s3Bucket string
+	var listenerServer *listener.Server
+	var listenerPort int
+	var outputDir string
 
-	if hasWS {
-		transportMode = "websocket"
-		wsEndpoint = *req.Body.WsEndpoint
-
-		var err error
-		client, err = transport.NewTransport(wsEndpoint, transport.DefaultClientConfig())
-		if err != nil {
-			log.Error("failed to create websocket transport", "endpoint", wsEndpoint, "error", err)
-			return oapi.StartFspipe500JSONResponse{
-				InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
-					Message: fmt.Sprintf("failed to create websocket transport: %v", err),
-				},
-			}, nil
-		}
-	} else {
+	if hasS3 {
+		// S3/R2 mode - upload directly to cloud storage
 		transportMode = "s3"
 		s3Cfg := req.Body.S3Config
 
-		// Build S3Config from API request
 		region := "auto"
 		if s3Cfg.Region != nil {
 			region = *s3Cfg.Region
@@ -149,10 +126,64 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 				},
 			}, nil
 		}
+	} else {
+		// Default WebSocket mode - start built-in listener
+		transportMode = "websocket"
+		listenerPort = defaultFspipeListenerPort
+		outputDir = defaultFspipeOutputDir
+
+		// Create output directory for the listener
+		if err := os.MkdirAll(outputDir, 0755); err != nil {
+			log.Error("failed to create fspipe output directory", "path", outputDir, "error", err)
+			return oapi.StartFspipe500JSONResponse{
+				InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
+					Message: fmt.Sprintf("failed to create output directory: %v", err),
+				},
+			}, nil
+		}
+
+		// Start the built-in WebSocket listener
+		listenerAddr := fmt.Sprintf(":%d", listenerPort)
+		listenerServer = listener.NewServerWithConfig(listenerAddr, outputDir, listener.Config{
+			WebSocketEnabled: true,
+			WebSocketPath:    "/fspipe",
+		})
+
+		if err := listenerServer.Start(); err != nil {
+			log.Error("failed to start fspipe listener", "addr", listenerAddr, "error", err)
+			return oapi.StartFspipe500JSONResponse{
+				InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
+					Message: fmt.Sprintf("failed to start listener: %v", err),
+				},
+			}, nil
+		}
+
+		// Internal URL for daemon to connect to listener (localhost)
+		internalWsURL := fmt.Sprintf("ws://127.0.0.1:%d/fspipe", listenerPort)
+
+		// External endpoint URL for clients outside the container
+		// Clients should replace 0.0.0.0 with the container's actual host/IP
+		wsEndpoint = fmt.Sprintf("ws://0.0.0.0:%d/fspipe", listenerPort)
+
+		// Create transport that connects to our listener (using internal URL)
+		var err error
+		client, err = transport.NewTransport(internalWsURL, transport.DefaultClientConfig())
+		if err != nil {
+			listenerServer.Stop()
+			log.Error("failed to create websocket transport", "endpoint", wsEndpoint, "error", err)
+			return oapi.StartFspipe500JSONResponse{
+				InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
+					Message: fmt.Sprintf("failed to create websocket transport: %v", err),
+				},
+			}, nil
+		}
 	}
 
 	// Connect transport
 	if err := client.Connect(); err != nil {
+		if listenerServer != nil {
+			listenerServer.Stop()
+		}
 		client.Close()
 		log.Error("failed to connect fspipe transport", "error", err)
 		return oapi.StartFspipe500JSONResponse{
@@ -165,6 +196,9 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 	// Mount the FUSE filesystem
 	fuseServer, err := daemon.Mount(mountPath, client)
 	if err != nil {
+		if listenerServer != nil {
+			listenerServer.Stop()
+		}
 		client.Close()
 		log.Error("failed to mount fspipe filesystem", "path", mountPath, "error", err)
 		return oapi.StartFspipe500JSONResponse{
@@ -178,7 +212,6 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 	healthAddr := fmt.Sprintf(":%d", healthPort)
 	healthServer := health.NewServer(healthAddr)
 
-	// Register health checks
 	healthServer.RegisterCheck("transport", func() (health.Status, string) {
 		state := client.State()
 		switch state {
@@ -191,7 +224,6 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 		}
 	})
 
-	// Register stats provider
 	healthServer.RegisterStats("transport", func() map[string]interface{} {
 		stats := client.Stats()
 		result := make(map[string]interface{})
@@ -204,7 +236,6 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 
 	if err := healthServer.Start(); err != nil {
 		log.Warn("failed to start fspipe health server", "error", err)
-		// Don't fail the whole operation for this
 	}
 
 	// Store state
@@ -214,22 +245,22 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 	fspipe.wsEndpoint = wsEndpoint
 	fspipe.s3Bucket = s3Bucket
 	fspipe.healthPort = healthPort
+	fspipe.listenerPort = listenerPort
+	fspipe.outputDir = outputDir
 	fspipe.transport = client
 	fspipe.fuseServer = fuseServer
 	fspipe.healthServer = healthServer
+	fspipe.listenerServer = listenerServer
 
 	log.Info("fspipe daemon started", "mode", transportMode, "mount", mountPath)
 
 	// Set Chrome download directory and restart Chrome
 	downloadDirFlag := fmt.Sprintf("--download-default-directory=%s", mountPath)
 	if _, err := s.mergeAndWriteChromiumFlags(ctx, []string{downloadDirFlag}); err != nil {
-		// Log but don't fail - fspipe is running
 		log.Warn("failed to set Chrome download directory flag", "error", err)
 	}
 
-	// Restart Chromium to apply the download directory
 	if err := s.restartChromiumAndWait(ctx, "fspipe setup"); err != nil {
-		// Log but don't fail - fspipe is running
 		log.Warn("failed to restart Chrome for fspipe setup", "error", err)
 	}
 
@@ -286,6 +317,13 @@ func (s *ApiService) StopFspipe(ctx context.Context, req oapi.StopFspipeRequestO
 		}
 	}
 
+	// Stop listener server (if running)
+	if fspipe.listenerServer != nil {
+		if err := fspipe.listenerServer.Stop(); err != nil {
+			log.Warn("failed to stop fspipe listener", "error", err)
+		}
+	}
+
 	// Reset state
 	fspipe.running = false
 	fspipe.transportMode = ""
@@ -293,9 +331,12 @@ func (s *ApiService) StopFspipe(ctx context.Context, req oapi.StopFspipeRequestO
 	fspipe.wsEndpoint = ""
 	fspipe.s3Bucket = ""
 	fspipe.healthPort = 0
+	fspipe.listenerPort = 0
+	fspipe.outputDir = ""
 	fspipe.transport = nil
 	fspipe.fuseServer = nil
 	fspipe.healthServer = nil
+	fspipe.listenerServer = nil
 
 	log.Info("fspipe daemon stopped")
 	return oapi.StopFspipe200Response{}, nil
