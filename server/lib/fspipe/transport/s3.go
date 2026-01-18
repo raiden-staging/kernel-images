@@ -285,19 +285,24 @@ func (c *S3Client) handleWriteChunk(msg *protocol.WriteChunk) error {
 	}
 
 	// Start multipart upload on first write (lazy initialization)
+	// Use finalKey which may have been updated by rename before writes started
 	if !upload.started {
+		// Use finalKey - it may have been updated by rename(s) before first write
+		uploadKey := upload.finalKey
 		output, err := c.s3Client.CreateMultipartUpload(c.ctx, &s3.CreateMultipartUploadInput{
 			Bucket: aws.String(c.config.Bucket),
-			Key:    aws.String(upload.key),
+			Key:    aws.String(uploadKey),
 		})
 		if err != nil {
 			c.mu.Unlock()
 			c.errors.Add(1)
 			return fmt.Errorf("create multipart upload: %w", err)
 		}
+		// Update key to match what we actually used for the multipart upload
+		upload.key = uploadKey
 		upload.uploadID = *output.UploadId
 		upload.started = true
-		logging.Debug("S3: Started multipart upload for %s on first write", upload.key)
+		logging.Debug("S3: Started multipart upload for %s on first write", uploadKey)
 	}
 
 	// Buffer the data
@@ -446,13 +451,19 @@ func (c *S3Client) handleRename(msg *protocol.Rename) error {
 	newKey := c.config.Prefix + msg.NewName
 
 	// First check if there's an active upload for this file
-	// If so, update finalKey - the rename will be applied after upload completes
 	c.mu.Lock()
 	if upload, ok := c.uploads[msg.FileID]; ok {
 		oldFinalKey := upload.finalKey
 		upload.finalKey = newKey
-		c.mu.Unlock()
-		logging.Debug("S3: Deferred rename for active upload: %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+		if upload.started {
+			// Multipart already started with upload.key - will need copy+delete at FileClose
+			c.mu.Unlock()
+			logging.Debug("S3: Rename during upload (will copy+delete): %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+		} else {
+			// Multipart not started yet - finalKey will be used when it starts
+			c.mu.Unlock()
+			logging.Debug("S3: Rename before upload start: %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+		}
 		return nil
 	}
 	c.mu.Unlock()
