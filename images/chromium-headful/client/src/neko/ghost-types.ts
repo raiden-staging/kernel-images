@@ -32,6 +32,23 @@ export interface GhostViewport {
   sy: number
 }
 
+export interface GhostWindowBounds {
+  /** Window X position on screen */
+  x: number
+  /** Window Y position on screen */
+  y: number
+  /** Window width (outer) */
+  width: number
+  /** Window height (outer) */
+  height: number
+  /** Chrome offset from window top to viewport top (tabs + address bar + bookmarks) */
+  chromeTop: number
+  /** Chrome offset from window left to viewport left (usually minimal) */
+  chromeLeft: number
+  /** Whether browser is in fullscreen mode */
+  fullscreen: boolean
+}
+
 export interface GhostSyncPayload {
   /** Monotonically increasing sequence number */
   seq: number
@@ -41,6 +58,8 @@ export interface GhostSyncPayload {
   elements: GhostElement[]
   /** Current viewport dimensions and scroll position */
   viewport: GhostViewport
+  /** Browser window bounds and chrome offsets for coordinate mapping */
+  windowBounds: GhostWindowBounds
   /** Current page URL */
   url: string
 }

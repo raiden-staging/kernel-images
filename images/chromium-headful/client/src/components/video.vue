@@ -27,7 +27,7 @@
           @touchstart.stop.prevent="onTouchHandler"
           @touchend.stop.prevent="onTouchHandler"
         />
-        <ghost-overlay />
+        <ghost-overlay :screenWidth="width" :screenHeight="height" />
 <!-- KERNEL
         <div v-if="!playing && playable" class="player-overlay" @click.stop.prevent="playAndUnmute">
           <i class="fas fa-play-circle" />

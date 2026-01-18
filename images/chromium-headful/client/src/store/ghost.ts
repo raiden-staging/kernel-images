@@ -1,13 +1,24 @@
 import { getterTree, mutationTree, actionTree } from 'typed-vuex'
-import { GhostElement, GhostViewport, GhostSyncPayload } from '~/neko/ghost-types'
+import { GhostElement, GhostViewport, GhostWindowBounds, GhostSyncPayload } from '~/neko/ghost-types'
 
 export const namespaced = true
+
+const defaultWindowBounds: GhostWindowBounds = {
+  x: 0,
+  y: 0,
+  width: 1920,
+  height: 1080,
+  chromeTop: 0,
+  chromeLeft: 0,
+  fullscreen: false,
+}
 
 export const state = () => ({
   enabled: false,
   connected: false,
   elements: [] as GhostElement[],
   viewport: { w: 1280, h: 720, sx: 0, sy: 0 } as GhostViewport,
+  windowBounds: { ...defaultWindowBounds } as GhostWindowBounds,
   url: '',
   seq: 0,
 })
@@ -31,6 +42,7 @@ export const mutations = mutationTree(state, {
     if (payload.seq > state.seq) {
       state.elements = payload.elements
       state.viewport = payload.viewport
+      state.windowBounds = payload.windowBounds
       state.url = payload.url
       state.seq = payload.seq
     }
@@ -39,6 +51,7 @@ export const mutations = mutationTree(state, {
   reset(state) {
     state.elements = []
     state.viewport = { w: 1280, h: 720, sx: 0, sy: 0 }
+    state.windowBounds = { ...defaultWindowBounds }
     state.url = ''
     state.seq = 0
     state.connected = false

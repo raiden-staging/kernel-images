@@ -40,13 +40,25 @@ type GhostViewport struct {
 	SY int `json:"sy"` // scrollY
 }
 
+// GhostWindowBounds represents the browser window position and chrome offsets
+type GhostWindowBounds struct {
+	X          int  `json:"x"`          // Window X position on screen
+	Y          int  `json:"y"`          // Window Y position on screen
+	Width      int  `json:"width"`      // Window outer width
+	Height     int  `json:"height"`     // Window outer height
+	ChromeTop  int  `json:"chromeTop"`  // Offset from window top to viewport top
+	ChromeLeft int  `json:"chromeLeft"` // Offset from window left to viewport left
+	Fullscreen bool `json:"fullscreen"` // Whether browser is in fullscreen mode
+}
+
 // GhostSyncPayload is the data sent to clients
 type GhostSyncPayload struct {
-	Seq      int64          `json:"seq"`
-	Ts       int64          `json:"ts"`
-	Elements []GhostElement `json:"elements"`
-	Viewport GhostViewport  `json:"viewport"`
-	URL      string         `json:"url"`
+	Seq          int64             `json:"seq"`
+	Ts           int64             `json:"ts"`
+	Elements     []GhostElement    `json:"elements"`
+	Viewport     GhostViewport     `json:"viewport"`
+	WindowBounds GhostWindowBounds `json:"windowBounds"`
+	URL          string            `json:"url"`
 }
 
 // GhostMessage is the WebSocket message wrapper
@@ -73,6 +85,10 @@ type Manager struct {
 	// Current attached target
 	currentSessionID string
 	currentTargetID  string
+
+	// Window bounds from CDP (cached, updated periodically)
+	windowBoundsMu sync.RWMutex
+	windowBounds   GhostWindowBounds
 
 	// Last known state for new clients
 	lastPayloadMu sync.RWMutex
@@ -131,13 +147,45 @@ const observerScript = `
       });
     });
 
+    // Calculate window bounds and chrome offsets
+    // screenX/screenY give the window position on screen
+    // outerWidth/outerHeight include chrome (tabs, address bar, etc.)
+    // innerWidth/innerHeight are the viewport dimensions
+    const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
+    const outerW = window.outerWidth;
+    const outerH = window.outerHeight;
+    const innerW = window.innerWidth;
+    const innerH = window.innerHeight;
+
+    // Chrome offsets: difference between outer and inner dimensions
+    // Top chrome includes tabs, address bar, bookmarks bar
+    // Left/right chrome is typically minimal (window borders)
+    // Note: outerHeight - innerHeight includes BOTH top and bottom chrome
+    // Bottom chrome is usually minimal (0-20px for status bar)
+    // We estimate bottom chrome as minimal and attribute most to top
+    const totalVerticalChrome = outerH - innerH;
+    const totalHorizontalChrome = outerW - innerW;
+
+    // In fullscreen mode, there's no chrome
+    const chromeTop = isFullscreen ? 0 : Math.max(0, totalVerticalChrome - 2); // -2 for minimal bottom border
+    const chromeLeft = isFullscreen ? 0 : Math.round(totalHorizontalChrome / 2);
+
     return {
       elements,
       viewport: {
-        w: window.innerWidth,
-        h: window.innerHeight,
+        w: innerW,
+        h: innerH,
         sx: Math.round(window.scrollX),
         sy: Math.round(window.scrollY)
+      },
+      windowInfo: {
+        screenX: window.screenX,
+        screenY: window.screenY,
+        outerWidth: outerW,
+        outerHeight: outerH,
+        chromeTop: chromeTop,
+        chromeLeft: chromeLeft,
+        fullscreen: isFullscreen
       },
       url: location.href
     };
@@ -627,21 +675,78 @@ func (m *Manager) injectObserverScript(ctx context.Context, conn *websocket.Conn
 
 func (m *Manager) handleGhostCallback(payload string) {
 	var data struct {
-		Elements []GhostElement `json:"elements"`
-		Viewport GhostViewport  `json:"viewport"`
-		URL      string         `json:"url"`
+		Elements   []GhostElement `json:"elements"`
+		Viewport   GhostViewport  `json:"viewport"`
+		WindowInfo struct {
+			ScreenX     int  `json:"screenX"`
+			ScreenY     int  `json:"screenY"`
+			OuterWidth  int  `json:"outerWidth"`
+			OuterHeight int  `json:"outerHeight"`
+			ChromeTop   int  `json:"chromeTop"`
+			ChromeLeft  int  `json:"chromeLeft"`
+			Fullscreen  bool `json:"fullscreen"`
+		} `json:"windowInfo"`
+		URL string `json:"url"`
 	}
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
 		m.logger.Error("[ghost-sync] failed to parse callback payload", "err", err)
 		return
 	}
 
+	// Build window bounds from the reported window info
+	windowBounds := GhostWindowBounds{
+		X:          data.WindowInfo.ScreenX,
+		Y:          data.WindowInfo.ScreenY,
+		Width:      data.WindowInfo.OuterWidth,
+		Height:     data.WindowInfo.OuterHeight,
+		ChromeTop:  data.WindowInfo.ChromeTop,
+		ChromeLeft: data.WindowInfo.ChromeLeft,
+		Fullscreen: data.WindowInfo.Fullscreen,
+	}
+
+	// Cache the window bounds
+	m.windowBoundsMu.Lock()
+	m.windowBounds = windowBounds
+	m.windowBoundsMu.Unlock()
+
+	// Add synthetic addressbar element if not fullscreen and chrome is visible
+	elements := data.Elements
+	if !windowBounds.Fullscreen && windowBounds.ChromeTop > 50 {
+		// Address bar is typically:
+		// - Starts after back/forward/refresh buttons (~80px from left)
+		// - Below the tab bar (~40px from window top)
+		// - Height is about 30-35px
+		// - Width is most of the window width minus buttons/menu (~150px total padding)
+		// Position is relative to the viewport (since that's what getBoundingClientRect uses)
+		// But the address bar is ABOVE the viewport, so y is negative
+		addressBarY := -windowBounds.ChromeTop + 40 // 40px for tab bar
+		addressBarHeight := 35
+		addressBarX := 80 - windowBounds.ChromeLeft
+		addressBarWidth := windowBounds.Width - 150
+
+		if addressBarWidth > 100 { // Only add if reasonable size
+			addressBar := GhostElement{
+				ID:  "chrome-addressbar",
+				Tag: "addressbar",
+				Rect: GhostRect{
+					X: addressBarX,
+					Y: addressBarY,
+					W: addressBarWidth,
+					H: addressBarHeight,
+				},
+				Z: json.Number("9999"),
+			}
+			elements = append(elements, addressBar)
+		}
+	}
+
 	syncPayload := &GhostSyncPayload{
-		Seq:      m.seq.Add(1),
-		Ts:       time.Now().UnixMilli(),
-		Elements: data.Elements,
-		Viewport: data.Viewport,
-		URL:      data.URL,
+		Seq:          m.seq.Add(1),
+		Ts:           time.Now().UnixMilli(),
+		Elements:     elements,
+		Viewport:     data.Viewport,
+		WindowBounds: windowBounds,
+		URL:          data.URL,
 	}
 
 	// Throttle broadcasts
