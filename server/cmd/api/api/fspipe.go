@@ -130,56 +130,16 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 			}, nil
 		}
 	} else {
-		// Default WebSocket mode - start built-in listener
+		// Default WebSocket mode - start broadcaster that external clients connect to
 		transportMode = "websocket"
 		listenerPort = defaultFspipeListenerPort
-		outputDir = defaultFspipeOutputDir
-
-		// Create output directory for the listener
-		if err := os.MkdirAll(outputDir, 0755); err != nil {
-			log.Error("failed to create fspipe output directory", "path", outputDir, "error", err)
-			return oapi.StartFspipe500JSONResponse{
-				InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
-					Message: fmt.Sprintf("failed to create output directory: %v", err),
-				},
-			}, nil
-		}
-
-		// Start the built-in WebSocket listener
-		listenerAddr := fmt.Sprintf(":%d", listenerPort)
-		listenerServer = listener.NewServerWithConfig(listenerAddr, outputDir, listener.Config{
-			WebSocketEnabled: true,
-			WebSocketPath:    "/fspipe",
-		})
-
-		if err := listenerServer.Start(); err != nil {
-			log.Error("failed to start fspipe listener", "addr", listenerAddr, "error", err)
-			return oapi.StartFspipe500JSONResponse{
-				InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
-					Message: fmt.Sprintf("failed to start listener: %v", err),
-				},
-			}, nil
-		}
-
-		// Internal URL for daemon to connect to listener (localhost)
-		internalWsURL := fmt.Sprintf("ws://127.0.0.1:%d/fspipe", listenerPort)
 
 		// External endpoint URL for clients outside the container
-		// Clients should replace 0.0.0.0 with the container's actual host/IP
 		wsEndpoint = fmt.Sprintf("ws://0.0.0.0:%d/fspipe", listenerPort)
 
-		// Create transport that connects to our listener (using internal URL)
-		var err error
-		client, err = transport.NewTransport(internalWsURL, transport.DefaultClientConfig())
-		if err != nil {
-			listenerServer.Stop()
-			log.Error("failed to create websocket transport", "endpoint", wsEndpoint, "error", err)
-			return oapi.StartFspipe500JSONResponse{
-				InternalErrorJSONResponse: oapi.InternalErrorJSONResponse{
-					Message: fmt.Sprintf("failed to create websocket transport: %v", err),
-				},
-			}, nil
-		}
+		// Create broadcaster - a WebSocket server that broadcasts to connected clients
+		broadcasterAddr := fmt.Sprintf(":%d", listenerPort)
+		client = transport.NewBroadcaster(broadcasterAddr, "/fspipe")
 	}
 
 	// Connect transport
