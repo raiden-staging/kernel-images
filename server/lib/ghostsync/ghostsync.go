@@ -108,170 +108,75 @@ type Manager struct {
 }
 
 const (
-	throttleInterval = 25 * time.Millisecond // Max 40Hz updates for smoother sync
+	throttleInterval = 100 * time.Millisecond // Max 10Hz updates - balance between responsiveness and performance
 	bindingName      = "__ghostDomCallback__"
 )
 
 // Observer script to inject into the browser page
+// Optimized: only tracks input-related elements, minimal updates
 const observerScript = `
 (function() {
   if (window.__ghostDomInitialized__) return;
   window.__ghostDomInitialized__ = true;
 
-  const SELECTORS = 'input,button,a,select,textarea,[role="button"],[role="link"],[role="checkbox"],[role="radio"],[role="textbox"],[role="combobox"],[role="listbox"],[role="menuitem"],[onclick],[contenteditable]';
+  // ONLY input-related elements for keyboard triggering
+  const SELECTORS = 'input:not([type="hidden"]),textarea,select,[contenteditable="true"],[role="textbox"]';
   let idCounter = 0;
+  let lastHash = '';
 
   function extractElements() {
     const elements = [];
     document.querySelectorAll(SELECTORS).forEach((el) => {
       const rect = el.getBoundingClientRect();
-      if (rect.width === 0 || rect.height === 0) return;
-
+      if (rect.width < 10 || rect.height < 10) return;
       const style = getComputedStyle(el);
-      if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return;
-
-      if (!el.dataset.ghostId) {
-        el.dataset.ghostId = 'g' + (idCounter++);
-      }
-
+      if (style.display === 'none' || style.visibility === 'hidden') return;
+      if (!el.dataset.gid) el.dataset.gid = 'g' + (idCounter++);
       elements.push({
-        id: el.dataset.ghostId,
+        id: el.dataset.gid,
         tag: el.tagName.toLowerCase(),
-        rect: {
-          x: Math.round(rect.x),
-          y: Math.round(rect.y),
-          w: Math.round(rect.width),
-          h: Math.round(rect.height)
-        },
-        z: parseInt(style.zIndex, 10) || 0
+        rect: { x: rect.x|0, y: rect.y|0, w: rect.width|0, h: rect.height|0 }
       });
     });
 
-    // Calculate window bounds and chrome offsets
-    // screenX/screenY give the window position on screen
-    // outerWidth/outerHeight include chrome (tabs, address bar, etc.)
-    // innerWidth/innerHeight are the viewport dimensions
-    const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement || document.mozFullScreenElement);
-    const outerW = window.outerWidth;
-    const outerH = window.outerHeight;
-    const innerW = window.innerWidth;
-    const innerH = window.innerHeight;
-
-    // Chrome offsets: difference between outer and inner dimensions
-    // Top chrome includes tabs, address bar, bookmarks bar
-    // Left/right chrome is typically minimal (window borders)
-    // Note: outerHeight - innerHeight includes BOTH top and bottom chrome
-    // Bottom chrome is usually minimal (0-20px for status bar)
-    // We estimate bottom chrome as minimal and attribute most to top
-    const totalVerticalChrome = outerH - innerH;
-    const totalHorizontalChrome = outerW - innerW;
-
-    // In fullscreen mode, there's no chrome
-    const chromeTop = isFullscreen ? 0 : Math.max(0, totalVerticalChrome - 2); // -2 for minimal bottom border
-    const chromeLeft = isFullscreen ? 0 : Math.round(totalHorizontalChrome / 2);
+    const fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+    const ct = fs ? 0 : Math.max(0, window.outerHeight - window.innerHeight - 2);
+    const cl = fs ? 0 : ((window.outerWidth - window.innerWidth) / 2)|0;
 
     return {
-      elements,
-      viewport: {
-        w: innerW,
-        h: innerH,
-        sx: Math.round(window.scrollX),
-        sy: Math.round(window.scrollY)
-      },
-      windowInfo: {
-        screenX: window.screenX,
-        screenY: window.screenY,
-        outerWidth: outerW,
-        outerHeight: outerH,
-        chromeTop: chromeTop,
-        chromeLeft: chromeLeft,
-        fullscreen: isFullscreen
-      },
-      url: location.href
+      e: elements,
+      v: { w: window.innerWidth, h: window.innerHeight },
+      b: { x: window.screenX, y: window.screenY, w: window.outerWidth, h: window.outerHeight, ct, cl, fs }
     };
   }
 
-  let lastSendTime = 0;
-  const MIN_INTERVAL = 20; // Minimum 20ms between updates (~50Hz max)
-
+  let pending = false;
   function sendUpdate() {
-    const now = Date.now();
-    if (now - lastSendTime < MIN_INTERVAL) return;
-    lastSendTime = now;
-    try {
-      window.__ghostDomCallback__(JSON.stringify(extractElements()));
-    } catch (e) {
-      // Binding may not be ready yet
-    }
-  }
-
-  // Throttled update for high-frequency events (scroll, mutations)
-  let throttleTimer = null;
-  function throttledSendUpdate() {
-    if (throttleTimer) return;
-    sendUpdate();
-    throttleTimer = setTimeout(() => {
-      throttleTimer = null;
-      sendUpdate(); // Send final state after throttle
-    }, MIN_INTERVAL);
-  }
-
-  // Debounced update for DOM mutations (batch rapid changes)
-  let debounceTimer = null;
-  function debouncedSendUpdate() {
-    if (debounceTimer) clearTimeout(debounceTimer);
-    debounceTimer = setTimeout(sendUpdate, 8);
-  }
-
-  const observer = new MutationObserver(debouncedSendUpdate);
-  if (document.body) {
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['style', 'class', 'hidden', 'disabled']
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => {
+      pending = false;
+      const data = extractElements();
+      // Only send if something changed (simple hash check)
+      const hash = data.e.map(e => e.id + e.rect.x + e.rect.y).join(',');
+      if (hash === lastHash) return;
+      lastHash = hash;
+      try { window.__ghostDomCallback__(JSON.stringify(data)); } catch(e) {}
     });
   }
 
-  // Scroll uses throttled updates for smooth tracking
-  window.addEventListener('scroll', throttledSendUpdate, { passive: true });
-  window.addEventListener('resize', throttledSendUpdate, { passive: true });
-
-  // Send initial update immediately
-  sendUpdate();
-  // And again shortly after to catch late-loading elements
-  setTimeout(sendUpdate, 50);
-
-  // Periodic updates to catch any missed changes (less frequent since we have good event coverage)
-  setInterval(sendUpdate, 500);
-
-  const originalPushState = history.pushState;
-  const originalReplaceState = history.replaceState;
-  history.pushState = function(...args) {
-    originalPushState.apply(this, args);
-    sendUpdate();
-    setTimeout(sendUpdate, 50);
-  };
-  history.replaceState = function(...args) {
-    originalReplaceState.apply(this, args);
-    sendUpdate();
-    setTimeout(sendUpdate, 50);
-  };
-  window.addEventListener('popstate', () => { sendUpdate(); setTimeout(sendUpdate, 50); });
-
-  // Re-observe when body changes (SPAs)
-  const bodyObserver = new MutationObserver(() => {
-    if (document.body && !document.body.__ghostObserving) {
-      document.body.__ghostObserving = true;
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['style', 'class', 'hidden', 'disabled']
-      });
-    }
+  // Observe DOM changes sparingly
+  new MutationObserver(sendUpdate).observe(document.documentElement, {
+    childList: true, subtree: true, attributes: true,
+    attributeFilter: ['style', 'class', 'hidden']
   });
-  bodyObserver.observe(document.documentElement, { childList: true });
+
+  window.addEventListener('scroll', sendUpdate, { passive: true });
+  window.addEventListener('resize', sendUpdate, { passive: true });
+
+  // Initial + periodic (every 2s as fallback)
+  sendUpdate();
+  setInterval(sendUpdate, 2000);
 })();
 `
 
@@ -695,69 +600,77 @@ func (m *Manager) injectObserverScript(ctx context.Context, conn *websocket.Conn
 }
 
 func (m *Manager) handleGhostCallback(payload string) {
+	// Compact payload format: e=elements, v=viewport, b=bounds
 	var data struct {
-		Elements   []GhostElement `json:"elements"`
-		Viewport   GhostViewport  `json:"viewport"`
-		WindowInfo struct {
-			ScreenX     int  `json:"screenX"`
-			ScreenY     int  `json:"screenY"`
-			OuterWidth  int  `json:"outerWidth"`
-			OuterHeight int  `json:"outerHeight"`
-			ChromeTop   int  `json:"chromeTop"`
-			ChromeLeft  int  `json:"chromeLeft"`
-			Fullscreen  bool `json:"fullscreen"`
-		} `json:"windowInfo"`
-		URL string `json:"url"`
+		E []struct {
+			ID   string `json:"id"`
+			Tag  string `json:"tag"`
+			Rect struct {
+				X int `json:"x"`
+				Y int `json:"y"`
+				W int `json:"w"`
+				H int `json:"h"`
+			} `json:"rect"`
+		} `json:"e"`
+		V struct {
+			W int `json:"w"`
+			H int `json:"h"`
+		} `json:"v"`
+		B struct {
+			X  int  `json:"x"`
+			Y  int  `json:"y"`
+			W  int  `json:"w"`
+			H  int  `json:"h"`
+			CT int  `json:"ct"` // chromeTop
+			CL int  `json:"cl"` // chromeLeft
+			FS bool `json:"fs"` // fullscreen
+		} `json:"b"`
 	}
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
 		m.logger.Error("[ghost-sync] failed to parse callback payload", "err", err)
 		return
 	}
 
-	// Build window bounds from the reported window info
+	// Convert to full format for client
 	windowBounds := GhostWindowBounds{
-		X:          data.WindowInfo.ScreenX,
-		Y:          data.WindowInfo.ScreenY,
-		Width:      data.WindowInfo.OuterWidth,
-		Height:     data.WindowInfo.OuterHeight,
-		ChromeTop:  data.WindowInfo.ChromeTop,
-		ChromeLeft: data.WindowInfo.ChromeLeft,
-		Fullscreen: data.WindowInfo.Fullscreen,
+		X:          data.B.X,
+		Y:          data.B.Y,
+		Width:      data.B.W,
+		Height:     data.B.H,
+		ChromeTop:  data.B.CT,
+		ChromeLeft: data.B.CL,
+		Fullscreen: data.B.FS,
 	}
 
-	// Cache the window bounds
-	m.windowBoundsMu.Lock()
-	m.windowBounds = windowBounds
-	m.windowBoundsMu.Unlock()
+	// Convert elements
+	elements := make([]GhostElement, 0, len(data.E))
+	for _, e := range data.E {
+		elements = append(elements, GhostElement{
+			ID:  e.ID,
+			Tag: e.Tag,
+			Rect: GhostRect{
+				X: e.Rect.X,
+				Y: e.Rect.Y,
+				W: e.Rect.W,
+				H: e.Rect.H,
+			},
+			Z: json.Number("0"),
+		})
+	}
 
 	// Add synthetic addressbar element if not fullscreen and chrome is visible
-	elements := data.Elements
 	if !windowBounds.Fullscreen && windowBounds.ChromeTop > 50 {
-		// Address bar is typically:
-		// - Starts after back/forward/refresh buttons (~80px from left)
-		// - Below the tab bar (~40px from window top)
-		// - Height is about 30-35px
-		// - Width is most of the window width minus buttons/menu (~150px total padding)
-		// Position is relative to the viewport (since that's what getBoundingClientRect uses)
-		// But the address bar is ABOVE the viewport, so y is negative
-		addressBarY := -windowBounds.ChromeTop + 40 // 40px for tab bar
-		addressBarHeight := 35
+		addressBarY := -windowBounds.ChromeTop + 40
 		addressBarX := 80 - windowBounds.ChromeLeft
-		addressBarWidth := windowBounds.Width - 180 // Slightly narrower to avoid touching adjacent buttons
+		addressBarWidth := windowBounds.Width - 180
 
-		if addressBarWidth > 100 { // Only add if reasonable size
-			addressBar := GhostElement{
-				ID:  "chrome-addressbar",
-				Tag: "addressbar",
-				Rect: GhostRect{
-					X: addressBarX,
-					Y: addressBarY,
-					W: addressBarWidth,
-					H: addressBarHeight,
-				},
-				Z: json.Number("9999"),
-			}
-			elements = append(elements, addressBar)
+		if addressBarWidth > 100 {
+			elements = append(elements, GhostElement{
+				ID:   "addressbar",
+				Tag:  "input",
+				Rect: GhostRect{X: addressBarX, Y: addressBarY, W: addressBarWidth, H: 35},
+				Z:    json.Number("0"),
+			})
 		}
 	}
 
@@ -765,9 +678,9 @@ func (m *Manager) handleGhostCallback(payload string) {
 		Seq:          m.seq.Add(1),
 		Ts:           time.Now().UnixMilli(),
 		Elements:     elements,
-		Viewport:     data.Viewport,
+		Viewport:     GhostViewport{W: data.V.W, H: data.V.H},
 		WindowBounds: windowBounds,
-		URL:          data.URL,
+		URL:          "",
 	}
 
 	// Throttle broadcasts

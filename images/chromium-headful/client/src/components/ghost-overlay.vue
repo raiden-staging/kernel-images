@@ -1,24 +1,14 @@
 <template>
-  <svg
-    v-if="enabled && hasElements"
-    class="ghost-overlay"
-    :viewBox="viewBox"
-    preserveAspectRatio="none"
-  >
-    <rect
+  <div v-if="enabled && hasElements" class="ghost-overlay">
+    <div
       v-for="el in transformedElements"
       :key="el.id"
-      :x="el.screenX"
-      :y="el.screenY"
-      :width="el.rect.w"
-      :height="el.rect.h"
-      :fill="getColor(el.tag)"
-      fill-opacity="0.15"
-      :stroke="getColor(el.tag)"
-      stroke-opacity="0.5"
-      stroke-width="2"
+      class="ghost-input"
+      :style="getElementStyle(el)"
+      @touchstart.prevent="onInputTap"
+      @click.prevent="onInputTap"
     />
-  </svg>
+  </div>
 </template>
 
 <style lang="scss" scoped>
@@ -29,30 +19,23 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 50;
+  z-index: 110; // Above the neko textarea overlay (z-index: 100)
+}
+
+.ghost-input {
+  position: absolute;
+  pointer-events: auto;
+  cursor: text;
+  // Subtle visual indicator for input fields
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 3px;
 }
 </style>
 
 <script lang="ts">
 import { Component, Vue, Prop } from 'vue-property-decorator'
 import { GhostElement, GhostWindowBounds } from '~/neko/ghost-types'
-
-// Color mapping for different element types
-const TAG_COLORS: Record<string, string> = {
-  // Input fields - blue
-  input: '#3b82f6',
-  textarea: '#3b82f6',
-  // Buttons - green
-  button: '#22c55e',
-  // Links - purple
-  a: '#8b5cf6',
-  // Select/dropdowns - amber
-  select: '#f59e0b',
-  // Address bar - orange/red
-  addressbar: '#ef4444',
-  // Default - gray
-  default: '#6b7280',
-}
 
 interface TransformedElement extends GhostElement {
   screenX: number
@@ -63,7 +46,6 @@ interface TransformedElement extends GhostElement {
   name: 'ghost-overlay',
 })
 export default class extends Vue {
-  // Screen dimensions from video resolution (passed from parent or use defaults)
   @Prop({ type: Number, default: 1920 }) screenWidth!: number
   @Prop({ type: Number, default: 1080 }) screenHeight!: number
 
@@ -79,24 +61,11 @@ export default class extends Vue {
     return this.$accessor.ghost.hasElements
   }
 
-  get viewport() {
-    return this.$accessor.ghost.viewport
-  }
-
   get windowBounds(): GhostWindowBounds {
     return this.$accessor.ghost.windowBounds
   }
 
-  get viewBox(): string {
-    // ViewBox matches the screen/video dimensions
-    // This is what the video stream shows (the full X11 display)
-    return `0 0 ${this.screenWidth} ${this.screenHeight}`
-  }
-
   get transformedElements(): TransformedElement[] {
-    // Transform element positions from viewport coordinates to screen coordinates
-    // The video shows the full screen, elements are positioned relative to viewport
-    // Screen position = window position + chrome offset + element viewport position
     const bounds = this.windowBounds
     const offsetX = bounds.x + bounds.chromeLeft
     const offsetY = bounds.y + bounds.chromeTop
@@ -108,13 +77,31 @@ export default class extends Vue {
     }))
   }
 
-  getColor(tag: string): string {
-    // Check for exact match first
-    if (tag in TAG_COLORS) {
-      return TAG_COLORS[tag]
+  getElementStyle(el: TransformedElement): Record<string, string> {
+    // Convert from screen coordinates to percentage of video
+    const xPercent = (el.screenX / this.screenWidth) * 100
+    const yPercent = (el.screenY / this.screenHeight) * 100
+    const wPercent = (el.rect.w / this.screenWidth) * 100
+    const hPercent = (el.rect.h / this.screenHeight) * 100
+
+    return {
+      left: `${xPercent}%`,
+      top: `${yPercent}%`,
+      width: `${wPercent}%`,
+      height: `${hPercent}%`,
     }
-    // Default color
-    return TAG_COLORS.default
+  }
+
+  onInputTap() {
+    // Find the neko overlay textarea and focus it to trigger mobile keyboard
+    const overlay = document.querySelector('.player-container .overlay') as HTMLTextAreaElement
+    if (overlay) {
+      overlay.focus()
+      // On iOS, we may need to programmatically show keyboard
+      if ('virtualKeyboard' in navigator) {
+        (navigator as any).virtualKeyboard.show()
+      }
+    }
   }
 }
 </script>
