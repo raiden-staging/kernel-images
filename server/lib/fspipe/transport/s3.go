@@ -449,27 +449,45 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 
 func (c *S3Client) handleRename(msg *protocol.Rename) error {
 	newKey := c.config.Prefix + msg.NewName
+	oldKey := c.config.Prefix + msg.OldName
 
-	// First check if there's an active upload for this file
+	// First check if there's an active upload for this file by FileID
 	c.mu.Lock()
-	if upload, ok := c.uploads[msg.FileID]; ok {
-		oldFinalKey := upload.finalKey
-		upload.finalKey = newKey
-		if upload.started {
-			// Multipart already started with upload.key - will need copy+delete at FileClose
-			c.mu.Unlock()
-			logging.Debug("S3: Rename during upload (will copy+delete): %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
-		} else {
-			// Multipart not started yet - finalKey will be used when it starts
-			c.mu.Unlock()
-			logging.Debug("S3: Rename before upload start: %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+	if msg.FileID != "" {
+		if upload, ok := c.uploads[msg.FileID]; ok {
+			oldFinalKey := upload.finalKey
+			upload.finalKey = newKey
+			if upload.started {
+				c.mu.Unlock()
+				logging.Debug("S3: Rename during upload (will copy+delete): %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+			} else {
+				c.mu.Unlock()
+				logging.Debug("S3: Rename before upload start: %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+			}
+			return nil
 		}
-		return nil
+	}
+
+	// Fallback: search by old filename if FileID lookup failed
+	// This handles cases where FileID might be empty or mismatched
+	for fileID, upload := range c.uploads {
+		if upload.finalKey == oldKey {
+			oldFinalKey := upload.finalKey
+			upload.finalKey = newKey
+			if upload.started {
+				c.mu.Unlock()
+				logging.Debug("S3: Rename by filename during upload (will copy+delete): %s -> %s (id=%s)", oldFinalKey, newKey, fileID)
+			} else {
+				c.mu.Unlock()
+				logging.Debug("S3: Rename by filename before upload start: %s -> %s (id=%s)", oldFinalKey, newKey, fileID)
+			}
+			return nil
+		}
 	}
 	c.mu.Unlock()
 
-	// No active upload - check if object exists in S3 and rename it
-	oldKey := c.config.Prefix + msg.OldName
+	// No active upload found - check if object exists in S3 and rename it
+	logging.Debug("S3: Rename - no active upload found for id=%s or key=%s", msg.FileID, oldKey)
 
 	_, err := c.s3Client.HeadObject(c.ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(c.config.Bucket),
