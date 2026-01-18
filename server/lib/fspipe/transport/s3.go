@@ -361,9 +361,11 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 	upload, ok := c.uploads[msg.FileID]
 	if !ok {
 		c.mu.Unlock()
-		logging.Debug("S3: FileClose for unknown ID %s", msg.FileID)
+		logging.Info("S3: FileClose for unknown ID %s", msg.FileID)
 		return nil
 	}
+
+	logging.Info("S3: FileClose id=%s key=%s finalKey=%s started=%v hasData=%v", msg.FileID, upload.key, upload.finalKey, upload.started, upload.hasData)
 
 	// If no data was ever written, this is likely a placeholder file from Chrome's
 	// open-close-open pattern. DON'T delete from map - writes may come later!
