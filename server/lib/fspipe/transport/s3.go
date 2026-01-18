@@ -57,11 +57,13 @@ type S3Client struct {
 }
 
 type multipartUpload struct {
-	key      string
-	uploadID string
-	parts    []types.CompletedPart
-	buffer   bytes.Buffer
-	partNum  int32
+	key       string
+	uploadID  string
+	parts     []types.CompletedPart
+	buffer    bytes.Buffer
+	partNum   int32
+	started   bool // Whether multipart upload has been initiated
+	hasData   bool // Whether any data has been written
 }
 
 // LoadS3ConfigFromEnv loads S3 config from .env file
@@ -257,25 +259,18 @@ func (c *S3Client) handleFileCreate(msg *protocol.FileCreate) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Start multipart upload
-	output, err := c.s3Client.CreateMultipartUpload(c.ctx, &s3.CreateMultipartUploadInput{
-		Bucket: aws.String(c.config.Bucket),
-		Key:    aws.String(key),
-	})
-	if err != nil {
-		c.errors.Add(1)
-		return fmt.Errorf("create multipart upload: %w", err)
-	}
-
+	// Don't start multipart upload yet - wait for first write
+	// This handles Chrome's placeholder files that get created and immediately closed
 	c.uploads[msg.FileID] = &multipartUpload{
-		key:      key,
-		uploadID: *output.UploadId,
-		parts:    make([]types.CompletedPart, 0),
-		partNum:  0,
+		key:     key,
+		parts:   make([]types.CompletedPart, 0),
+		partNum: 0,
+		started: false,
+		hasData: false,
 	}
 
 	c.filesCreated.Add(1)
-	logging.Debug("S3: Started multipart upload for %s (id=%s)", key, msg.FileID)
+	logging.Debug("S3: Registered file %s (id=%s), will start upload on first write", key, msg.FileID)
 	return nil
 }
 
@@ -287,8 +282,25 @@ func (c *S3Client) handleWriteChunk(msg *protocol.WriteChunk) error {
 		return fmt.Errorf("unknown file ID: %s", msg.FileID)
 	}
 
+	// Start multipart upload on first write (lazy initialization)
+	if !upload.started {
+		output, err := c.s3Client.CreateMultipartUpload(c.ctx, &s3.CreateMultipartUploadInput{
+			Bucket: aws.String(c.config.Bucket),
+			Key:    aws.String(upload.key),
+		})
+		if err != nil {
+			c.mu.Unlock()
+			c.errors.Add(1)
+			return fmt.Errorf("create multipart upload: %w", err)
+		}
+		upload.uploadID = *output.UploadId
+		upload.started = true
+		logging.Debug("S3: Started multipart upload for %s on first write", upload.key)
+	}
+
 	// Buffer the data
 	upload.buffer.Write(msg.Data)
+	upload.hasData = true
 	c.bytesUploaded.Add(uint64(len(msg.Data)))
 
 	// If buffer >= 5MB, upload a part
@@ -339,6 +351,20 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 	}
 	delete(c.uploads, msg.FileID)
 
+	// If no data was ever written, this is a placeholder file - skip upload
+	if !upload.hasData {
+		c.mu.Unlock()
+		logging.Debug("S3: Skipping upload for empty placeholder file %s", upload.key)
+		return nil
+	}
+
+	// If multipart upload was never started (shouldn't happen if hasData is true, but be safe)
+	if !upload.started {
+		c.mu.Unlock()
+		logging.Debug("S3: FileClose but multipart never started for %s", upload.key)
+		return nil
+	}
+
 	// Upload remaining data as final part
 	if upload.buffer.Len() > 0 {
 		if err := c.uploadPartLocked(upload); err != nil {
@@ -384,8 +410,21 @@ func (c *S3Client) handleRename(msg *protocol.Rename) error {
 	oldKey := c.config.Prefix + msg.OldName
 	newKey := c.config.Prefix + msg.NewName
 
+	// First check if source object exists
+	// This handles Chrome's rename chain where placeholder files were never uploaded
+	_, err := c.s3Client.HeadObject(c.ctx, &s3.HeadObjectInput{
+		Bucket: aws.String(c.config.Bucket),
+		Key:    aws.String(oldKey),
+	})
+	if err != nil {
+		// Source doesn't exist - this is expected for Chrome's placeholder files
+		// Just log and return success (the rename is a no-op)
+		logging.Debug("S3: Rename skipped - source %s does not exist (placeholder file)", oldKey)
+		return nil
+	}
+
 	// S3 doesn't support rename, so we copy + delete
-	_, err := c.s3Client.CopyObject(c.ctx, &s3.CopyObjectInput{
+	_, err = c.s3Client.CopyObject(c.ctx, &s3.CopyObjectInput{
 		Bucket:     aws.String(c.config.Bucket),
 		CopySource: aws.String(c.config.Bucket + "/" + oldKey),
 		Key:        aws.String(newKey),
@@ -443,17 +482,19 @@ func (c *S3Client) Stats() map[string]uint64 {
 func (c *S3Client) Close() error {
 	c.cancel()
 
-	// Abort any pending uploads
+	// Abort any pending uploads that were actually started
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	for fileID, upload := range c.uploads {
-		logging.Warn("S3: Aborting incomplete upload for %s", upload.key)
-		c.s3Client.AbortMultipartUpload(c.ctx, &s3.AbortMultipartUploadInput{
-			Bucket:   aws.String(c.config.Bucket),
-			Key:      aws.String(upload.key),
-			UploadId: aws.String(upload.uploadID),
-		})
+		if upload.started && upload.uploadID != "" {
+			logging.Warn("S3: Aborting incomplete upload for %s", upload.key)
+			c.s3Client.AbortMultipartUpload(c.ctx, &s3.AbortMultipartUploadInput{
+				Bucket:   aws.String(c.config.Bucket),
+				Key:      aws.String(upload.key),
+				UploadId: aws.String(upload.uploadID),
+			})
+		}
 		delete(c.uploads, fileID)
 	}
 
