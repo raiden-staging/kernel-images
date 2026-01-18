@@ -330,32 +330,30 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	if lastPayload != nil {
 		msg := GhostMessage{Event: "ghost/sync", Data: lastPayload}
 		if data, err := json.Marshal(msg); err == nil {
-			conn.Write(r.Context(), websocket.MessageText, data)
+			conn.Write(context.Background(), websocket.MessageText, data)
 		}
 	}
 
-	// Handle incoming messages (client can send start/stop)
-	go func() {
-		defer func() {
-			m.clientsMu.Lock()
-			delete(m.clients, conn)
-			m.clientsMu.Unlock()
-			conn.Close(websocket.StatusNormalClosure, "")
-			m.logger.Info("[ghost-sync] client disconnected")
-		}()
-
-		for {
-			_, _, err := conn.Read(r.Context())
-			if err != nil {
-				return
-			}
-			// We don't need to handle client messages for now
-		}
+	// Keep the handler running - read messages until connection closes
+	// Using background context since r.Context() is cancelled when handler returns
+	defer func() {
+		m.clientsMu.Lock()
+		delete(m.clients, conn)
+		m.clientsMu.Unlock()
+		conn.Close(websocket.StatusNormalClosure, "")
+		m.logger.Info("[ghost-sync] client disconnected")
 	}()
+
+	for {
+		_, _, err := conn.Read(context.Background())
+		if err != nil {
+			return
+		}
+		// We don't need to handle client messages for now
+	}
 }
 
 // cdpLoop maintains the CDP connection and reinjects the observer on page loads
-// Only runs when there are connected clients to avoid wasting resources
 func (m *Manager) cdpLoop(ctx context.Context) {
 	for {
 		select {
@@ -364,17 +362,11 @@ func (m *Manager) cdpLoop(ctx context.Context) {
 		default:
 		}
 
-		// Only connect to CDP if we have clients - no clients = no work needed
-		if m.ClientCount() == 0 {
-			time.Sleep(500 * time.Millisecond)
-			continue
-		}
-
-		// Try with current URL
+		// Try with current URL if we have it
 		if url := m.upstreamMgr.Current(); url != "" {
 			m.connectAndObserve(ctx, url)
 		}
-		time.Sleep(1 * time.Second)
+		time.Sleep(2 * time.Second)
 	}
 }
 
