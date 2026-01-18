@@ -1,9 +1,9 @@
 <template>
-  <div v-if="enabled && hasElements" ref="overlay" class="ghost-overlay" :class="{ disabled: tempDisabled }">
+  <div v-if="enabled && showOverlay && hasElements" ref="overlay" class="dom-overlay" :class="{ disabled: tempDisabled }">
     <div
       v-for="el in transformedElements"
       :key="el.id"
-      class="ghost-input"
+      class="dom-input"
       :style="getElementStyle(el)"
       @touchstart="onInputTap"
       @mousedown="onInputTap"
@@ -12,7 +12,7 @@
 </template>
 
 <style lang="scss" scoped>
-.ghost-overlay {
+.dom-overlay {
   position: absolute;
   top: 0;
   left: 0;
@@ -23,54 +23,55 @@
 
   &.disabled {
     pointer-events: none !important;
-    .ghost-input {
+    .dom-input {
       pointer-events: none !important;
     }
   }
 }
 
-.ghost-input {
+.dom-input {
   position: absolute;
   pointer-events: auto;
   cursor: text;
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
+  background: rgba(139, 92, 246, 0.1);
+  border: 1px solid rgba(139, 92, 246, 0.3);
   border-radius: 3px;
 }
 </style>
 
 <script lang="ts">
 import { Component, Vue, Prop } from 'vue-property-decorator'
-import { GhostElement, GhostWindowBounds } from '~/neko/ghost-types'
+import { DomElement, DomWindowBounds } from '~/neko/dom-types'
 
-interface TransformedElement extends GhostElement {
+interface TransformedElement extends DomElement {
   screenX: number
   screenY: number
 }
 
 @Component({
-  name: 'ghost-overlay',
+  name: 'dom-overlay',
 })
 export default class extends Vue {
   @Prop({ type: Number, default: 1920 }) screenWidth!: number
   @Prop({ type: Number, default: 1080 }) screenHeight!: number
+  @Prop({ type: Boolean, default: true }) showOverlay!: boolean
 
   tempDisabled = false
 
   get enabled(): boolean {
-    return this.$accessor.ghost.enabled
+    return this.$accessor.dom.enabled
   }
 
-  get elements(): GhostElement[] {
-    return this.$accessor.ghost.elements
+  get elements(): DomElement[] {
+    return this.$accessor.dom.elements
   }
 
   get hasElements(): boolean {
-    return this.$accessor.ghost.hasElements
+    return this.$accessor.dom.hasElements
   }
 
-  get windowBounds(): GhostWindowBounds {
-    return this.$accessor.ghost.windowBounds
+  get windowBounds(): DomWindowBounds {
+    return this.$accessor.dom.windowBounds
   }
 
   get transformedElements(): TransformedElement[] {
@@ -148,7 +149,7 @@ export default class extends Vue {
       }, 20)
     }
 
-    // Temporarily disable ghost overlay for follow-up interactions
+    // Temporarily disable dom overlay for follow-up interactions
     this.tempDisabled = true
     setTimeout(() => {
       this.tempDisabled = false

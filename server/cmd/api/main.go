@@ -22,7 +22,7 @@ import (
 	"github.com/onkernel/kernel-images/server/cmd/api/api"
 	"github.com/onkernel/kernel-images/server/cmd/config"
 	"github.com/onkernel/kernel-images/server/lib/devtoolsproxy"
-	"github.com/onkernel/kernel-images/server/lib/ghostsync"
+	"github.com/onkernel/kernel-images/server/lib/domsync"
 	"github.com/onkernel/kernel-images/server/lib/logger"
 	"github.com/onkernel/kernel-images/server/lib/nekoclient"
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
@@ -78,9 +78,9 @@ func main() {
 	upstreamMgr := devtoolsproxy.NewUpstreamManager(chromiumLogPath, slogger)
 	upstreamMgr.Start(ctx)
 
-	// Ghost DOM sync manager: real-time bounding box synchronization
-	ghostMgr := ghostsync.NewManager(upstreamMgr, slogger)
-	ghostMgr.Start(ctx)
+	// DOM sync manager: real-time bounding box synchronization
+	domMgr := domsync.NewManager(upstreamMgr, slogger)
+	domMgr.Start(ctx)
 
 	// Initialize Neko authenticated client
 	adminPassword := os.Getenv("NEKO_ADMIN_PASSWORD")
@@ -139,8 +139,8 @@ func main() {
 		fs.ServeHTTP(w, r)
 	})
 
-	// Ghost DOM sync WebSocket endpoint for bounding box overlay
-	r.Get("/ghost-sync", ghostMgr.Handler().ServeHTTP)
+	// DOM sync WebSocket endpoint for bounding box overlay
+	r.Get("/dom-sync", domMgr.Handler().ServeHTTP)
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%d", config.Port),
@@ -224,7 +224,7 @@ func main() {
 		return srvDevtools.Shutdown(shutdownCtx)
 	})
 	g.Go(func() error {
-		ghostMgr.Stop()
+		domMgr.Stop()
 		return nil
 	})
 

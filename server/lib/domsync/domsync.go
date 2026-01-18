@@ -1,7 +1,7 @@
-// Package ghostsync provides real-time DOM bounding box synchronization from the browser
+// Package domsync provides real-time DOM bounding box synchronization from the browser
 // to connected clients. It injects a MutationObserver into the browser page and broadcasts
 // element positions to Vue clients via WebSocket.
-package ghostsync
+package domsync
 
 import (
 	"context"
@@ -16,32 +16,32 @@ import (
 	"github.com/onkernel/kernel-images/server/lib/devtoolsproxy"
 )
 
-// GhostElement represents an interactive element in the browser
-type GhostElement struct {
+// DomElement represents an interactive element in the browser
+type DomElement struct {
 	ID   string      `json:"id"`
 	Tag  string      `json:"tag"`
-	Rect GhostRect   `json:"rect"`
+	Rect DomRect     `json:"rect"`
 	Z    json.Number `json:"z"`
 }
 
-// GhostRect represents a bounding rectangle
-type GhostRect struct {
+// DomRect represents a bounding rectangle
+type DomRect struct {
 	X int `json:"x"`
 	Y int `json:"y"`
 	W int `json:"w"`
 	H int `json:"h"`
 }
 
-// GhostViewport represents the browser viewport dimensions
-type GhostViewport struct {
+// DomViewport represents the browser viewport dimensions
+type DomViewport struct {
 	W  int `json:"w"`
 	H  int `json:"h"`
 	SX int `json:"sx"` // scrollX
 	SY int `json:"sy"` // scrollY
 }
 
-// GhostWindowBounds represents the browser window position and chrome offsets
-type GhostWindowBounds struct {
+// DomWindowBounds represents the browser window position and chrome offsets
+type DomWindowBounds struct {
 	X          int  `json:"x"`          // Window X position on screen
 	Y          int  `json:"y"`          // Window Y position on screen
 	Width      int  `json:"width"`      // Window outer width
@@ -51,23 +51,23 @@ type GhostWindowBounds struct {
 	Fullscreen bool `json:"fullscreen"` // Whether browser is in fullscreen mode
 }
 
-// GhostSyncPayload is the data sent to clients
-type GhostSyncPayload struct {
-	Seq          int64             `json:"seq"`
-	Ts           int64             `json:"ts"`
-	Elements     []GhostElement    `json:"elements"`
-	Viewport     GhostViewport     `json:"viewport"`
-	WindowBounds GhostWindowBounds `json:"windowBounds"`
-	URL          string            `json:"url"`
+// DomSyncPayload is the data sent to clients
+type DomSyncPayload struct {
+	Seq          int64           `json:"seq"`
+	Ts           int64           `json:"ts"`
+	Elements     []DomElement    `json:"elements"`
+	Viewport     DomViewport     `json:"viewport"`
+	WindowBounds DomWindowBounds `json:"windowBounds"`
+	URL          string          `json:"url"`
 }
 
-// GhostMessage is the WebSocket message wrapper
-type GhostMessage struct {
-	Event string            `json:"event"`
-	Data  *GhostSyncPayload `json:"data,omitempty"`
+// DomMessage is the WebSocket message wrapper
+type DomMessage struct {
+	Event string          `json:"event"`
+	Data  *DomSyncPayload `json:"data,omitempty"`
 }
 
-// Manager handles ghost DOM sync operations
+// Manager handles DOM sync operations
 type Manager struct {
 	upstreamMgr *devtoolsproxy.UpstreamManager
 	logger      *slog.Logger
@@ -88,11 +88,11 @@ type Manager struct {
 
 	// Window bounds from CDP (cached, updated periodically)
 	windowBoundsMu sync.RWMutex
-	windowBounds   GhostWindowBounds
+	windowBounds   DomWindowBounds
 
 	// Last known state for new clients
 	lastPayloadMu sync.RWMutex
-	lastPayload   *GhostSyncPayload
+	lastPayload   *DomSyncPayload
 
 	// Sequence counter
 	seq atomic.Int64
@@ -100,7 +100,7 @@ type Manager struct {
 	// Throttle state
 	throttleMu      sync.Mutex
 	lastBroadcastAt time.Time
-	pendingPayload  *GhostSyncPayload
+	pendingPayload  *DomSyncPayload
 	throttleTimer   *time.Timer
 
 	// CDP message counter for request IDs
@@ -109,40 +109,62 @@ type Manager struct {
 
 const (
 	throttleInterval = 100 * time.Millisecond // Max 10Hz updates - balance between responsiveness and performance
-	bindingName      = "__ghostDomCallback__"
+	bindingName      = "__domSyncCallback__"
 )
 
 // Observer script to inject into the browser page
+// Detects input elements including Google's custom search components
 const observerScript = `
 (function() {
   // Allow re-initialization if binding was re-added
-  if (window.__ghostDomInitialized__ && window.__ghostDomCallback__) return;
-  window.__ghostDomInitialized__ = true;
+  if (window.__domSyncInitialized__ && window.__domSyncCallback__) return;
+  window.__domSyncInitialized__ = true;
 
-  const SELECTORS = 'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"], [role="searchbox"], [role="combobox"]';
+  // Standard input selectors plus Google-specific elements
+  const SELECTORS = 'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"], [role="searchbox"], [role="combobox"], [aria-label*="Search"], .gLFyf, [name="q"]';
   let idCounter = 0;
-  let sendCount = 0;
   let lastSentJSON = '';
+
+  function extractFromShadowRoot(root, elements) {
+    if (!root) return;
+    try {
+      root.querySelectorAll(SELECTORS).forEach((el) => processElement(el, elements));
+      // Recursively check shadow roots
+      root.querySelectorAll('*').forEach((el) => {
+        if (el.shadowRoot) {
+          extractFromShadowRoot(el.shadowRoot, elements);
+        }
+      });
+    } catch(e) {}
+  }
+
+  function processElement(el, elements) {
+    if (el.type === 'hidden') return;
+    const rect = el.getBoundingClientRect();
+    if (rect.width < 2 || rect.height < 2) return;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return;
+    if (!el.dataset.domid) el.dataset.domid = 'd' + (idCounter++);
+    elements.push({
+      id: el.dataset.domid,
+      tag: el.tagName.toLowerCase(),
+      rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
+    });
+  }
 
   function extract() {
     const elements = [];
     try {
-      const nodes = document.querySelectorAll(SELECTORS);
-      nodes.forEach((el) => {
-        if (el.type === 'hidden') return;
-        const rect = el.getBoundingClientRect();
-        if (rect.width < 2 || rect.height < 2) return;
-        const style = getComputedStyle(el);
-        if (style.display === 'none' || style.visibility === 'hidden' || parseFloat(style.opacity) === 0) return;
-        if (!el.dataset.gid) el.dataset.gid = 'g' + (idCounter++);
-        elements.push({
-          id: el.dataset.gid,
-          tag: el.tagName.toLowerCase(),
-          rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
-        });
+      // Main document
+      document.querySelectorAll(SELECTORS).forEach((el) => processElement(el, elements));
+      // Check shadow roots
+      document.querySelectorAll('*').forEach((el) => {
+        if (el.shadowRoot) {
+          extractFromShadowRoot(el.shadowRoot, elements);
+        }
       });
     } catch(e) {
-      console.error('[ghost] extract error:', e);
+      console.error('[dom-sync] extract error:', e);
     }
 
     const fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
@@ -158,8 +180,7 @@ const observerScript = `
   }
 
   function send() {
-    sendCount++;
-    if (typeof window.__ghostDomCallback__ !== 'function') {
+    if (typeof window.__domSyncCallback__ !== 'function') {
       return; // Silently wait - binding may not be ready yet
     }
     try {
@@ -168,10 +189,10 @@ const observerScript = `
       // Only send if data changed (reduces noise)
       if (json !== lastSentJSON) {
         lastSentJSON = json;
-        window.__ghostDomCallback__(json);
+        window.__domSyncCallback__(json);
       }
     } catch(e) {
-      console.error('[ghost] send error:', e);
+      console.error('[dom-sync] send error:', e);
     }
   }
 
@@ -196,7 +217,7 @@ const observerScript = `
         attributeFilter: ['style', 'class', 'hidden', 'disabled', 'type']
       });
     } catch(e) {
-      console.error('[ghost] MutationObserver error:', e);
+      console.error('[dom-sync] MutationObserver error:', e);
     }
   }
   setupObserver();
@@ -218,7 +239,7 @@ const observerScript = `
 })();
 `
 
-// NewManager creates a new ghost sync manager
+// NewManager creates a new DOM sync manager
 func NewManager(upstreamMgr *devtoolsproxy.UpstreamManager, logger *slog.Logger) *Manager {
 	return &Manager{
 		upstreamMgr: upstreamMgr,
@@ -227,7 +248,7 @@ func NewManager(upstreamMgr *devtoolsproxy.UpstreamManager, logger *slog.Logger)
 	}
 }
 
-// Start begins the ghost sync manager, connecting to the browser via CDP
+// Start begins the DOM sync manager, connecting to the browser via CDP
 func (m *Manager) Start(ctx context.Context) {
 	go m.cdpLoop(ctx)
 }
@@ -254,11 +275,11 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		OriginPatterns: []string{"*"},
 	})
 	if err != nil {
-		m.logger.Error("[ghost-sync] websocket accept failed", "err", err)
+		m.logger.Error("[dom-sync] websocket accept failed", "err", err)
 		return
 	}
 
-	m.logger.Info("[ghost-sync] client connected")
+	m.logger.Info("[dom-sync] client connected")
 
 	// Register client
 	m.clientsMu.Lock()
@@ -271,7 +292,7 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	m.lastPayloadMu.RUnlock()
 
 	if lastPayload != nil {
-		msg := GhostMessage{Event: "ghost/sync", Data: lastPayload}
+		msg := DomMessage{Event: "dom/sync", Data: lastPayload}
 		if data, err := json.Marshal(msg); err == nil {
 			conn.Write(context.Background(), websocket.MessageText, data)
 		}
@@ -284,7 +305,7 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		delete(m.clients, conn)
 		m.clientsMu.Unlock()
 		conn.Close(websocket.StatusNormalClosure, "")
-		m.logger.Info("[ghost-sync] client disconnected")
+		m.logger.Info("[dom-sync] client disconnected")
 	}()
 
 	for {
@@ -333,11 +354,11 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 		m.cdpMu.Unlock()
 	}()
 
-	m.logger.Info("[ghost-sync] connecting to CDP", "url", upstreamURL)
+	m.logger.Info("[dom-sync] connecting to CDP", "url", upstreamURL)
 
 	conn, _, err := websocket.Dial(cdpCtx, upstreamURL, nil)
 	if err != nil {
-		m.logger.Error("[ghost-sync] CDP dial failed", "err", err)
+		m.logger.Error("[dom-sync] CDP dial failed", "err", err)
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "")
@@ -350,15 +371,15 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 	if err := m.cdpSend(cdpCtx, conn, "", "Target.setDiscoverTargets", map[string]interface{}{
 		"discover": true,
 	}); err != nil {
-		m.logger.Error("[ghost-sync] failed to enable target discovery", "err", err)
+		m.logger.Error("[dom-sync] failed to enable target discovery", "err", err)
 		return
 	}
 
-	m.logger.Info("[ghost-sync] CDP connected, discovering targets")
+	m.logger.Info("[dom-sync] CDP connected, discovering targets")
 
 	// Find and attach to the first page target
 	if err := m.findAndAttachToPage(cdpCtx, conn); err != nil {
-		m.logger.Error("[ghost-sync] failed to attach to page", "err", err)
+		m.logger.Error("[dom-sync] failed to attach to page", "err", err)
 		return
 	}
 
@@ -372,7 +393,7 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 
 		_, msg, err := conn.Read(cdpCtx)
 		if err != nil {
-			m.logger.Error("[ghost-sync] CDP read error", "err", err)
+			m.logger.Error("[dom-sync] CDP read error", "err", err)
 			return
 		}
 
@@ -387,12 +408,12 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 
 		switch method {
 		case "Runtime.bindingCalled":
-			// Handle ghost DOM callback - only from our session
+			// Handle DOM sync callback - only from our session
 			if sessionId == m.currentSessionID {
 				name, _ := params["name"].(string)
 				payload, _ := params["payload"].(string)
 				if name == bindingName && payload != "" {
-					m.handleGhostCallback(payload)
+					m.handleDomCallback(payload)
 				}
 			}
 
@@ -424,7 +445,7 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 
 				// If this is a page and it's not our current target, consider switching
 				if targetType == "page" && targetID != m.currentTargetID && !attached {
-					m.logger.Debug("[ghost-sync] detected new page target", "targetId", targetID)
+					m.logger.Debug("[dom-sync] detected new page target", "targetId", targetID)
 				}
 			}
 
@@ -434,7 +455,7 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 			if targetInfo != nil {
 				targetType, _ := targetInfo["type"].(string)
 				if targetType == "page" {
-					m.logger.Debug("[ghost-sync] new page target created")
+					m.logger.Debug("[dom-sync] new page target created")
 				}
 			}
 
@@ -442,7 +463,7 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 			// Our target was destroyed, need to find a new one
 			targetID, _ := params["targetId"].(string)
 			if targetID == m.currentTargetID {
-				m.logger.Info("[ghost-sync] current target destroyed, finding new target")
+				m.logger.Info("[dom-sync] current target destroyed, finding new target")
 				go func() {
 					time.Sleep(500 * time.Millisecond)
 					m.findAndAttachToPage(cdpCtx, conn)
@@ -453,7 +474,7 @@ func (m *Manager) connectAndObserve(ctx context.Context, upstreamURL string) {
 			// We were detached from the target
 			detachedSessionId, _ := params["sessionId"].(string)
 			if detachedSessionId == m.currentSessionID {
-				m.logger.Info("[ghost-sync] detached from target, reattaching")
+				m.logger.Info("[dom-sync] detached from target, reattaching")
 				m.currentSessionID = ""
 				m.currentTargetID = ""
 				go func() {
@@ -502,17 +523,17 @@ func (m *Manager) findAndAttachToPage(ctx context.Context, conn *websocket.Conn)
 				targetID, _ := targetInfo["targetId"].(string)
 
 				if targetType == "page" && targetID != "" {
-					m.logger.Info("[ghost-sync] found page target", "targetId", targetID)
+					m.logger.Info("[dom-sync] found page target", "targetId", targetID)
 					return m.attachToTarget(ctx, conn, targetID)
 				}
 			}
-			m.logger.Warn("[ghost-sync] no page targets found")
+			m.logger.Warn("[dom-sync] no page targets found")
 			return nil
 		}
 
 		// If it's an event, we might need to handle it
 		if method, ok := resp["method"].(string); ok {
-			m.logger.Debug("[ghost-sync] received event while waiting for targets", "method", method)
+			m.logger.Debug("[dom-sync] received event while waiting for targets", "method", method)
 		}
 	}
 
@@ -553,7 +574,7 @@ func (m *Manager) attachToTarget(ctx context.Context, conn *websocket.Conn, targ
 			sessionId, _ := result["sessionId"].(string)
 
 			if sessionId == "" {
-				m.logger.Error("[ghost-sync] no session ID in attach response")
+				m.logger.Error("[dom-sync] no session ID in attach response")
 				return nil
 			}
 
@@ -562,7 +583,7 @@ func (m *Manager) attachToTarget(ctx context.Context, conn *websocket.Conn, targ
 			m.currentTargetID = targetID
 			m.cdpMu.Unlock()
 
-			m.logger.Info("[ghost-sync] attached to target", "sessionId", sessionId, "targetId", targetID)
+			m.logger.Info("[dom-sync] attached to target", "sessionId", sessionId, "targetId", targetID)
 
 			// Now set up the session
 			return m.setupSession(ctx, conn, sessionId)
@@ -577,19 +598,19 @@ func (m *Manager) setupSession(ctx context.Context, conn *websocket.Conn, sessio
 	if err := m.cdpSend(ctx, conn, sessionId, "Runtime.addBinding", map[string]interface{}{
 		"name": bindingName,
 	}); err != nil {
-		m.logger.Error("[ghost-sync] failed to add binding", "err", err)
+		m.logger.Error("[dom-sync] failed to add binding", "err", err)
 		return err
 	}
 
 	// Enable Runtime domain to receive binding calls
 	if err := m.cdpSend(ctx, conn, sessionId, "Runtime.enable", nil); err != nil {
-		m.logger.Error("[ghost-sync] failed to enable Runtime", "err", err)
+		m.logger.Error("[dom-sync] failed to enable Runtime", "err", err)
 		return err
 	}
 
 	// Enable Page domain for load events
 	if err := m.cdpSend(ctx, conn, sessionId, "Page.enable", nil); err != nil {
-		m.logger.Error("[ghost-sync] failed to enable Page", "err", err)
+		m.logger.Error("[dom-sync] failed to enable Page", "err", err)
 		return err
 	}
 
@@ -597,16 +618,16 @@ func (m *Manager) setupSession(ctx context.Context, conn *websocket.Conn, sessio
 	if err := m.cdpSend(ctx, conn, sessionId, "Page.addScriptToEvaluateOnNewDocument", map[string]interface{}{
 		"source": observerScript,
 	}); err != nil {
-		m.logger.Warn("[ghost-sync] failed to add script to new documents", "err", err)
+		m.logger.Warn("[dom-sync] failed to add script to new documents", "err", err)
 	}
 
 	// Inject the observer script now
 	if err := m.injectObserverScript(ctx, conn, sessionId); err != nil {
-		m.logger.Error("[ghost-sync] failed to inject observer", "err", err)
+		m.logger.Error("[dom-sync] failed to inject observer", "err", err)
 		return err
 	}
 
-	m.logger.Info("[ghost-sync] session setup complete")
+	m.logger.Info("[dom-sync] session setup complete")
 	return nil
 }
 
@@ -630,14 +651,14 @@ func (m *Manager) cdpSend(ctx context.Context, conn *websocket.Conn, sessionId s
 }
 
 func (m *Manager) injectObserverScript(ctx context.Context, conn *websocket.Conn, sessionId string) error {
-	m.logger.Debug("[ghost-sync] injecting observer script", "sessionId", sessionId)
+	m.logger.Debug("[dom-sync] injecting observer script", "sessionId", sessionId)
 	return m.cdpSend(ctx, conn, sessionId, "Runtime.evaluate", map[string]interface{}{
 		"expression":            observerScript,
 		"includeCommandLineAPI": true,
 	})
 }
 
-func (m *Manager) handleGhostCallback(payload string) {
+func (m *Manager) handleDomCallback(payload string) {
 	// Compact payload format: e=elements, v=viewport, b=bounds, u=url
 	var data struct {
 		E []struct {
@@ -666,14 +687,14 @@ func (m *Manager) handleGhostCallback(payload string) {
 		U string `json:"u"` // URL
 	}
 	if err := json.Unmarshal([]byte(payload), &data); err != nil {
-		m.logger.Error("[ghost-sync] failed to parse callback payload", "err", err, "payload", payload[:min(len(payload), 200)])
+		m.logger.Error("[dom-sync] failed to parse callback payload", "err", err, "payload", payload[:min(len(payload), 200)])
 		return
 	}
 
-	m.logger.Info("[ghost-sync] received callback", "domElements", len(data.E), "chromeTop", data.B.CT, "url", data.U)
+	m.logger.Info("[dom-sync] received callback", "domElements", len(data.E), "chromeTop", data.B.CT, "url", data.U)
 
 	// Convert to full format for client
-	windowBounds := GhostWindowBounds{
+	windowBounds := DomWindowBounds{
 		X:          data.B.X,
 		Y:          data.B.Y,
 		Width:      data.B.W,
@@ -684,12 +705,12 @@ func (m *Manager) handleGhostCallback(payload string) {
 	}
 
 	// Convert elements
-	elements := make([]GhostElement, 0, len(data.E))
+	elements := make([]DomElement, 0, len(data.E))
 	for _, e := range data.E {
-		elements = append(elements, GhostElement{
+		elements = append(elements, DomElement{
 			ID:  e.ID,
 			Tag: e.Tag,
-			Rect: GhostRect{
+			Rect: DomRect{
 				X: e.Rect.X,
 				Y: e.Rect.Y,
 				W: e.Rect.W,
@@ -706,20 +727,20 @@ func (m *Manager) handleGhostCallback(payload string) {
 		addressBarWidth := windowBounds.Width - 350   // Narrower to avoid right-side buttons
 
 		if addressBarWidth > 100 {
-			elements = append(elements, GhostElement{
+			elements = append(elements, DomElement{
 				ID:   "addressbar",
 				Tag:  "input",
-				Rect: GhostRect{X: addressBarX, Y: addressBarY, W: addressBarWidth, H: 35},
+				Rect: DomRect{X: addressBarX, Y: addressBarY, W: addressBarWidth, H: 35},
 				Z:    json.Number("0"),
 			})
 		}
 	}
 
-	syncPayload := &GhostSyncPayload{
+	syncPayload := &DomSyncPayload{
 		Seq:          m.seq.Add(1),
 		Ts:           time.Now().UnixMilli(),
 		Elements:     elements,
-		Viewport:     GhostViewport{W: data.V.W, H: data.V.H},
+		Viewport:     DomViewport{W: data.V.W, H: data.V.H},
 		WindowBounds: windowBounds,
 		URL:          data.U,
 	}
@@ -753,16 +774,16 @@ func (m *Manager) handleGhostCallback(payload string) {
 	}
 }
 
-func (m *Manager) broadcast(payload *GhostSyncPayload) {
+func (m *Manager) broadcast(payload *DomSyncPayload) {
 	// Store last payload for new clients
 	m.lastPayloadMu.Lock()
 	m.lastPayload = payload
 	m.lastPayloadMu.Unlock()
 
-	msg := GhostMessage{Event: "ghost/sync", Data: payload}
+	msg := DomMessage{Event: "dom/sync", Data: payload}
 	data, err := json.Marshal(msg)
 	if err != nil {
-		m.logger.Error("[ghost-sync] failed to marshal payload", "err", err)
+		m.logger.Error("[dom-sync] failed to marshal payload", "err", err)
 		return
 	}
 
@@ -775,11 +796,11 @@ func (m *Manager) broadcast(payload *GhostSyncPayload) {
 
 	for _, conn := range clients {
 		if err := conn.Write(context.Background(), websocket.MessageText, data); err != nil {
-			m.logger.Debug("[ghost-sync] failed to send to client", "err", err)
+			m.logger.Debug("[dom-sync] failed to send to client", "err", err)
 		}
 	}
 
-	m.logger.Info("[ghost-sync] broadcast",
+	m.logger.Info("[dom-sync] broadcast",
 		"clients", len(clients),
 		"elements", len(payload.Elements),
 		"seq", payload.Seq,
@@ -800,21 +821,21 @@ func (m *Manager) IsConnected() bool {
 	return m.cdpRunning
 }
 
-// Handler returns an http.Handler for the ghost sync WebSocket endpoint
+// Handler returns an http.Handler for the DOM sync WebSocket endpoint
 func (m *Manager) Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		m.HandleWebSocket(w, r)
 	})
 }
 
-// GetLastPayload returns the last known ghost sync payload
-func (m *Manager) GetLastPayload() *GhostSyncPayload {
+// GetLastPayload returns the last known DOM sync payload
+func (m *Manager) GetLastPayload() *DomSyncPayload {
 	m.lastPayloadMu.RLock()
 	defer m.lastPayloadMu.RUnlock()
 	return m.lastPayload
 }
 
-// Status returns the current status of the ghost sync manager
+// Status returns the current status of the DOM sync manager
 type Status struct {
 	Connected   bool   `json:"connected"`
 	ClientCount int    `json:"clientCount"`

@@ -13,6 +13,7 @@
             ref="video"
             :hideControls="hideControls"
             :extraControls="isEmbedMode"
+            :showDomOverlay="showDomOverlay"
             @control-attempt="controlAttempt"
           />
         </div>
@@ -186,7 +187,7 @@
   import About from '~/components/about.vue'
   import Header from '~/components/header.vue'
   import Unsupported from '~/components/unsupported.vue'
-  import { GhostSyncPayload, GhostWebSocketMessage } from '~/neko/ghost-types'
+  import { DomSyncPayload, DomWebSocketMessage } from '~/neko/dom-types'
 
   @Component({
     name: 'neko',
@@ -209,15 +210,24 @@
 
     shakeKbd = false
     wasConnected = false
-    private ghostWebSocket: WebSocket | null = null
-    private ghostReconnectTimeout: number | null = null
+    private domWebSocket: WebSocket | null = null
+    private domReconnectTimeout: number | null = null
 
-    get isGhostSyncEnabled() {
-      // Ghost sync is disabled by default - enable via ?ghost_sync=true
+    // dom_sync: enables WebSocket connection for DOM element syncing (default: false)
+    get isDomSyncEnabled() {
       const params = new URL(location.href).searchParams
-      const param = params.get('ghost_sync') || params.get('ghostSync') || params.get('ghost')
-      // Only enabled if explicitly set to 'true' or '1'
+      const param = params.get('dom_sync') || params.get('domSync')
       return param === 'true' || param === '1'
+    }
+
+    // dom_overlay: shows purple overlay rectangles when dom_sync is enabled (default: true)
+    get showDomOverlay() {
+      if (!this.isDomSyncEnabled) return false
+      const params = new URL(location.href).searchParams
+      const param = params.get('dom_overlay') || params.get('domOverlay')
+      // Default to true if not specified, false only if explicitly set to 'false' or '0'
+      if (param === null) return true
+      return param !== 'false' && param !== '0'
     }
 
     get volume() {
@@ -289,9 +299,9 @@
       if (value) {
         this.wasConnected = true
         this.applyQueryResolution()
-        // Connect to ghost sync if enabled
-        if (this.isGhostSyncEnabled) {
-          this.connectGhostSync()
+        // Connect to DOM sync if enabled
+        if (this.isDomSyncEnabled) {
+          this.connectDomSync()
         }
         try {
           if (window.parent !== window) {
@@ -301,8 +311,8 @@
           console.error('Failed to post message to parent', e)
         }
       } else {
-        // Disconnect ghost sync when main connection is lost
-        this.disconnectGhostSync()
+        // Disconnect DOM sync when main connection is lost
+        this.disconnectDomSync()
       }
     }
 
@@ -349,90 +359,90 @@
 
     // KERNEL: end custom resolution, frame rate, and readOnly control via query params
 
-    // KERNEL: Ghost DOM Sync - connects to kernel-images API WebSocket for bounding box overlay
-    private ghostRetryCount = 0
-    private readonly ghostMaxRetries = 10
+    // KERNEL: DOM Sync - connects to kernel-images API WebSocket for bounding box overlay
+    private domRetryCount = 0
+    private readonly domMaxRetries = 10
 
-    private connectGhostSync() {
-      if (!this.isGhostSyncEnabled) return
-      if (this.ghostWebSocket && this.ghostWebSocket.readyState === WebSocket.OPEN) return
+    private connectDomSync() {
+      if (!this.isDomSyncEnabled) return
+      if (this.domWebSocket && this.domWebSocket.readyState === WebSocket.OPEN) return
 
       const params = new URL(location.href).searchParams
-      const ghostPort = params.get('ghost_port') || '444'
+      const domPort = params.get('dom_port') || '444'
       const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const ghostUrl = `${protocol}//${location.hostname}:${ghostPort}/ghost-sync`
+      const domUrl = `${protocol}//${location.hostname}:${domPort}/dom-sync`
 
-      console.log(`[ghost-sync] Connecting to ${ghostUrl} (attempt ${this.ghostRetryCount + 1})`)
+      console.log(`[dom-sync] Connecting to ${domUrl} (attempt ${this.domRetryCount + 1})`)
 
       try {
-        this.ghostWebSocket = new WebSocket(ghostUrl)
+        this.domWebSocket = new WebSocket(domUrl)
 
-        this.ghostWebSocket.onopen = () => {
-          console.log('[ghost-sync] Connected')
-          this.ghostRetryCount = 0 // Reset retry count on success
-          this.$accessor.ghost.setEnabled(true)
-          this.$accessor.ghost.setConnected(true)
+        this.domWebSocket.onopen = () => {
+          console.log('[dom-sync] Connected')
+          this.domRetryCount = 0 // Reset retry count on success
+          this.$accessor.dom.setEnabled(true)
+          this.$accessor.dom.setConnected(true)
         }
 
-        this.ghostWebSocket.onmessage = (event) => {
+        this.domWebSocket.onmessage = (event) => {
           try {
-            const message: GhostWebSocketMessage = JSON.parse(event.data)
-            if (message.event === 'ghost/sync' && message.data) {
-              this.$accessor.ghost.applySync(message.data)
+            const message: DomWebSocketMessage = JSON.parse(event.data)
+            if (message.event === 'dom/sync' && message.data) {
+              this.$accessor.dom.applySync(message.data)
             }
           } catch (e) {
-            console.error('[ghost-sync] Failed to parse message:', e)
+            console.error('[dom-sync] Failed to parse message:', e)
           }
         }
 
-        this.ghostWebSocket.onclose = () => {
-          console.log('[ghost-sync] Disconnected')
-          this.$accessor.ghost.setConnected(false)
-          this.scheduleGhostReconnect()
+        this.domWebSocket.onclose = () => {
+          console.log('[dom-sync] Disconnected')
+          this.$accessor.dom.setConnected(false)
+          this.scheduleDomReconnect()
         }
 
-        this.ghostWebSocket.onerror = (error) => {
-          console.error('[ghost-sync] WebSocket error:', error)
+        this.domWebSocket.onerror = (error) => {
+          console.error('[dom-sync] WebSocket error:', error)
           // Error will trigger onclose, which handles reconnect
         }
       } catch (e) {
-        console.error('[ghost-sync] Failed to connect:', e)
-        this.scheduleGhostReconnect()
+        console.error('[dom-sync] Failed to connect:', e)
+        this.scheduleDomReconnect()
       }
     }
 
-    private scheduleGhostReconnect() {
-      if (!this.isGhostSyncEnabled || !this.connected) return
-      if (this.ghostRetryCount >= this.ghostMaxRetries) {
-        console.log('[ghost-sync] Max retries reached, giving up')
+    private scheduleDomReconnect() {
+      if (!this.isDomSyncEnabled || !this.connected) return
+      if (this.domRetryCount >= this.domMaxRetries) {
+        console.log('[dom-sync] Max retries reached, giving up')
         return
       }
       // Exponential backoff: 500ms, 1s, 2s, 4s... capped at 5s
-      const delay = Math.min(500 * Math.pow(2, this.ghostRetryCount), 5000)
-      this.ghostRetryCount++
-      console.log(`[ghost-sync] Reconnecting in ${delay}ms`)
-      this.ghostReconnectTimeout = window.setTimeout(() => {
-        this.connectGhostSync()
+      const delay = Math.min(500 * Math.pow(2, this.domRetryCount), 5000)
+      this.domRetryCount++
+      console.log(`[dom-sync] Reconnecting in ${delay}ms`)
+      this.domReconnectTimeout = window.setTimeout(() => {
+        this.connectDomSync()
       }, delay)
     }
 
-    private disconnectGhostSync() {
-      if (this.ghostReconnectTimeout) {
-        clearTimeout(this.ghostReconnectTimeout)
-        this.ghostReconnectTimeout = null
+    private disconnectDomSync() {
+      if (this.domReconnectTimeout) {
+        clearTimeout(this.domReconnectTimeout)
+        this.domReconnectTimeout = null
       }
-      if (this.ghostWebSocket) {
-        this.ghostWebSocket.close()
-        this.ghostWebSocket = null
+      if (this.domWebSocket) {
+        this.domWebSocket.close()
+        this.domWebSocket = null
       }
-      this.ghostRetryCount = 0
-      this.$accessor.ghost.setEnabled(false)
-      this.$accessor.ghost.setConnected(false)
-      this.$accessor.ghost.reset()
+      this.domRetryCount = 0
+      this.$accessor.dom.setEnabled(false)
+      this.$accessor.dom.setConnected(false)
+      this.$accessor.dom.reset()
     }
 
     beforeDestroy() {
-      this.disconnectGhostSync()
+      this.disconnectDomSync()
     }
 
     controlAttempt() {
