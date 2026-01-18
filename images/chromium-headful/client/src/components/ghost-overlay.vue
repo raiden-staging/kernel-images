@@ -1,12 +1,12 @@
 <template>
-  <div v-if="enabled && hasElements" class="ghost-overlay">
+  <div v-if="enabled && hasElements" ref="overlay" class="ghost-overlay" :class="{ disabled: tempDisabled }">
     <div
       v-for="el in transformedElements"
       :key="el.id"
       class="ghost-input"
       :style="getElementStyle(el)"
-      @touchstart.prevent="onInputTap"
-      @click.prevent="onInputTap"
+      @touchstart="onInputTap"
+      @mousedown="onInputTap"
     />
   </div>
 </template>
@@ -19,16 +19,22 @@
   width: 100%;
   height: 100%;
   pointer-events: none;
-  z-index: 110; // Above the neko textarea overlay (z-index: 100)
+  z-index: 110;
+
+  &.disabled {
+    pointer-events: none !important;
+    .ghost-input {
+      pointer-events: none !important;
+    }
+  }
 }
 
 .ghost-input {
   position: absolute;
   pointer-events: auto;
   cursor: text;
-  // Subtle visual indicator for input fields
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.3);
   border-radius: 3px;
 }
 </style>
@@ -48,6 +54,8 @@ interface TransformedElement extends GhostElement {
 export default class extends Vue {
   @Prop({ type: Number, default: 1920 }) screenWidth!: number
   @Prop({ type: Number, default: 1080 }) screenHeight!: number
+
+  tempDisabled = false
 
   get enabled(): boolean {
     return this.$accessor.ghost.enabled
@@ -78,7 +86,6 @@ export default class extends Vue {
   }
 
   getElementStyle(el: TransformedElement): Record<string, string> {
-    // Convert from screen coordinates to percentage of video
     const xPercent = (el.screenX / this.screenWidth) * 100
     const yPercent = (el.screenY / this.screenHeight) * 100
     const wPercent = (el.rect.w / this.screenWidth) * 100
@@ -92,16 +99,18 @@ export default class extends Vue {
     }
   }
 
-  onInputTap() {
-    // Find the neko overlay textarea and focus it to trigger mobile keyboard
+  onInputTap(e: Event) {
+    // Focus the neko textarea to trigger mobile keyboard
     const overlay = document.querySelector('.player-container .overlay') as HTMLTextAreaElement
     if (overlay) {
       overlay.focus()
-      // On iOS, we may need to programmatically show keyboard
-      if ('virtualKeyboard' in navigator) {
-        (navigator as any).virtualKeyboard.show()
-      }
     }
+
+    // Temporarily disable ghost overlay so events pass through to neko
+    this.tempDisabled = true
+    setTimeout(() => {
+      this.tempDisabled = false
+    }, 100)
   }
 }
 </script>
