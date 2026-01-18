@@ -145,6 +145,10 @@ func (s *ApiService) StartFspipe(ctx context.Context, req oapi.StartFspipeReques
 		// Set to true for strict mode where downloads fail if no client is connected
 		broadcaster.SetRequireClient(false)
 
+		// Enable fast mode: writes are fire-and-forget, only FileCreate waits for ACK
+		// This gives much better throughput for large file downloads
+		broadcaster.SetFastMode(true)
+
 		client = broadcaster
 	}
 

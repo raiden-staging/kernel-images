@@ -106,6 +106,10 @@ type Broadcaster struct {
 	// Require at least one client for writes (fail-safe mode)
 	requireClient atomic.Bool
 
+	// Fast mode: don't wait for ACKs on writes (fire-and-forget)
+	// Only FileCreate waits for ACK, writes are async
+	fastMode atomic.Bool
+
 	// Stats
 	messagesSent   atomic.Uint64
 	messagesRecv   atomic.Uint64
@@ -156,6 +160,13 @@ func NewBroadcaster(addr, path string) *Broadcaster {
 // If true (default), writes fail with error when no clients. If false, fake ACKs are returned.
 func (b *Broadcaster) SetRequireClient(require bool) {
 	b.requireClient.Store(require)
+}
+
+// SetFastMode enables fire-and-forget mode for write operations.
+// In fast mode, only FileCreate waits for ACK. Writes are sent async without waiting.
+// This significantly improves throughput but trades off guaranteed delivery.
+func (b *Broadcaster) SetFastMode(fast bool) {
+	b.fastMode.Store(fast)
 }
 
 // Connect starts the WebSocket server.
@@ -399,6 +410,18 @@ func (b *Broadcaster) SendSync(msgType byte, payload interface{}) error {
 
 // SendAndReceive broadcasts a message and waits for ACK from any client.
 func (b *Broadcaster) SendAndReceive(msgType byte, payload interface{}) (byte, []byte, error) {
+	// Fast mode: fire-and-forget for writes, only wait for FileCreate ACK
+	if b.fastMode.Load() && msgType == protocol.MsgWriteChunk {
+		msg := payload.(*protocol.WriteChunk)
+		if err := b.Send(msgType, payload); err != nil {
+			return 0, nil, err
+		}
+		// Return immediate fake ACK
+		ack := protocol.WriteAck{FileID: msg.FileID, Offset: msg.Offset, Written: len(msg.Data)}
+		data, _ := json.Marshal(ack)
+		return protocol.MsgWriteAck, data, nil
+	}
+
 	// Extract file ID for routing
 	var fileID string
 	switch msg := payload.(type) {
