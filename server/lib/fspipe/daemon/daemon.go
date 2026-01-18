@@ -293,10 +293,13 @@ func (d *pipeDir) Rename(ctx context.Context, name string, newParent fs.InodeEmb
 	delete(d.children, name)
 	d.mu.Unlock()
 
+	// Get the file ID if this is a pipeFile
+	var fileID string
 	switch c := child.(type) {
 	case *pipeFile:
 		c.name = newName
 		c.parent = newParentDir
+		fileID = c.id
 	case *pipeDir:
 		c.name = newName
 		c.parent = newParentDir
@@ -307,6 +310,7 @@ func (d *pipeDir) Rename(ctx context.Context, name string, newParent fs.InodeEmb
 	newParentDir.mu.Unlock()
 
 	msg := protocol.Rename{
+		FileID:  fileID,
 		OldName: oldPath,
 		NewName: newPath,
 	}

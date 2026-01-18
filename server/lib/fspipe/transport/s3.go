@@ -58,6 +58,7 @@ type S3Client struct {
 
 type multipartUpload struct {
 	key       string
+	finalKey  string // Desired final key after renames (updated by handleRename)
 	uploadID  string
 	parts     []types.CompletedPart
 	buffer    bytes.Buffer
@@ -262,11 +263,12 @@ func (c *S3Client) handleFileCreate(msg *protocol.FileCreate) error {
 	// Don't start multipart upload yet - wait for first write
 	// This handles Chrome's placeholder files that get created and immediately closed
 	c.uploads[msg.FileID] = &multipartUpload{
-		key:     key,
-		parts:   make([]types.CompletedPart, 0),
-		partNum: 0,
-		started: false,
-		hasData: false,
+		key:      key,
+		finalKey: key, // Will be updated by handleRename if rename arrives before upload completes
+		parts:    make([]types.CompletedPart, 0),
+		partNum:  0,
+		started:  false,
+		hasData:  false,
 	}
 
 	c.filesCreated.Add(1)
@@ -368,6 +370,10 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 	// Now we have data and a started upload - remove from map and complete it
 	delete(c.uploads, msg.FileID)
 
+	// Capture finalKey before unlocking (may have been updated by handleRename)
+	uploadKey := upload.key
+	finalKey := upload.finalKey
+
 	// Upload remaining data as final part
 	if upload.buffer.Len() > 0 {
 		if err := c.uploadPartLocked(upload); err != nil {
@@ -375,7 +381,7 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 			// Abort the upload
 			c.s3Client.AbortMultipartUpload(c.ctx, &s3.AbortMultipartUploadInput{
 				Bucket:   aws.String(c.config.Bucket),
-				Key:      aws.String(upload.key),
+				Key:      aws.String(uploadKey),
 				UploadId: aws.String(upload.uploadID),
 			})
 			return err
@@ -387,7 +393,7 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 	// Complete the multipart upload
 	_, err := c.s3Client.CompleteMultipartUpload(c.ctx, &s3.CompleteMultipartUploadInput{
 		Bucket:   aws.String(c.config.Bucket),
-		Key:      aws.String(upload.key),
+		Key:      aws.String(uploadKey),
 		UploadId: aws.String(upload.uploadID),
 		MultipartUpload: &types.CompletedMultipartUpload{
 			Parts: upload.parts,
@@ -398,23 +404,62 @@ func (c *S3Client) handleFileClose(msg *protocol.FileClose) error {
 		// Abort on error
 		c.s3Client.AbortMultipartUpload(c.ctx, &s3.AbortMultipartUploadInput{
 			Bucket:   aws.String(c.config.Bucket),
-			Key:      aws.String(upload.key),
+			Key:      aws.String(uploadKey),
 			UploadId: aws.String(upload.uploadID),
 		})
 		return fmt.Errorf("complete multipart upload: %w", err)
 	}
 
+	logging.Info("S3: Completed upload for %s (%d parts)", uploadKey, len(upload.parts))
+
+	// If rename was received during upload, apply it now via copy+delete
+	if finalKey != uploadKey {
+		logging.Debug("S3: Applying deferred rename %s -> %s", uploadKey, finalKey)
+
+		_, err = c.s3Client.CopyObject(c.ctx, &s3.CopyObjectInput{
+			Bucket:     aws.String(c.config.Bucket),
+			CopySource: aws.String(c.config.Bucket + "/" + uploadKey),
+			Key:        aws.String(finalKey),
+		})
+		if err != nil {
+			c.errors.Add(1)
+			logging.Error("S3: Failed to copy %s -> %s: %v", uploadKey, finalKey, err)
+			// Don't fail - file exists with original name at least
+		} else {
+			// Delete the original
+			_, err = c.s3Client.DeleteObject(c.ctx, &s3.DeleteObjectInput{
+				Bucket: aws.String(c.config.Bucket),
+				Key:    aws.String(uploadKey),
+			})
+			if err != nil {
+				logging.Warn("S3: Failed to delete original after rename: %v", err)
+			}
+			logging.Info("S3: Renamed %s -> %s", uploadKey, finalKey)
+		}
+	}
+
 	c.filesUploaded.Add(1)
-	logging.Info("S3: Completed upload for %s (%d parts)", upload.key, len(upload.parts))
 	return nil
 }
 
 func (c *S3Client) handleRename(msg *protocol.Rename) error {
-	oldKey := c.config.Prefix + msg.OldName
 	newKey := c.config.Prefix + msg.NewName
 
-	// First check if source object exists
-	// This handles Chrome's rename chain where placeholder files were never uploaded
+	// First check if there's an active upload for this file
+	// If so, update finalKey - the rename will be applied after upload completes
+	c.mu.Lock()
+	if upload, ok := c.uploads[msg.FileID]; ok {
+		oldFinalKey := upload.finalKey
+		upload.finalKey = newKey
+		c.mu.Unlock()
+		logging.Debug("S3: Deferred rename for active upload: %s -> %s (id=%s)", oldFinalKey, newKey, msg.FileID)
+		return nil
+	}
+	c.mu.Unlock()
+
+	// No active upload - check if object exists in S3 and rename it
+	oldKey := c.config.Prefix + msg.OldName
+
 	_, err := c.s3Client.HeadObject(c.ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(c.config.Bucket),
 		Key:    aws.String(oldKey),

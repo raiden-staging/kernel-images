@@ -57,6 +57,7 @@ type Truncate struct {
 
 // Rename is sent to rename a file
 type Rename struct {
+	FileID  string `json:"file_id"`
 	OldName string `json:"old_name"`
 	NewName string `json:"new_name"`
 }
