@@ -113,70 +113,71 @@ const (
 )
 
 // Observer script to inject into the browser page
-// Optimized: only tracks input-related elements, minimal updates
+// Optimized: only tracks input-related elements
 const observerScript = `
 (function() {
   if (window.__ghostDomInitialized__) return;
   window.__ghostDomInitialized__ = true;
 
-  // ONLY input-related elements for keyboard triggering
   const SELECTORS = 'input:not([type="hidden"]),textarea,select,[contenteditable="true"],[role="textbox"]';
   let idCounter = 0;
-  let lastHash = '';
 
-  function extractElements() {
+  function extract() {
     const elements = [];
     document.querySelectorAll(SELECTORS).forEach((el) => {
       const rect = el.getBoundingClientRect();
-      if (rect.width < 10 || rect.height < 10) return;
+      if (rect.width < 5 || rect.height < 5) return;
       const style = getComputedStyle(el);
       if (style.display === 'none' || style.visibility === 'hidden') return;
       if (!el.dataset.gid) el.dataset.gid = 'g' + (idCounter++);
       elements.push({
         id: el.dataset.gid,
         tag: el.tagName.toLowerCase(),
-        rect: { x: rect.x|0, y: rect.y|0, w: rect.width|0, h: rect.height|0 }
+        rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
       });
     });
 
     const fs = !!(document.fullscreenElement || document.webkitFullscreenElement);
     const ct = fs ? 0 : Math.max(0, window.outerHeight - window.innerHeight - 2);
-    const cl = fs ? 0 : ((window.outerWidth - window.innerWidth) / 2)|0;
+    const cl = fs ? 0 : Math.round((window.outerWidth - window.innerWidth) / 2);
 
     return {
       e: elements,
       v: { w: window.innerWidth, h: window.innerHeight },
-      b: { x: window.screenX, y: window.screenY, w: window.outerWidth, h: window.outerHeight, ct, cl, fs }
+      b: { x: window.screenX, y: window.screenY, w: window.outerWidth, h: window.outerHeight, ct: ct, cl: cl, fs: fs }
     };
   }
 
-  let pending = false;
-  function sendUpdate() {
-    if (pending) return;
-    pending = true;
-    requestAnimationFrame(() => {
-      pending = false;
-      const data = extractElements();
-      // Only send if something changed (simple hash check)
-      const hash = data.e.map(e => e.id + e.rect.x + e.rect.y).join(',');
-      if (hash === lastHash) return;
-      lastHash = hash;
-      try { window.__ghostDomCallback__(JSON.stringify(data)); } catch(e) {}
-    });
+  function send() {
+    try {
+      window.__ghostDomCallback__(JSON.stringify(extract()));
+    } catch(e) {
+      console.log('[ghost] callback error', e);
+    }
   }
 
-  // Observe DOM changes sparingly
-  new MutationObserver(sendUpdate).observe(document.documentElement, {
+  // Throttle updates
+  let timer = null;
+  function throttledSend() {
+    if (timer) return;
+    send();
+    timer = setTimeout(() => { timer = null; }, 200);
+  }
+
+  new MutationObserver(throttledSend).observe(document.documentElement, {
     childList: true, subtree: true, attributes: true,
     attributeFilter: ['style', 'class', 'hidden']
   });
 
-  window.addEventListener('scroll', sendUpdate, { passive: true });
-  window.addEventListener('resize', sendUpdate, { passive: true });
+  window.addEventListener('scroll', throttledSend, { passive: true });
+  window.addEventListener('resize', throttledSend, { passive: true });
 
-  // Initial + periodic (every 2s as fallback)
-  sendUpdate();
-  setInterval(sendUpdate, 2000);
+  // Initial send
+  setTimeout(send, 100);
+  // Periodic fallback
+  setInterval(send, 1000);
+
+  console.log('[ghost] observer initialized');
 })();
 `
 
