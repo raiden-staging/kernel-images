@@ -16,12 +16,24 @@ import (
 	"github.com/onkernel/kernel-images/server/lib/devtoolsproxy"
 )
 
+// DomElementType represents the category of a DOM element
+type DomElementType string
+
+const (
+	DomElementTypeInputs   DomElementType = "inputs"
+	DomElementTypeButtons  DomElementType = "buttons"
+	DomElementTypeLinks    DomElementType = "links"
+	DomElementTypeImages   DomElementType = "images"
+	DomElementTypeMedia    DomElementType = "media"
+)
+
 // DomElement represents an interactive element in the browser
 type DomElement struct {
-	ID   string      `json:"id"`
-	Tag  string      `json:"tag"`
-	Rect DomRect     `json:"rect"`
-	Z    json.Number `json:"z"`
+	ID   string         `json:"id"`
+	Tag  string         `json:"tag"`
+	Type DomElementType `json:"type"`
+	Rect DomRect        `json:"rect"`
+	Z    json.Number    `json:"z"`
 }
 
 // DomRect represents a bounding rectangle
@@ -113,22 +125,42 @@ const (
 )
 
 // Observer script to inject into the browser page
-// Detects input elements including Google's custom search components
+// Detects various DOM element types: inputs, buttons, links, images, media
 const observerScript = `
 (function() {
   // Allow re-initialization if binding was re-added
   if (window.__domSyncInitialized__ && window.__domSyncCallback__) return;
   window.__domSyncInitialized__ = true;
 
-  // Standard input selectors plus Google-specific elements
-  const SELECTORS = 'input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"], [role="searchbox"], [role="combobox"], [aria-label*="Search"], .gLFyf, [name="q"]';
+  // Element type definitions with selectors
+  const ELEMENT_TYPES = {
+    inputs: 'input:not([type="button"]):not([type="submit"]):not([type="reset"]):not([type="image"]):not([type="hidden"]), textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"], [role="searchbox"], [role="combobox"], [aria-label*="Search"], .gLFyf, [name="q"]',
+    buttons: 'button, input[type="button"], input[type="submit"], input[type="reset"], [role="button"]',
+    links: 'a[href]',
+    images: 'img, picture, svg, [role="img"], input[type="image"]',
+    media: 'video, audio'
+  };
+
+  // Combined selector for all types
+  const ALL_SELECTORS = Object.values(ELEMENT_TYPES).join(', ');
+
   let idCounter = 0;
   let lastSentJSON = '';
+
+  // Determine element type based on selectors
+  function getElementType(el) {
+    for (const [type, selector] of Object.entries(ELEMENT_TYPES)) {
+      try {
+        if (el.matches(selector)) return type;
+      } catch(e) {}
+    }
+    return 'inputs'; // fallback
+  }
 
   function extractFromShadowRoot(root, elements) {
     if (!root) return;
     try {
-      root.querySelectorAll(SELECTORS).forEach((el) => processElement(el, elements));
+      root.querySelectorAll(ALL_SELECTORS).forEach((el) => processElement(el, elements));
       // Recursively check shadow roots
       root.querySelectorAll('*').forEach((el) => {
         if (el.shadowRoot) {
@@ -148,6 +180,7 @@ const observerScript = `
     elements.push({
       id: el.dataset.domid,
       tag: el.tagName.toLowerCase(),
+      type: getElementType(el),
       rect: { x: Math.round(rect.x), y: Math.round(rect.y), w: Math.round(rect.width), h: Math.round(rect.height) }
     });
   }
@@ -156,7 +189,7 @@ const observerScript = `
     const elements = [];
     try {
       // Main document
-      document.querySelectorAll(SELECTORS).forEach((el) => processElement(el, elements));
+      document.querySelectorAll(ALL_SELECTORS).forEach((el) => processElement(el, elements));
       // Check shadow roots
       document.querySelectorAll('*').forEach((el) => {
         if (el.shadowRoot) {
@@ -664,6 +697,7 @@ func (m *Manager) handleDomCallback(payload string) {
 		E []struct {
 			ID   string `json:"id"`
 			Tag  string `json:"tag"`
+			Type string `json:"type"`
 			Rect struct {
 				X int `json:"x"`
 				Y int `json:"y"`
@@ -707,9 +741,14 @@ func (m *Manager) handleDomCallback(payload string) {
 	// Convert elements
 	elements := make([]DomElement, 0, len(data.E))
 	for _, e := range data.E {
+		elementType := DomElementType(e.Type)
+		if elementType == "" {
+			elementType = DomElementTypeInputs // default fallback
+		}
 		elements = append(elements, DomElement{
-			ID:  e.ID,
-			Tag: e.Tag,
+			ID:   e.ID,
+			Tag:  e.Tag,
+			Type: elementType,
 			Rect: DomRect{
 				X: e.Rect.X,
 				Y: e.Rect.Y,
@@ -730,6 +769,7 @@ func (m *Manager) handleDomCallback(payload string) {
 			elements = append(elements, DomElement{
 				ID:   "addressbar",
 				Tag:  "input",
+				Type: DomElementTypeInputs,
 				Rect: DomRect{X: addressBarX, Y: addressBarY, W: addressBarWidth, H: 35},
 				Z:    json.Number("0"),
 			})

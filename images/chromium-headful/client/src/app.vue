@@ -14,6 +14,7 @@
             :hideControls="hideControls"
             :extraControls="isEmbedMode"
             :showDomOverlay="showDomOverlay"
+            :domSyncTypes="domSyncTypes"
             @control-attempt="controlAttempt"
           />
         </div>
@@ -187,7 +188,7 @@
   import About from '~/components/about.vue'
   import Header from '~/components/header.vue'
   import Unsupported from '~/components/unsupported.vue'
-  import { DomSyncPayload, DomWebSocketMessage } from '~/neko/dom-types'
+  import { DomSyncPayload, DomWebSocketMessage, DomElementType, DOM_ELEMENT_TYPES } from '~/neko/dom-types'
 
   @Component({
     name: 'neko',
@@ -213,11 +214,27 @@
     private domWebSocket: WebSocket | null = null
     private domReconnectTimeout: number | null = null
 
-    // dom_sync: enables WebSocket connection for DOM element syncing (default: false)
-    get isDomSyncEnabled() {
+    // dom_sync: enables WebSocket connection for DOM element syncing
+    // Values: false (default), true (inputs only), or comma-separated types (e.g., "inputs,buttons,links")
+    get isDomSyncEnabled(): boolean {
       const params = new URL(location.href).searchParams
       const param = params.get('dom_sync') || params.get('domSync')
-      return param === 'true' || param === '1'
+      if (!param || param === 'false' || param === '0') return false
+      return true
+    }
+
+    // Get enabled DOM element types from query param
+    // ?dom_sync=true -> ['inputs'] (default, backwards compatible)
+    // ?dom_sync=inputs,buttons,links -> ['inputs', 'buttons', 'links']
+    get domSyncTypes(): DomElementType[] {
+      const params = new URL(location.href).searchParams
+      const param = params.get('dom_sync') || params.get('domSync')
+      if (!param || param === 'false' || param === '0') return []
+      // If true/1, default to inputs only (backwards compatible)
+      if (param === 'true' || param === '1') return ['inputs']
+      // Parse comma-separated list and filter to valid types
+      const types = param.split(',').map((t) => t.trim().toLowerCase()) as DomElementType[]
+      return types.filter((t) => DOM_ELEMENT_TYPES.includes(t))
     }
 
     // dom_overlay: shows purple overlay rectangles when dom_sync is enabled (default: true)

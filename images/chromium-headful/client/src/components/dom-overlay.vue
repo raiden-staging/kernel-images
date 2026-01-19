@@ -1,9 +1,9 @@
 <template>
-  <div v-if="enabled && showOverlay && hasElements" ref="overlay" class="dom-overlay" :class="{ disabled: tempDisabled }">
+  <div v-if="enabled && showOverlay && hasFilteredElements" ref="overlay" class="dom-overlay" :class="{ disabled: tempDisabled }">
     <div
-      v-for="el in transformedElements"
+      v-for="el in filteredTransformedElements"
       :key="el.id"
-      class="dom-input"
+      class="dom-element"
       :style="getElementStyle(el)"
       @touchstart="onInputTap"
       @mousedown="onInputTap"
@@ -23,25 +23,26 @@
 
   &.disabled {
     pointer-events: none !important;
-    .dom-input {
+    .dom-element {
       pointer-events: none !important;
     }
   }
 }
 
-.dom-input {
+.dom-element {
   position: absolute;
   pointer-events: auto;
-  cursor: text;
+  cursor: pointer;
+  border-radius: 3px;
+  /* Default style - will be overridden by inline styles */
   background: rgba(139, 92, 246, 0.1);
   border: 1px solid rgba(139, 92, 246, 0.3);
-  border-radius: 3px;
 }
 </style>
 
 <script lang="ts">
 import { Component, Vue, Prop } from 'vue-property-decorator'
-import { DomElement, DomWindowBounds } from '~/neko/dom-types'
+import { DomElement, DomWindowBounds, DomElementType, DOM_TYPE_COLORS } from '~/neko/dom-types'
 
 interface TransformedElement extends DomElement {
   screenX: number
@@ -55,6 +56,7 @@ export default class extends Vue {
   @Prop({ type: Number, default: 1920 }) screenWidth!: number
   @Prop({ type: Number, default: 1080 }) screenHeight!: number
   @Prop({ type: Boolean, default: true }) showOverlay!: boolean
+  @Prop({ type: Array, default: () => ['inputs'] }) enabledTypes!: DomElementType[]
 
   tempDisabled = false
 
@@ -74,12 +76,22 @@ export default class extends Vue {
     return this.$accessor.dom.windowBounds
   }
 
-  get transformedElements(): TransformedElement[] {
+  // Filter elements by enabled types
+  get filteredElements(): DomElement[] {
+    if (this.enabledTypes.length === 0) return []
+    return this.elements.filter((el) => this.enabledTypes.includes(el.type))
+  }
+
+  get hasFilteredElements(): boolean {
+    return this.filteredElements.length > 0
+  }
+
+  get filteredTransformedElements(): TransformedElement[] {
     const bounds = this.windowBounds
     const offsetX = bounds.x + bounds.chromeLeft
     const offsetY = bounds.y + bounds.chromeTop
 
-    return this.elements.map((el) => ({
+    return this.filteredElements.map((el) => ({
       ...el,
       screenX: offsetX + el.rect.x,
       screenY: offsetY + el.rect.y,
@@ -92,11 +104,16 @@ export default class extends Vue {
     const wPercent = (el.rect.w / this.screenWidth) * 100
     const hPercent = (el.rect.h / this.screenHeight) * 100
 
+    // Get colors for this element type
+    const colors = DOM_TYPE_COLORS[el.type] || DOM_TYPE_COLORS.inputs
+
     return {
       left: `${xPercent}%`,
       top: `${yPercent}%`,
       width: `${wPercent}%`,
       height: `${hPercent}%`,
+      background: colors.bg,
+      borderColor: colors.border,
     }
   }
 

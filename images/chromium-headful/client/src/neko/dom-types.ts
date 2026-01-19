@@ -5,11 +5,28 @@
  * interactive elements from the remote browser.
  */
 
+/** Element type categories for DOM sync */
+export type DomElementType = 'inputs' | 'buttons' | 'links' | 'images' | 'media'
+
+/** All available DOM element types */
+export const DOM_ELEMENT_TYPES: DomElementType[] = ['inputs', 'buttons', 'links', 'images', 'media']
+
+/** Color scheme for each element type (rgba format) */
+export const DOM_TYPE_COLORS: Record<DomElementType, { bg: string; border: string }> = {
+  inputs: { bg: 'rgba(139, 92, 246, 0.1)', border: 'rgba(139, 92, 246, 0.3)' },   // Purple
+  buttons: { bg: 'rgba(59, 130, 246, 0.1)', border: 'rgba(59, 130, 246, 0.3)' },  // Blue
+  links: { bg: 'rgba(34, 197, 94, 0.1)', border: 'rgba(34, 197, 94, 0.3)' },      // Green
+  images: { bg: 'rgba(249, 115, 22, 0.1)', border: 'rgba(249, 115, 22, 0.3)' },   // Orange
+  media: { bg: 'rgba(6, 182, 212, 0.1)', border: 'rgba(6, 182, 212, 0.3)' },      // Cyan
+}
+
 export interface DomElement {
   /** Unique identifier for the element (e.g., "d0", "d1") */
   id: string
   /** HTML tag name (input, button, a, select, textarea, etc.) */
   tag: string
+  /** Element type category */
+  type: DomElementType
   /** Bounding rectangle in viewport coordinates */
   rect: {
     x: number
