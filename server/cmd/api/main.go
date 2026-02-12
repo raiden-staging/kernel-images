@@ -28,6 +28,7 @@ import (
 	oapi "github.com/onkernel/kernel-images/server/lib/oapi"
 	"github.com/onkernel/kernel-images/server/lib/recorder"
 	"github.com/onkernel/kernel-images/server/lib/scaletozero"
+	"github.com/onkernel/kernel-images/server/lib/webmcp"
 )
 
 func main() {
@@ -125,6 +126,11 @@ func main() {
 		id := chi.URLParam(r, "process_id")
 		apiService.HandleProcessAttachWS(w, r, id)
 	})
+
+	// WebMCP WebSocket endpoint - bidirectional communication for WebMCP tool
+	// discovery, monitoring, and execution via Chrome's CDP.
+	webmcpHandler := webmcp.NewHandler(slogger, upstreamMgr.Current)
+	r.Get("/webmcp", webmcpHandler.ServeHTTP)
 
 	// Serve extension files for Chrome policy-installed extensions
 	// This allows Chrome to download .crx and update.xml files via HTTP

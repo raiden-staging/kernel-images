@@ -1127,8 +1127,63 @@ paths:
           $ref: "#/components/responses/BadRequestError"
         "500":
           $ref: "#/components/responses/InternalError"
+  /webmcp/status:
+    get:
+      summary: Get WebMCP availability status
+      description: |
+        Returns whether the WebMCP API (navigator.modelContext / navigator.modelContextTesting) is
+        available on the current active tab, along with any registered tools. Requires Chrome 146+
+        with the WebMCPTesting feature flag enabled.
+        For bidirectional real-time communication (tool monitoring, execution), use the /webmcp
+        WebSocket endpoint instead.
+      operationId: getWebMCPStatus
+      responses:
+        "200":
+          description: WebMCP status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WebMCPStatus"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   schemas:
+    WebMCPStatus:
+      type: object
+      required: [available]
+      properties:
+        available:
+          type: boolean
+          description: Whether the WebMCP API is detected on the active page.
+        tools:
+          type: array
+          description: List of WebMCP tools registered on the active page.
+          items:
+            $ref: "#/components/schemas/WebMCPTool"
+        active_tab:
+          type: object
+          description: Information about the currently active browser tab.
+          properties:
+            url:
+              type: string
+            title:
+              type: string
+      additionalProperties: false
+    WebMCPTool:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+          description: Tool name.
+        description:
+          type: string
+          description: Tool description.
+        inputSchema:
+          description: JSON Schema for tool input parameters.
+        annotations:
+          description: Tool annotations (e.g. readOnlyHint).
+      additionalProperties: false
     StartRecordingRequest:
       type: object
       properties:

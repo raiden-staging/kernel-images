@@ -251,19 +251,23 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-ap
     chown $USERNAME /var/log/neko/ /tmp/runtime-$USERNAME; \
     chown -R $USERNAME:$USERNAME /home/$USERNAME;
 
-# install chromium and sqlite3 for debugging the cookies file
+# install Google Chrome Canary (147+) for WebMCP support, and sqlite3 for debugging the cookies file
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-apt-cache \
     --mount=type=cache,target=/var/lib/apt,sharing=locked,id=$CACHEIDPREFIX-apt-lib \
-    add-apt-repository -y ppa:xtradeb/apps;
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked,id=$CACHEIDPREFIX-apt-cache \
-    --mount=type=cache,target=/var/lib/apt,sharing=locked,id=$CACHEIDPREFIX-apt-lib \
-    apt update -y && \
-    apt -y install chromium && \
-    apt --no-install-recommends -y install sqlite3;
+    set -eux; \
+    curl -fsSL https://dl.google.com/linux/linux_signing_key.pub | gpg --dearmor -o /usr/share/keyrings/google-chrome.gpg; \
+    echo "deb [arch=amd64 signed-by=/usr/share/keyrings/google-chrome.gpg] http://dl.google.com/linux/chrome/deb/ stable main" \
+      > /etc/apt/sources.list.d/google-chrome.list; \
+    apt-get update -y; \
+    apt-get -y install google-chrome-canary; \
+    apt-get --no-install-recommends -y install sqlite3; \
+    # Create a symlink so existing scripts referencing 'chromium' still work \
+    ln -sf /usr/bin/google-chrome-canary /usr/bin/chromium;
 
-# Copy Chromium policy configuration
-RUN mkdir -p /etc/chromium/policies/managed
+# Copy Chromium policy configuration (both paths for compat with chromium and google-chrome-canary)
+RUN mkdir -p /etc/chromium/policies/managed /etc/opt/chrome/policies/managed
 COPY shared/chromium-policies/managed/policy.json /etc/chromium/policies/managed/policy.json
+COPY shared/chromium-policies/managed/policy.json /etc/opt/chrome/policies/managed/policy.json
 
 # install Node.js 22.x by copying from the node:22-bullseye-slim stage
 COPY --from=node-22 /usr/local/bin/node /usr/local/bin/node

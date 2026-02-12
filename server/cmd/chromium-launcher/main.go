@@ -17,7 +17,7 @@ import (
 
 func main() {
 	headless := flag.Bool("headless", false, "Run Chromium with headless flags")
-	chromiumPath := flag.String("chromium", "chromium", "Chromium binary path (default: chromium)")
+	chromiumPath := flag.String("chromium", "google-chrome-canary", "Chromium binary path (default: google-chrome-canary)")
 	runtimeFlagsPath := flag.String("runtime-flags", "/chromium/flags", "Path to runtime flags overlay file")
 	flag.Parse()
 

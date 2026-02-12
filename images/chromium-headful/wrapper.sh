@@ -63,6 +63,7 @@ if [[ "${RUN_AS_ROOT:-}" != "true" ]]; then
   dirs=(
     /home/kernel/user-data
     /home/kernel/.config/chromium
+    /home/kernel/.config/google-chrome-canary
     /home/kernel/.pki/nssdb
     /home/kernel/.cache/dconf
     /tmp
@@ -80,6 +81,7 @@ if [[ "${RUN_AS_ROOT:-}" != "true" ]]; then
   chown -R kernel:kernel /home/kernel /home/kernel/user-data /home/kernel/.config /home/kernel/.pki /home/kernel/.cache 2>/dev/null || true
   # Make policy directory writable for runtime updates
   chown -R kernel:kernel /etc/chromium/policies 2>/dev/null || true
+  chown -R kernel:kernel /etc/opt/chrome/policies 2>/dev/null || true
 else
   # When running as root, just create the necessary directories without ownership changes
   dirs=(
@@ -265,7 +267,7 @@ if [[ "${RUN_AS_ROOT:-}" == "true" ]]; then
     echo "[wrapper] Port ${API_PORT} is open"
 
     # Wait for Chromium window to open before dismissing the --no-sandbox warning.
-    target='New Tab - Chromium'
+    target='New Tab - Google Chrome Canary'
     echo "[wrapper] Waiting for Chromium window \"${target}\" to appear and become active..."
     while :; do
       win_id=$(xwininfo -root -tree 2>/dev/null | awk -v t="$target" '$0 ~ t {print $1; exit}')
